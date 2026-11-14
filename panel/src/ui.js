@@ -3,20 +3,19 @@
 const VIEWS = {
   centrala: { n: 'Centrala', render: () => viewDashboard() },
   leady: { n: 'Leady', render: () => viewLeads() },
-  plan: { n: 'Plan i budżet', render: () => viewPlan() },
-  harmonogram: { n: 'Harmonogram 90 dni', render: () => viewRoadmap() },
-  zadania: { n: 'Zadania tygodnia', render: () => viewTasks() },
+  kontakty: { n: 'Kontakty', render: () => viewContacts() },
   wiadomosci: { n: 'Wiadomości i skrypty', render: () => viewMessages() },
   lokalizacje: { n: 'Lokalizacje', render: () => viewLocations() },
   ustawienia: { n: 'Zespół i ustawienia', render: () => viewSettings() }
 };
-const NAV_ORDER = ['centrala', 'leady', 'plan', 'harmonogram', 'zadania', 'wiadomosci', 'lokalizacje', 'ustawienia'];
+const NAV_ORDER = ['centrala', 'kontakty', 'leady', 'wiadomosci', 'lokalizacje', 'ustawienia'];
 
 function parseRoute() {
   const h = (location.hash || '').replace(/^#/, '');
   if (h.startsWith('lead-')) return { view: 'lead', id: h.slice(5) };
   if (h.startsWith('lok-')) return { view: 'lok', id: h.slice(4) };
   if (h.startsWith('raport-')) return { view: 'raport', id: h.slice(7) };
+  if (h === 'zadania') return { view: 'kontakty', id: null };
   if (VIEWS[h]) return { view: h, id: null };
   return { view: 'centrala', id: null };
 }
@@ -77,7 +76,8 @@ function renderSync() {
 }
 function renderChrome() {
   const cur = S.route.view === 'lead' ? 'leady' : (S.route.view === 'lok' || S.route.view === 'raport') ? 'lokalizacje' : S.route.view;
-  $('#nav').innerHTML = NAV_ORDER.map(k => `<a href="#${k}" class="${k === cur ? 'on' : ''}">${VIEWS[k].n}</a>`).join('');
+  const due = dueContactsCount();
+  $('#nav').innerHTML = NAV_ORDER.map(k => `<a href="#${k}" class="${k === cur ? 'on' : ''}">${VIEWS[k].n}${k === 'kontakty' && due ? `<span class="badge" title="Kontakty na dziś i zaległe${myMemberId() ? ' (Twoje)' : ''}">${due}</span>` : ''}</a>`).join('');
   renderSync();
   let b = '';
   if (S.demo) b = `<div class="banner demo"><div class="wrap"><b>Podgląd na danych przykładowych.</b><span>Leady, osoby i liczby są zmyślone, a zmiany nie są nigdzie zapisywane.</span><button class="btn sm" data-act="demo-off">Wróć do prawdziwych danych</button></div></div>`;
@@ -169,7 +169,8 @@ function dueCls(d) { if (!d) return ''; const t = todayISO(); return d.slice(0, 
 function filterBar({ period = true, search = true } = {}) {
   const f = S.f;
   return `<div class="filters" role="search">
-    ${period ? `<label class="field"><span>Okres</span><select id="f-period" data-f="period">${opt('plan', '90 dni planu', f.period)}${opt('month', 'Bieżący miesiąc', f.period)}${opt('30', 'Ostatnie 30 dni', f.period)}${opt('7', 'Ostatnie 7 dni', f.period)}${opt('all', 'Cały okres', f.period)}</select></label>` : ''}
+    ${period ? `<label class="field"><span>Okres</span><select id="f-period" data-f="period">${opt('7', 'Ostatnie 7 dni', f.period)}${opt('30', 'Ostatnie 30 dni', f.period)}${opt('month', 'Bieżący miesiąc', f.period)}${opt('90', 'Ostatnie 90 dni', f.period)}${opt('all', 'Cały okres', f.period)}</select></label>` : ''}
+    <label class="field"><span>Model</span><select id="f-model" data-f="model">${opt('', 'Franczyza i Ship Point', f.model)}${MODELS.map(m => opt(m.k, m.n, f.model)).join('')}</select></label>
     <label class="field"><span>Źródło</span><select id="f-source" data-f="source">${sourceOpts(f.source, true)}</select></label>
     <label class="field"><span>Opiekun</span><select id="f-owner" data-f="owner">${ownerOpts(f.owner, true)}</select></label>
     <label class="field"><span>Region</span><select id="f-region" data-f="region">${regionOpts(f.region, true)}</select></label>
@@ -202,7 +203,7 @@ function columnChart(data, { planValue = null, height = 190, color = '--s1', pla
   });
   s += `<line class="base" x1="${L}" x2="${W - R}" y1="${T + ih}" y2="${T + ih}"/>`;
   if (planValue != null && planValue > 0) {
-    s += `<line x1="${L}" x2="${W - R}" y1="${y(planValue)}" y2="${y(planValue)}" stroke="var(--accent)" stroke-width="2"/>`;
+    s += `<line x1="${L}" x2="${W - R}" y1="${y(planValue)}" y2="${y(planValue)}" stroke="var(--ink-2)" stroke-width="2"/>`;
     s += `<text class="lbl" x="${W - R}" y="${y(planValue) - 5}" text-anchor="end">${esc(planLabel)}: ${valueFmt(planValue)}</text>`;
   }
   return `<div class="chart">${s}</svg></div>`;
@@ -245,3 +246,9 @@ document.addEventListener('pointermove', e => {
   tipEl.style.left = x + 'px';
   tipEl.style.top = (e.clientY + 14) + 'px';
 });
+
+function dueContactsCount() {
+  const me = myMemberId(); const t = todayISO();
+  return leadsArr().filter(l => isOpen(l) && l.nextTaskDate && l.nextTaskDate <= t && (!me || l.ownerId === me)).length;
+}
+const modelPill = l => { const k = modelOf(l); return `<span class="pill ${k === 'shippoint' ? 'outline' : 'acc'}">${esc(modelName(k))}${k === 'franczyza' && l.pkg ? ' · ' + esc(l.pkg.toUpperCase()) : ''}</span>`; };

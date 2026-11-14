@@ -175,7 +175,7 @@ function viewLocationEditor(id) {
       ${anum('bizShare', 'Odsetek firm, które zaczną nadawać w punkcie', 0.01)}${anum('bizAvg', 'Średnio paczek na firmę / mies.', 5)}
       ${anum('margin', 'Średni zarobek punktu na przesyłce (zł netto)', 0.5, 'dostosuj do aktualnego cennika')}${anum('avgValue', 'Średnia wartość transakcji (zł)', 1, 'do prowizji płatności online')}
       ${anum('inpostFee', 'Przychód z paczki PaczkoPunktu (zł)', 0.05, 'przed opłatą 0,10 zł dla Ship Center')}${anum('minPerParcel', 'Czas obsługi nadania (min)', 0.5)}
-      ${anum('storagePerM2', 'Paczek dziennie na 1 m² zaplecza', 1)}${anum('fitout', 'Adaptacja i wyposażenie (zł)', 500)}
+      ${anum('storagePerM2', 'Paczek dziennie na 1 m² zaplecza', 1)}${anum('fitout', 'Sprzęt (FLEX) i adaptacja lokalu (zł)', 500, 'przy wariancie SMART tylko adaptacja')}
       ${anum('signage', 'Oznakowanie (zł)', 500)}${anum('depositMonths', 'Kaucja (krotność czynszu)', 1)}${anum('other', 'Inne koszty / mies. (zł)', 50, 'internet, materiały, księgowość')}
     </div></details>
   </div>`;
@@ -302,9 +302,9 @@ function reportHTML(x, r, standalone = true) {
   ${[['Nadane paczki', 'parcels', v => fmt(v)], ['Przychód z nadań', 'revenue', zl], ['Czynsz i media', null, () => zl((+L.rent || 0) + (+L.media || 0))], ['Wynagrodzenia', 'staff', zl], ['Opłata miesięczna Ship Center', 'fee', zl], ['Płatności online (' + fmt(o.prowizjaP24, 1) + '%)', 'p24', zl], ['Pozostałe koszty', null, () => zl(L.a.other)], ['Wynik przed podatkiem', 'profit', v => `<b>${zl(v)}</b>`]].map(([n, k, f]) => `<tr><td>${n}</td>${['low', 'base', 'high'].map(s => `<td class="r">${k ? f(r.fin[s][k]) : f()}</td>`).join('')}</tr>`).join('')}
   </tbody></table>
   <p class="small muted">Wynagrodzenia obejmują zatrudnionych pracowników${L.ownerWorks ? '; praca właściciela nie jest wliczona w koszty' : ''}. Średni zarobek na przesyłce: ${zl(L.a.margin, 2)} netto (założenie).</p>
-  <div class="two"><div><h2>Nakłady na start</h2><table>${row('Opłata licencyjna', zl(o.licencja))}${row('Adaptacja i wyposażenie', zl(L.a.fitout))}${row('Oznakowanie lokalu', zl(L.a.signage))}${row('Kaucja za najem', zl((+L.rent || 0) * L.a.depositMonths))}${row('<b>Razem</b>', `<b>${zl(r.startup)}</b>`)}</table>
+  <div class="two"><div><h2>Nakłady na start</h2><table>${row('Pakiet startowy SMART', zl(o.licencja))}${row('Sprzęt (FLEX) i adaptacja lokalu', zl(L.a.fitout))}${row('Oznakowanie lokalu', zl(L.a.signage))}${row('Kaucja za najem', zl((+L.rent || 0) * L.a.depositMonths))}${row('<b>Razem</b>', `<b>${zl(r.startup)}</b>`)}</table>
   <p class="small muted">Próg rentowności: ok. ${r.breakEven ? fmt(r.breakEven) : '—'} paczek miesięcznie.</p></div>
-  <div><h2>Warunki współpracy</h2><table>${row('Opłata licencyjna (jednorazowo)', zl(o.licencja) + ' netto')}${row('Opłata miesięczna', zl(o.oplataMies) + ' netto')}${row('Rabat 100% opłaty miesięcznej', 'od ' + o.progRabatu + ' paczek / mies.')}${row('Płatności online', fmt(o.prowizjaP24, 1) + '% transakcji')}${row('Szkolenie', esc(o.szkolenie))}${row('Uruchomienie punktu', esc(o.uruchomienie))}${row('Ochrona terytorialna', o.ochrona + ' km')}</table></div></div>
+  <div><h2>Warunki współpracy</h2><table>${row('Pakiet SMART (jednorazowo)', zl(o.licencja) + ' netto')}${row('Opłata miesięczna', '0 zł przy ponad ' + o.progRabatu + ' paczkach, inaczej ' + zl(o.oplataMies) + ' netto')}${row('Sprzęt FLEX', 'rabat do ' + (o.flexRabat || 15) + '%')}${row('Płatności online', fmt(o.prowizjaP24, 1) + '% transakcji')}${row('Szkolenie', esc(o.szkolenie))}${row('Uruchomienie punktu', esc(o.uruchomienie))}${row('Ochrona terytorialna', o.ochrona + ' km')}</table></div></div>
   <h2>Kolejne kroki</h2><ol><li>Omówienie raportu i pytań – rozmowa z opiekunem.</li><li>Weryfikacja lokalu (umowa najmu, witryna, zaplecze).</li><li>Oferta i projekt umowy franczyzowej z OWU.</li><li>Podpisanie umowy, szkolenie wstępne, uruchomienie punktu.</li></ol>
   <div class="foot">Raport ma charakter szacunkowy i opiera się na danych o lokalu i okolicy przekazanych przez kandydata oraz na założeniach sieci Ship Center. Nie stanowi gwarancji wyników finansowych – sukces punktu zależy w szczególności od zaangażowania franczyzobiorcy, stosowania standardów sieci i aktywnego pozyskiwania klientów.<br><br>
   Ship Center Poland Sp. z o.o. · ${esc(o.adres)} · ${esc(o.email)} · ${esc(o.telefon)}${owner ? `<br>Opiekun: ${esc(owner.name)}${owner.phone ? ' · ' + esc(owner.phone) : ''}${owner.email ? ' · ' + esc(owner.email) : ''}` : ''}</div></div></div>`;
@@ -339,7 +339,7 @@ Ocena: ${r.score}/100 – ${r.gradeText} (klasa ${r.grade})
 • Przepustowość: ${fmt(r.capacity)} paczek/mies., wykorzystanie ${pct(r.util)} (szczyt sezonu ${pct(r.utilPeak)})
 • Konkurencja do 3 km: ${r.compCount} punktów, indeks presji ${fmt(r.ci, 2)}
 • Wynik miesięczny: pesymistyczny ${zl(r.fin.low.profit)}, bazowy ${zl(r.fin.base.profit)}, optymistyczny ${zl(r.fin.high.profit)}
-• Nakłady na start: ${zl(r.startup)} (w tym licencja ${zl(o.licencja)}); zwrot: ${r.payback ? fmt(r.payback, 1) + ' mies.' : '—'}
+• Nakłady na start: ${zl(r.startup)} (w tym pakiet SMART ${zl(o.licencja)}); zwrot: ${r.payback ? fmt(r.payback, 1) + ' mies.' : '—'}
 ${r.flags.map(f => '• ' + f.t).join('\n')}
 
 Szacunek na podstawie przekazanych danych – nie stanowi gwarancji wyników.`;

@@ -4,6 +4,7 @@ const LEAD_COLS = [
   { k: 'code', n: 'Kod', get: l => leadCode(l.id) },
   { k: 'name', n: 'Kandydat', get: l => (l.name || '').toLowerCase() },
   { k: 'city', n: 'Miasto / region', get: l => (l.city || '').toLowerCase() },
+  { k: 'model', n: 'Model', get: l => modelOf(l) },
   { k: 'source', n: 'Źródło', get: l => l.source },
   { k: 'owner', n: 'Opiekun', get: l => memberName(l.ownerId).toLowerCase() },
   { k: 'stage', n: 'Etap', get: l => stageIdx(l) },
@@ -15,7 +16,7 @@ const LEAD_COLS = [
 ];
 
 function sortedLeads(arr) {
-  const c = LEAD_COLS.find(x => x.k === S.sort.key) || LEAD_COLS[10];
+  const c = LEAD_COLS.find(x => x.k === S.sort.key) || LEAD_COLS[LEAD_COLS.length - 1];
   const dir = S.sort.dir === 'asc' ? 1 : -1;
   return arr.slice().sort((a, b) => { const x = c.get(a), y = c.get(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
 }
@@ -59,11 +60,12 @@ function tableHTML(list) {
       <td><span class="code">${leadCode(l.id)}</span></td>
       <td><div class="cellname"><b>${esc(l.name || '(bez nazwy)')}</b><span class="tiny muted">${esc(l.company || l.phone || l.email || '')}</span></div></td>
       <td>${esc(l.city || '—')}<div class="tiny muted">${esc(l.region || '')}</div></td>
+      <td>${modelPill(l)}</td>
       <td>${sourcePill(l.source)}</td>
       <td>${esc(memberName(l.ownerId) || '—')}</td>
       <td>${stageBar(l)}<div class="tiny muted">${esc(STAGES[stageIdx(l)].short)}</div></td>
       <td>${statusPill(l.status)}</td>
-      <td style="min-width:170px"><span class="small">${esc(l.nextTask || '—')}</span><div class="tiny ${dueCls(l.nextTaskDate)}">${l.nextTaskDate ? fdate(l.nextTaskDate) : ''}</div></td>
+      <td style="min-width:170px"><span class="small">${esc(l.nextTask || '—')}</span><div class="tiny ${dueCls(l.nextTaskDate)}">${l.nextTaskDate ? fdate(l.nextTaskDate) + (l.nextTaskTime ? ' ' + esc(l.nextTaskTime) : '') : ''}</div></td>
       <td class="small ${dueCls(l.meetingAt)}">${l.meetingAt ? fdt(l.meetingAt) : '—'}</td>
       <td class="small">${lc ? fdateShort(lc) : '<span class="muted">brak</span>'}</td>
       <td class="small muted">${fdate(l.createdAt)}</td></tr>`;
@@ -95,7 +97,8 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select></label>
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
-    <label class="field"><span>Model współpracy</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, l.model)).join('')}</select></label>
+    <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
+    <label class="field"><span>Pakiet (franczyza)</span><select id="${prefix}-pkg">${opt('', 'jeszcze nie wiadomo', l.pkg)}${Object.entries(PACKAGES).map(([k, n]) => opt(k, n, l.pkg)).join('')}</select></label>
     <label class="field"><span>Kapitał deklarowany (zł)</span><input type="number" id="${prefix}-capital" min="0" step="1000" value="${esc(l.capital)}"></label>
     <label class="field"><span>Lokal</span><select id="${prefix}-premises">${opt('', 'nie wiadomo', l.hasPremises)}${opt('ma', 'ma lokal', l.hasPremises)}${opt('szuka', 'szuka lokalu', l.hasPremises)}${opt('nie', 'nie ma i nie szuka', l.hasPremises)}</select></label>
     <label class="field"><span>Forma zwrotu w wiadomościach</span><select id="${prefix}-form">${opt('panstwo', 'Państwo (neutralnie)', l.form)}${opt('pan', 'Pan', l.form)}${opt('pani', 'Pani', l.form)}${opt('ty', 'Ty (bezpośrednio)', l.form)}</select></label>
@@ -103,10 +106,10 @@ function leadFormFields(l, prefix = 'lf') {
 }
 function readLeadForm(prefix = 'lf') {
   const v = id => ($('#' + prefix + '-' + id) || {}).value || '';
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
-  const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : '', source: S.f.source || 'meta', region: S.f.region || '' });
+  const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
   openModal(`<div class="mh"><h2>Nowy lead</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <form class="mb" id="lead-form">${leadFormFields(l)}
       <div class="formgrid">
@@ -155,7 +158,7 @@ function viewLead(id) {
     <div class="leadhead"><div class="who"><span class="code">${leadCode(l.id)} · dodano ${fdate(l.createdAt)} · ${esc(SOURCE_MAP[l.source]?.n || '')}</span>
       <h1>${esc(l.name || '(bez nazwy)')}</h1>
       <p class="ink2">${esc([l.company, l.city, l.region].filter(Boolean).join(' · ') || 'Uzupełnij miasto i województwo')}</p>
-      <div class="row" style="margin-top:6px">${statusPill(l.status)}${l.model ? `<span class="pill outline">${esc(MODELS.find(m => m.k === l.model)?.n || '')}</span>` : ''}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
+      <div class="row" style="margin-top:6px">${modelPill(l)}${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
       <div class="stack" style="gap:8px;min-width:240px">
         <label class="field"><span>Opiekun</span><select id="ld-owner" data-lead-field="ownerId">${ownerOpts(l.ownerId)}</select></label>
         <label class="field"><span>Status kontaktu</span><select id="ld-status" data-lead-field="status">${statusOpts(l.status)}</select></label>
@@ -169,12 +172,24 @@ function viewLead(id) {
     <div class="sep"></div>
     <label class="field"><span>Notatki</span><textarea id="ld-notes" data-lead-field="notes" rows="5" placeholder="Motywacja, sytuacja finansowa, lokal, obawy, ustalenia…">${esc(l.notes)}</textarea></label></div>`;
 
-  const next = `<div class="card"><div class="cardhead"><h2>Następne zadanie</h2>${l.nextTaskDate ? `<p class="${dueCls(l.nextTaskDate)}">${dueCls(l.nextTaskDate) === 'overdue' ? 'Zaległe od ' + fdate(l.nextTaskDate) : dueCls(l.nextTaskDate) === 'today' ? 'Na dziś' : 'Termin ' + fdate(l.nextTaskDate)}</p>` : ''}</div>
-    <div class="formgrid"><label class="field span2"><span>Co trzeba zrobić</span><input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg"></label>
-    <label class="field"><span>Termin</span><input type="date" id="ld-taskdate" data-lead-field="nextTaskDate" value="${esc(l.nextTaskDate)}"></label></div>
-    <datalist id="task-sugg">${['Pierwszy kontakt telefoniczny', 'Ponowna próba kontaktu', 'Wysłać prezentację oferty', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Przygotować raport lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie w Katowicach'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:10px"><button class="btn primary sm" data-act="task-done" data-id="${l.id}">Zrobione – zapisz w historii</button>
-    ${[1, 3, 7].map(d => `<button class="btn sm" data-act="task-shift" data-id="${l.id}" data-d="${d}">+${d} ${d === 1 ? 'dzień' : 'dni'}</button>`).join('')}</div></div>`;
+  const t0 = todayISO();
+  const nextCls = !l.nextTaskDate ? '' : l.nextTaskDate < t0 ? 'late' : l.nextTaskDate === t0 ? 'due' : '';
+  const smsList = smsListFor(l.id);
+  const next = `<div class="card"><div class="cardhead"><h2>Przebieg kontaktu</h2><p>${l.firstCallAt ? 'pierwsza rozmowa ' + fdate(l.firstCallAt) : 'czeka na pierwszą rozmowę'}</p></div>
+    <div class="progress3">
+      <div class="pstep ${l.firstCallAt ? 'done' : 'due'}"><span class="lbl">1 · Pierwsza rozmowa</span>${l.firstCallAt ? `<span class="val">${fdate(l.firstCallAt)}</span>` : `<span class="small ink2">Zadzwoń, porozmawiaj i zapisz notatkę. Po rozmowie można wysłać SMS z podziękowaniem.</span><button class="btn sm primary" data-act="call-log" data-id="${l.id}">Zapisz pierwszą rozmowę</button>`}</div>
+      <div class="pstep ${l.presentationAt ? 'done' : ''}"><span class="lbl">2 · Prezentacja</span>${l.presentationAt ? `<span class="val">wysłana ${fdate(l.presentationAt)}</span><button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij</button>` : `<span class="small ink2">Zaznacz, kiedy kandydat dostał prezentację oferty.</span><button class="btn sm" data-act="pres-sent" data-id="${l.id}">Wysłano prezentację dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label>`}</div>
+      <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
+        <input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg" placeholder="Co zrobić, np. telefon po prezentacji" aria-label="Kolejny kontakt – co zrobić">
+        <div class="row" style="flex-wrap:nowrap"><input type="date" id="ld-taskdate" data-lead-field="nextTaskDate" value="${esc(l.nextTaskDate)}" aria-label="Data kolejnego kontaktu"><input type="time" id="ld-tasktime" data-lead-field="nextTaskTime" value="${esc(l.nextTaskTime || '')}" aria-label="Godzina" style="max-width:110px"></div>
+        <div class="row">${[1, 3, 7].map(d => `<button class="btn sm" data-act="task-shift" data-id="${l.id}" data-d="${d}">+${d} ${d === 1 ? 'dzień' : 'dni'}</button>`).join('')}</div>
+        ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${nextCls === 'late' ? 'Zaległe od ' + fdate(l.nextTaskDate) : nextCls === 'due' ? 'Na dziś – przypomnienie w menu „Kontakty”' : 'Przypomnienie: ' + fdate(l.nextTaskDate)}</span>` : '<span class="tiny muted">Brak terminu – lead nie pojawi się w przypomnieniach.</span>'}
+      </div>
+    </div>
+    <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
+  </div>`;
 
   const meeting = `<div class="card"><div class="cardhead"><h2>Spotkanie</h2>${l.meetingAt ? `<p class="${dueCls(l.meetingAt)}">${fdt(l.meetingAt)}</p>` : ''}</div>
     <div class="formgrid"><label class="field"><span>Termin</span><input type="datetime-local" id="ld-meet" data-lead-field="meetingAt" value="${esc(l.meetingAt)}"></label>
@@ -221,10 +236,11 @@ function viewLead(id) {
 
 function suggestedTemplate(l) {
   const i = stageIdx(l);
+  if (modelOf(l) === 'shippoint') return ['email_partner', 'sms_po_rozmowie', 'skrypt_pierwsza'];
   if (l.status === 'wstrzymany' || l.status === 'utracony') return ['email_reaktywacja', 'skrypt_obiekcje'];
   if (l.status === 'proba') return ['sms_pierwszy', 'email_followup', 'email_ostatni'];
   return [
-    ['email_pierwszy', 'sms_pierwszy', 'skrypt_pierwsza'],
+    ['email_pierwszy', 'skrypt_pierwsza', 'sms_po_rozmowie'],
     ['skrypt_pierwsza', 'email_zaproszenie', 'skrypt_obiekcje'],
     ['email_zaproszenie', 'skrypt_prezentacja', 'skrypt_obiekcje'],
     ['email_podsumowanie', 'email_dane_lokalizacji', 'skrypt_obiekcje'],

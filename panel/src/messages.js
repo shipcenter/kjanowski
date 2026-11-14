@@ -19,11 +19,11 @@ function msgContext(l, form) {
     miasto: (l && l.city) || PH('miasto'), maMiasto: !!(l && l.city),
     region: l && l.region ? regionLoc(l.region) : '',
     opiekun: m ? m.name : PH('Twoje imię i nazwisko'),
-    opiekunImie: m ? m.name.split(/\s+/)[0] : PH('Twoje imię'),
+    opiekunImie: m ? firstName(m.name) : PH('Twoje imię'),
     opiekunTel: (m && m.phone) || o.telefon, opiekunEmail: (m && m.email) || o.email,
     rola: m && m.role ? m.role.replace('Centrala – ', '') : 'Rozwój sieci franczyzowej',
     spotkanie: l && l.meetingAt ? fdtLong(l.meetingAt) : PH('termin spotkania'),
-    formaSpotkania: l && l.meetingType ? ({ online: 'spotkanie online', telefon: 'rozmowa telefoniczna', centrala: 'spotkanie w centrali Ship Center w Katowicach', lokal: 'spotkanie w planowanym lokalu', punkt: 'spotkanie w działającym punkcie Ship Center' })[l.meetingType] : 'spotkanie online',
+    formaSpotkania: l && l.meetingType ? ({ online: 'spotkanie online', telefon: 'rozmowa telefoniczna', centrala: 'spotkanie w centrali ShipCenter w Katowicach', lokal: 'spotkanie w planowanym lokalu', punkt: 'spotkanie w działającym punkcie ShipCenter' })[l.meetingType] : 'spotkanie online',
     miejsce: (l && l.meetingPlace) || o.linkSpotkanie || PH('link lub adres spotkania'),
     linkKalendarz: o.linkSpotkanie || PH('link do kalendarza'),
     linkWebinar: o.linkWebinar || PH('link do zapisu na webinar'),
@@ -34,32 +34,35 @@ function msgContext(l, form) {
 const podpis = c => `\n\nPozdrawiam\n${c.opiekun}\n${c.rola} · Ship Center Poland\ntel. ${c.opiekunTel} · ${c.opiekunEmail}\n${c.o.www}`;
 const powitanie = c => c.g('Dzień dobry,', 'Dzień dobry,', 'Dzień dobry,', `Dzień dobry ${c.imie},`);
 const fmtZl = v => fmt(v, v % 1 ? 2 : 0) + ' zł netto';
-const offerBullets = c => `• punkt nadaje paczki, palety i przesyłki zagraniczne u wielu przewoźników (${c.o.przewoznicy}) przez jedną platformę ${c.o.www},
-• klientami są osoby prywatne, sklepy internetowe i lokalne firmy – franczyzobiorca zarabia na każdej nadanej przesyłce,
-• Ship Center zapewnia szkolenie (${c.o.szkolenie}), platformę z cennikami przewoźników, materiały marketingowe, wpis w Google Maps i stronę punktu,
-• na obszarze umownym obowiązuje ochrona: inny punkt sieci nie powstanie bliżej niż ${c.o.ochrona} km,
-• jednorazowa opłata licencyjna to ${fmtZl(c.o.licencja)}, opłata miesięczna ${fmtZl(c.o.oplataMies)} (w miesiącu po wysłaniu co najmniej ${c.o.progRabatu} paczek – 0 zł).`;
+const offerBullets = c => `• punkt ShipCenter nadaje paczki, palety i przesyłki zagraniczne u wielu przewoźników (${c.o.przewoznicy}) przez platformę ${c.o.www},
+• klientami są osoby prywatne, sklepy internetowe i lokalne firmy – franczyzobiorca zarabia na każdej nadanej przesyłce i usługach dodatkowych (druk, pieczątki),
+• pakiet startowy SMART: ${fmtZl(c.o.licencja)} jednorazowo – licencja i marka, szkolenie (${c.o.szkolenie}), helpdesk i opiekun, strona punktu, wizytówka Google, materiały marketingowe i paczka startowa,
+• opłata miesięczna 0 zł w miesiącu, w którym punkt wyśle ponad ${c.o.progRabatu} paczek (w pozostałych ${fmtZl(c.o.oplataMies)}),
+• kto nie ma wyposażenia, dobiera sprzęt w wariancie FLEX z rabatem do ${c.o.flexRabat || 15}%.`;
+const kalk = c => c.o.linkKalkulator ? `\n\nKoszt startu można policzyć w kalkulatorze: ${c.o.linkKalkulator}` : '';
 
 const TEMPLATES = {
   email_pierwszy: { grp: 'Pierwszy kontakt', n: 'Pierwszy kontakt po zgłoszeniu', kind: 'E-mail', f: c => ({
-    subject: `Franczyza Ship Center${c.maMiasto ? ' – ' + c.miasto : ''}: kolejne kroki`,
+    subject: `Franczyza ShipCenter${c.maMiasto ? ' – ' + c.miasto : ''}: kolejne kroki`,
     body: `${powitanie(c)}
 
-dziękuję za zainteresowanie otwarciem punktu Ship Center${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}. Nazywam się ${c.opiekun} i odpowiadam za rozwój sieci${c.region ? ' w ' + c.region : ''}.
+dziękuję za zainteresowanie otwarciem punktu ShipCenter${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}. Nazywam się ${c.opiekun} i odpowiadam za rozwój sieci${c.region ? ' w ' + c.region : ''}.
 
 Najważniejsze informacje w skrócie:
-${offerBullets(c)}
+${offerBullets(c)}${kalk(c)}
 
 Proponuję krótką rozmowę telefoniczną (ok. 15 minut): opowiem o modelu współpracy, odpowiem na pytania i sprawdzimy, czy wybrana lokalizacja ma potencjał. ${c.g('Kiedy będzie Panu wygodnie porozmawiać?', 'Kiedy będzie Pani wygodnie porozmawiać?', 'Kiedy będzie Państwu wygodnie porozmawiać?', 'Kiedy będzie Ci wygodnie porozmawiać?')} Termin można też wybrać tutaj: ${c.linkKalendarz}${podpis(c)}` }) },
 
-  sms_pierwszy: { grp: 'Pierwszy kontakt', n: 'Pierwszy kontakt (SMS)', kind: 'SMS', f: c => ({
-    body: `${c.g('Dzień dobry', 'Dzień dobry', 'Dzień dobry', 'Cześć ' + c.imie)}, tu ${c.opiekunImie} z Ship Center. Dziękuję za zgłoszenie w sprawie franczyzy${c.maMiasto ? ' (' + c.miasto + ')' : ''}. ${c.g('Kiedy mogę zadzwonić', 'Kiedy mogę zadzwonić', 'Kiedy mogę zadzwonić', 'Kiedy mogę zadzwonić')} na 15 min rozmowy? Mój numer: ${c.opiekunTel}` }) },
+  sms_po_rozmowie: { grp: 'Pierwszy kontakt', n: 'Podziękowanie po rozmowie (SMS)', kind: 'SMS', f: c => ({ body: smsThanksText(c.l.id ? c.l : { model: 'franczyza' }) }) },
+
+  sms_pierwszy: { grp: 'Pierwszy kontakt', n: 'Nie odebrał – prośba o kontakt (SMS)', kind: 'SMS', f: c => ({
+    body: `${c.g('Dzień dobry', 'Dzień dobry', 'Dzień dobry', 'Cześć ' + c.imie)}, tu ${c.opiekunImie} z ShipCenter. Dziękuję za zgłoszenie w sprawie franczyzy${c.maMiasto ? ' (' + c.miasto + ')' : ''}. ${c.g('Kiedy mogę zadzwonić', 'Kiedy mogę zadzwonić', 'Kiedy mogę zadzwonić', 'Kiedy mogę zadzwonić')} na 15 min rozmowy? Mój numer: ${c.opiekunTel}` }) },
 
   email_followup: { grp: 'Brak odpowiedzi', n: 'Przypomnienie po braku odpowiedzi', kind: 'E-mail', f: c => ({
-    subject: 'Punkt Ship Center – czy temat jest nadal aktualny?',
+    subject: 'Punkt ShipCenter – czy temat jest nadal aktualny?',
     body: `${powitanie(c)}
 
-próbowaliśmy się skontaktować w sprawie franczyzy Ship Center${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}, ale nie udało nam się porozmawiać.
+próbowaliśmy się skontaktować w sprawie franczyzy ShipCenter${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}, ale nie udało nam się porozmawiać.
 
 ${c.g('Czy temat jest dla Pana nadal aktualny?', 'Czy temat jest dla Pani nadal aktualny?', 'Czy temat jest dla Państwa nadal aktualny?', 'Czy temat jest dla Ciebie nadal aktualny?')} Jeśli tak, wystarczy odpisać jednym zdaniem z dogodną porą na telefon albo wybrać termin w kalendarzu: ${c.linkKalendarz}
 
@@ -69,15 +72,15 @@ Na rozmowie mogę też od razu wstępnie ocenić lokalizację: liczbę mieszkań
     subject: 'Zamykam temat franczyzy – chyba że…',
     body: `${powitanie(c)}
 
-nie chcę zasypywać wiadomościami, więc to ostatnia z mojej strony. Zakładam, że franczyza Ship Center nie jest teraz priorytetem – to zupełnie zrozumiałe.
+nie chcę zasypywać wiadomościami, więc to ostatnia z mojej strony. Zakładam, że franczyza ShipCenter nie jest teraz priorytetem – to zupełnie zrozumiałe.
 
 ${c.g('Gdyby Pan wrócił do tematu', 'Gdyby Pani wróciła do tematu', 'Gdyby Państwo wrócili do tematu', 'Gdybyś wrócił(a) do tematu')}, jestem pod numerem ${c.opiekunTel}. Warto wtedy sprawdzić, czy lokalizacja${c.maMiasto ? ' w miejscowości ' + c.miasto : ''} jest nadal wolna – w sieci obowiązuje ochrona ${c.o.ochrona} km, więc o dostępności decyduje kolejność zgłoszeń.${podpis(c)}` }) },
 
   email_zaproszenie: { grp: 'Spotkanie', n: 'Zaproszenie na prezentację online', kind: 'E-mail', f: c => ({
-    subject: 'Zaproszenie: prezentacja franczyzy Ship Center (45 min)',
+    subject: 'Zaproszenie: prezentacja franczyzy ShipCenter (45 min)',
     body: `${powitanie(c)}
 
-dziękuję za rozmowę. Tak jak ustaliliśmy, zapraszam na prezentację modelu biznesowego Ship Center.
+dziękuję za rozmowę. Tak jak ustaliliśmy, zapraszam na prezentację modelu biznesowego ShipCenter.
 
 Podczas spotkania (ok. 45 minut) pokażę:
 1. jak wygląda dzień pracy w punkcie i obsługa klienta na platformie ${c.o.www},
@@ -93,7 +96,7 @@ Link / miejsce: ${c.miejsce}
 ${c.g('Jeśli termin Panu nie odpowiada', 'Jeśli termin Pani nie odpowiada', 'Jeśli termin Państwu nie odpowiada', 'Jeśli termin Ci nie odpowiada')}, proszę wybrać inny: ${c.linkKalendarz}${podpis(c)}` }) },
 
   email_potwierdzenie: { grp: 'Spotkanie', n: 'Potwierdzenie spotkania i agenda', kind: 'E-mail', f: c => ({
-    subject: `Potwierdzenie: ${c.spotkanie} – Ship Center`,
+    subject: `Potwierdzenie: ${c.spotkanie} – ShipCenter`,
     body: `${powitanie(c)}
 
 potwierdzam nasze spotkanie: ${c.spotkanie} (${c.formaSpotkania}).
@@ -108,10 +111,10 @@ Agenda:
 ${c.g('Warto, żeby Pan przygotował', 'Warto, żeby Pani przygotowała', 'Warto, żeby Państwo przygotowali', 'Warto, żebyś przygotował(a)')} adres lub okolicę rozważanego lokalu – dzięki temu od razu porozmawiamy o konkretach.${podpis(c)}` }) },
 
   sms_przypomnienie: { grp: 'Spotkanie', n: 'Przypomnienie o spotkaniu (SMS)', kind: 'SMS', f: c => ({
-    body: `${c.g('Dzień dobry', 'Dzień dobry', 'Dzień dobry', 'Cześć ' + c.imie)}, przypominam o spotkaniu Ship Center: ${c.spotkanie}. ${c.l.meetingType === 'online' || !c.l.meetingType ? 'Link: ' + c.miejsce : 'Miejsce: ' + c.miejsce}. Do zobaczenia! ${c.opiekunImie}, ${c.opiekunTel}` }) },
+    body: `${c.g('Dzień dobry', 'Dzień dobry', 'Dzień dobry', 'Cześć ' + c.imie)}, przypominam o spotkaniu ShipCenter: ${c.spotkanie}. ${c.l.meetingType === 'online' || !c.l.meetingType ? 'Link: ' + c.miejsce : 'Miejsce: ' + c.miejsce}. Do zobaczenia! ${c.opiekunImie}, ${c.opiekunTel}` }) },
 
   email_podsumowanie: { grp: 'Po spotkaniu', n: 'Podsumowanie i kolejne kroki', kind: 'E-mail', f: c => ({
-    subject: 'Podsumowanie spotkania i kolejne kroki – Ship Center',
+    subject: 'Podsumowanie spotkania i kolejne kroki – ShipCenter',
     body: `${powitanie(c)}
 
 dziękuję za dzisiejsze spotkanie. Krótkie podsumowanie:
@@ -122,7 +125,7 @@ Ustalenia:
 
 Kolejne kroki:
 1. ${c.g('Pan przesyła', 'Pani przesyła', 'Państwo przesyłają', 'Przesyłasz')} dane lokalu (adres, metraż, czynsz, zdjęcia witryny) – na tej podstawie przygotujemy analizę lokalizacji.
-2. Ship Center przygotowuje raport: szacowana liczba paczek, konkurencja w promieniu 3 km, przepustowość punktu i wstępny rachunek.
+2. ShipCenter przygotowuje raport: szacowana liczba paczek, konkurencja w promieniu 3 km, przepustowość punktu i wstępny rachunek.
 3. Omawiamy raport i warunki umowy na krótkiej rozmowie.
 
 W załączeniu przesyłam materiały z prezentacji. W razie pytań jestem do dyspozycji.${podpis(c)}` }) },
@@ -152,7 +155,7 @@ Konkurencję w okolicy (paczkomaty, punkty odbioru, placówki pocztowe) sprawdzi
 • konkurencja w promieniu 3 km: ${r.compCount} punktów (indeks presji ${fmt(r.ci, 2)}),
 • wstępny wynik miesięczny w scenariuszu bazowym: ${zl(r.fin.base.profit)}.` : `• ${PH('ocena lokalizacji – utwórz analizę w zakładce Lokalizacje')}`;
     return {
-      subject: `Raport lokalizacji${c.maMiasto ? ' – ' + c.miasto : ''} | Ship Center`,
+      subject: `Raport lokalizacji${c.maMiasto ? ' – ' + c.miasto : ''} | ShipCenter`,
       body: `${powitanie(c)}
 
 w załączniku przesyłam raport analizy lokalizacji${c.locDoc && c.locDoc.address ? ': ' + c.locDoc.address : c.maMiasto ? ' w miejscowości ' + c.miasto : ''}.
@@ -166,18 +169,19 @@ Proponuję 30-minutową rozmowę, na której omówimy raport i warunki umowy. ${
   } },
 
   email_oferta: { grp: 'Domknięcie', n: 'Oferta i zaproszenie do podpisania umowy', kind: 'E-mail', f: c => ({
-    subject: 'Oferta franczyzowa Ship Center i projekt umowy',
+    subject: 'Oferta franczyzowa ShipCenter i projekt umowy',
     body: `${powitanie(c)}
 
-dziękuję za dotychczasowe rozmowy. Zgodnie z ustaleniami przesyłam ofertę otwarcia punktu Ship Center${c.maMiasto ? ' w miejscowości ' + c.miasto : ''} oraz projekt umowy franczyzowej wraz z OWU.
+dziękuję za dotychczasowe rozmowy. Zgodnie z ustaleniami przesyłam ofertę otwarcia punktu ShipCenter${c.maMiasto ? ' w miejscowości ' + c.miasto : ''} oraz projekt umowy franczyzowej wraz z OWU.
 
 Najważniejsze warunki:
-• jednorazowa opłata licencyjna: ${fmtZl(c.o.licencja)} + VAT (płatna w ciągu 7 dni od podpisania umowy),
-• opłata miesięczna: ${fmtZl(c.o.oplataMies)} + VAT; w miesiącu po wysłaniu co najmniej ${c.o.progRabatu} paczek – rabat 100%,
+• pakiet startowy SMART: ${fmtZl(c.o.licencja)} + VAT (płatny w ciągu 7 dni od podpisania umowy),
+• opłata miesięczna: 0 zł w miesiącu z ponad ${c.o.progRabatu} paczkami, w pozostałych ${fmtZl(c.o.oplataMies)} + VAT,
 • koszt obsługi płatności online: ${fmt(c.o.prowizjaP24, 1)}% wartości transakcji,
 • umowa na czas nieokreślony, okres wypowiedzenia 2 miesiące,
 • ochrona terytorialna: inny punkt sieci nie powstanie bliżej niż ${c.o.ochrona} km,
 • szkolenie wstępne: ${c.o.szkolenie}, uruchomienie punktu ${c.o.uruchomienie},
+• sprzęt: wariant SMART (własne wyposażenie zgodne ze standardem) lub FLEX (dobór sprzętu z rabatem do ${c.o.flexRabat || 15}%),
 • standard działania: ${c.o.godziny}, min. ${c.o.minPaczek} paczek miesięcznie przez platformę.
 
 Proponowane kolejne kroki:
@@ -188,10 +192,10 @@ Proponowane kolejne kroki:
 ${c.g('Czy możemy umówić się na rozmowę o umowie w tym tygodniu?', 'Czy możemy umówić się na rozmowę o umowie w tym tygodniu?', 'Czy możemy umówić się na rozmowę o umowie w tym tygodniu?', 'Czy możemy umówić się na rozmowę o umowie w tym tygodniu?')}${podpis(c)}` }) },
 
   email_powitanie: { grp: 'Domknięcie', n: 'Powitanie w sieci po podpisaniu umowy', kind: 'E-mail', f: c => ({
-    subject: 'Witamy w sieci Ship Center – plan uruchomienia punktu',
+    subject: 'Witamy w sieci ShipCenter – plan uruchomienia punktu',
     body: `${powitanie(c)}
 
-witamy w sieci Ship Center! Cieszymy się, że${c.maMiasto ? ' w miejscowości ' + c.miasto : ''} powstanie nowy punkt.
+witamy w sieci ShipCenter! Cieszymy się, że${c.maMiasto ? ' w miejscowości ' + c.miasto : ''} powstanie nowy punkt.
 
 Plan na najbliższe tygodnie:
 1. Szkolenie wstępne: ${c.o.szkolenie} – termin: ${PH('data szkolenia')} (w ciągu 30 dni od podpisania umowy).
@@ -203,10 +207,10 @@ Plan na najbliższe tygodnie:
 ${c.g('Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:', 'Pytania kieruj śmiało do mnie:')} ${c.opiekunTel}, ${c.opiekunEmail}.${podpis(c)}` }) },
 
   email_webinar: { grp: 'Marketing', n: 'Zaproszenie na webinar', kind: 'E-mail', f: c => ({
-    subject: 'Webinar: jak otworzyć punkt nadawczy Ship Center',
+    subject: 'Webinar: jak otworzyć punkt nadawczy ShipCenter',
     body: `${powitanie(c)}
 
-zapraszam na bezpłatny webinar „Jak otworzyć punkt Ship Center – koszty, przychody, lokalizacja”.
+zapraszam na bezpłatny webinar „Jak otworzyć punkt ShipCenter – koszty, przychody, lokalizacja”.
 
 Termin: ${PH('data i godzina webinaru')}
 Zapisy: ${c.linkWebinar}
@@ -220,37 +224,37 @@ W programie:
 Webinar potrwa ok. 45 minut. Nagranie wyślemy wszystkim zapisanym.${podpis(c)}` }) },
 
   email_reaktywacja: { grp: 'Marketing', n: 'Reaktywacja wstrzymanego leada', kind: 'E-mail', f: c => ({
-    subject: 'Wracam z tematem franczyzy Ship Center',
+    subject: 'Wracam z tematem franczyzy ShipCenter',
     body: `${powitanie(c)}
 
-jakiś czas temu ${c.g('rozmawialiśmy o otwarciu punktu Ship Center', 'rozmawialiśmy o otwarciu punktu Ship Center', 'rozmawialiśmy o otwarciu punktu Ship Center', 'rozmawialiśmy o otwarciu punktu Ship Center')}${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}. Odzywam się, bo ${PH('powód: nowy webinar / wolna lokalizacja / zmiana w ofercie')}.
+jakiś czas temu ${c.g('rozmawialiśmy o otwarciu punktu ShipCenter', 'rozmawialiśmy o otwarciu punktu ShipCenter', 'rozmawialiśmy o otwarciu punktu ShipCenter', 'rozmawialiśmy o otwarciu punktu ShipCenter')}${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}. Odzywam się, bo ${PH('powód: nowy webinar / wolna lokalizacja / zmiana w ofercie')}.
 
 Lokalizacja${c.maMiasto ? ' ' + c.miasto : ''} jest nadal dostępna, ale w sieci obowiązuje ochrona ${c.o.ochrona} km i decyduje kolejność. ${c.g('Czy chciałby Pan wrócić do rozmowy?', 'Czy chciałaby Pani wrócić do rozmowy?', 'Czy chcieliby Państwo wrócić do rozmowy?', 'Czy chcesz wrócić do rozmowy?')} Wystarczy krótka odpowiedź z dogodnym terminem.${podpis(c)}` }) },
 
   linkedin_outbound: { grp: 'Marketing', n: 'Wiadomość LinkedIn (outbound)', kind: 'LinkedIn', f: c => ({
-    body: `${c.g('Dzień dobry,', 'Dzień dobry,', 'Dzień dobry,', `Cześć ${c.imie},`)} rozwijam sieć punktów nadawczych Ship Center${c.region ? ' w ' + c.region : ''}. Szukamy przedsiębiorców, którzy chcą prowadzić własny punkt obsługujący nadania paczek u wielu przewoźników – z platformą, szkoleniem i ochroną terytorialną ${c.o.ochrona} km. ${c.g('Czy byłby Pan otwarty na 15-minutową rozmowę?', 'Czy byłaby Pani otwarta na 15-minutową rozmowę?', 'Czy byliby Państwo otwarci na 15-minutową rozmowę?', 'Masz 15 minut na rozmowę w tym tygodniu?')}` }) },
+    body: `${c.g('Dzień dobry,', 'Dzień dobry,', 'Dzień dobry,', `Cześć ${c.imie},`)} rozwijam sieć punktów nadawczych ShipCenter${c.region ? ' w ' + c.region : ''}. Szukamy przedsiębiorców, którzy chcą prowadzić własny punkt obsługujący nadania paczek u wielu przewoźników – z platformą, szkoleniem i ochroną terytorialną ${c.o.ochrona} km. ${c.g('Czy byłby Pan otwarty na 15-minutową rozmowę?', 'Czy byłaby Pani otwarta na 15-minutową rozmowę?', 'Czy byliby Państwo otwarci na 15-minutową rozmowę?', 'Masz 15 minut na rozmowę w tym tygodniu?')}` }) },
 
-  email_partner: { grp: 'Marketing', n: 'Propozycja dla firmy – model Partner', kind: 'E-mail', f: c => ({
-    subject: 'Dodatkowy przychód z nadawania paczek – Ship Center Point',
+  email_partner: { grp: 'Pierwszy kontakt', n: 'Ship Point – odpowiedź na zapytanie', kind: 'E-mail', f: c => ({
+    subject: 'Ship Point – dodatkowy przychód z nadawania paczek',
     body: `${powitanie(c)}
 
-${c.g('prowadzi Pan', 'prowadzi Pani', 'prowadzą Państwo', 'prowadzisz')} działalność z lokalem dostępnym dla klientów – dlatego chcę zaproponować współpracę w modelu Ship Center Point (Partner).
+dziękuję za zapytanie o Ship Point. To model dla firm, które ${c.g('tak jak Pan', 'tak jak Pani', 'tak jak Państwo', 'tak jak Ty')} mają już lokal dostępny dla klientów (sklep, punkt usługowy) i chcą dodatkowo nadawać paczki.
 
 Na czym to polega:
 • w obecnym lokalu można przyjmować nadania paczek u wielu przewoźników przez platformę ${c.o.www},
 • opłata wstępna to ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
-• Ship Center zapewnia dostęp do przewoźników, konto na platformie, naklejkę i materiały,
+• ShipCenter zapewnia dostęp do przewoźników, konto na platformie, naklejkę i materiały,
 • dodatkowo możliwe jest prowadzenie PaczkoPunktu InPost.
 
 To sposób na dodatkowy przychód i nowych klientów w sklepie bez inwestycji w nowy lokal. ${c.g('Czy możemy porozmawiać 10 minut?', 'Czy możemy porozmawiać 10 minut?', 'Czy możemy porozmawiać 10 minut?', 'Masz 10 minut na rozmowę?')}${podpis(c)}` }) },
 
   email_polecenie: { grp: 'Marketing', n: 'Prośba o polecenie (do franczyzobiorców)', kind: 'E-mail', f: c => ({
-    subject: 'Znasz kogoś, kto chce otworzyć punkt Ship Center?',
+    subject: 'Znasz kogoś, kto chce otworzyć punkt ShipCenter?',
     body: `Dzień dobry,
 
-rozwijamy sieć Ship Center i szukamy kolejnych franczyzobiorców. Najlepsi kandydaci często przychodzą z polecenia – od osób, które znają realia prowadzenia punktu.
+rozwijamy sieć ShipCenter i szukamy kolejnych franczyzobiorców. Najlepsi kandydaci często przychodzą z polecenia – od osób, które znają realia prowadzenia punktu.
 
-Jeśli znasz kogoś, kto myśli o własnym biznesie (najlepiej w mieście bez punktu Ship Center lub co najmniej ${c.o.ochrona} km od istniejących punktów), prześlij mi proszę jego kontakt albo przekaż mój numer: ${c.opiekunTel}.
+Jeśli znasz kogoś, kto myśli o własnym biznesie (najlepiej w mieście bez punktu ShipCenter lub co najmniej ${c.o.ochrona} km od istniejących punktów), prześlij mi proszę jego kontakt albo przekaż mój numer: ${c.opiekunTel}.
 
 Za polecenie zakończone podpisaniem umowy przewidujemy premię: ${PH('wysokość premii')}.
 
@@ -261,7 +265,7 @@ Dziękuję!${podpis(c)}` }) },
 Kandydat: ${c.pelne} · ${c.maMiasto ? c.miasto : 'miasto do ustalenia'} · źródło: ${SOURCE_MAP[c.l.source]?.n || '—'}
 
 1. OTWARCIE (30 s)
-„Dzień dobry, ${c.opiekunImie} z Ship Center. ${c.g('Zostawił Pan', 'Zostawiła Pani', 'Zostawili Państwo', 'Zostawiłeś/aś')} zgłoszenie w sprawie franczyzy – czy to dobry moment na 15 minut rozmowy?”
+„Dzień dobry, ${c.opiekunImie} z ShipCenter. ${c.g('Zostawił Pan', 'Zostawiła Pani', 'Zostawili Państwo', 'Zostawiłeś/aś')} zgłoszenie w sprawie franczyzy – czy to dobry moment na 15 minut rozmowy?”
 → Nie: „Kiedy mogę oddzwonić?” – zapisz termin jako następne zadanie.
 
 2. CEL ROZMOWY (20 s)
@@ -277,7 +281,7 @@ Kandydat: ${c.pelne} · ${c.maMiasto ? c.miasto : 'miasto do ustalenia'} · źr�
 ☐ Model: punkt stacjonarny / bez punktu (${fmtZl(c.o.licencjaBezPunktu)}) / Partner w istniejącym lokalu.
 
 4. PREZENTACJA W 60 SEKUND
-„Ship Center to sieć punktów nadawczych. W punkcie klient nadaje paczkę lub paletę u jednego z wielu przewoźników – ${c.o.przewoznicy}. Franczyzobiorca zarabia na każdej przesyłce, obsługuje osoby prywatne i lokalne firmy. My dajemy platformę, cenniki, szkolenie, marketing i ochronę ${c.o.ochrona} km. Start w ciągu miesiąca od umowy.”
+„ShipCenter to sieć punktów nadawczych. W punkcie klient nadaje paczkę lub paletę u jednego z wielu przewoźników – ${c.o.przewoznicy}. Franczyzobiorca zarabia na każdej przesyłce, obsługuje osoby prywatne i lokalne firmy. My dajemy platformę, cenniki, szkolenie, marketing i ochronę ${c.o.ochrona} km. Start w ciągu miesiąca od umowy.”
 
 5. KWALIFIKACJA – DECYZJA
 Zakwalifikowany, gdy: realny budżet na start, konkretna lokalizacja (lub gotowość szukania), osoba do prowadzenia punktu, start w ciągu 3 miesięcy.
@@ -324,12 +328,12 @@ Kandydat: ${c.pelne} · ${c.maMiasto ? c.miasto : '—'} · kapitał: ${c.l.capi
 
 „TO ZA DROGO”
 Dopytaj: „W porównaniu z czym? Która część kosztów budzi wątpliwość?”
-Odpowiedź: licencja ${fmtZl(c.o.licencja)} jest jednorazowa, opłata miesięczna ${fmtZl(c.o.oplataMies)} spada do 0 zł po miesiącu z min. ${c.o.progRabatu} paczkami. Alternatywy: franczyza bez punktu (${fmtZl(c.o.licencjaBezPunktu)}) albo model Partner w istniejącym lokalu (${fmtZl(c.o.partnerWstepna)} + ${fmtZl(c.o.partnerMies)}/mies.).
+Odpowiedź: pakiet SMART ${fmtZl(c.o.licencja)} płaci się raz; opłata miesięczna wynosi 0 zł w miesiącu z ponad ${c.o.progRabatu} paczkami (inaczej ${fmtZl(c.o.oplataMies)}). Sprzęt można mieć własny (SMART) albo dobrać z rabatem do ${c.o.flexRabat || 15}% (FLEX). Alternatywy: franczyza bez punktu (${fmtZl(c.o.licencjaBezPunktu)}) albo model Partner w istniejącym lokalu (${fmtZl(c.o.partnerWstepna)} + ${fmtZl(c.o.partnerMies)}/mies.).
 Pytanie: „Czy jeśli analiza pokaże realny popyt, koszt startu przestanie być barierą?”
 
 „PACZKOMATY I ŻABKI ZABIORĄ MI KLIENTÓW”
 Dopytaj: „Jakie punkty są w okolicy?”
-Odpowiedź: paczkomat obsługuje głównie jednego przewoźnika i proste nadania. Punkt Ship Center obsługuje wielu przewoźników, palety, przesyłki zagraniczne, pakowanie i stałą współpracę z firmami. Konkurencję liczymy w raporcie lokalizacji.
+Odpowiedź: paczkomat obsługuje głównie jednego przewoźnika i proste nadania. Punkt ShipCenter obsługuje wielu przewoźników, palety, przesyłki zagraniczne, pakowanie i stałą współpracę z firmami. Konkurencję liczymy w raporcie lokalizacji.
 Pytanie: „Sprawdzimy to na liczbach w analizie?”
 
 „NIE MAM DOŚWIADCZENIA”
@@ -378,7 +382,7 @@ Kandydat: ${c.pelne}${c.loc ? ` · ocena lokalizacji ${c.loc.score}/100, popyt o
 1) projekt umowy i OWU mailem dziś, 2) podpisanie: ${PH('data')}, 3) płatność licencji w 7 dni, 4) szkolenie: ${PH('termin')}, 5) uruchomienie ${c.o.uruchomienie}.` }) },
 
   skrypt_voicemail: { grp: 'Skrypty rozmów', n: 'Nagranie na pocztę głosową', kind: 'Skrypt', f: c => ({
-    body: `„Dzień dobry, ${c.opiekunImie} z Ship Center, dzwonię w sprawie zgłoszenia dotyczącego franczyzy${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}. Chcę umówić krótką, 15-minutową rozmowę. Mój numer to ${c.opiekunTel} – powtarzam: ${c.opiekunTel}. Wyślę też SMS. Dziękuję i do usłyszenia.”
+    body: `„Dzień dobry, ${c.opiekunImie} z ShipCenter, dzwonię w sprawie zgłoszenia dotyczącego franczyzy${c.maMiasto ? ' w miejscowości ' + c.miasto : ''}. Chcę umówić krótką, 15-minutową rozmowę. Mój numer to ${c.opiekunTel} – powtarzam: ${c.opiekunTel}. Wyślę też SMS. Dziękuję i do usłyszenia.”
 
 Po nagraniu: wyślij SMS (szablon „Pierwszy kontakt (SMS)”), dodaj wpis w historii „Nie odebrał”, ustaw zadanie „Ponowna próba kontaktu” na jutro.` }) },
 
@@ -420,7 +424,7 @@ function viewMessages() {
   const groups = [...new Set(Object.values(TEMPLATES).map(x => x.grp))];
   const custom = S.ui.aiText;
   const head = `<div class="viewhead"><div class="grow"><span class="eyebrow">Komunikacja z kandydatami</span><h1>Wiadomości i skrypty</h1>
-    <p>Gotowe e-maile, SMS-y i skrypty rozmów po polsku, wypełnione danymi leada i parametrami oferty Ship Center. Pola <span class="pill warn">[uzupełnij]</span> wymagają ręcznej edycji.</p></div></div>`;
+    <p>Gotowe e-maile, SMS-y i skrypty rozmów po polsku, wypełnione danymi leada i parametrami oferty ShipCenter. Pola <span class="pill warn">[uzupełnij]</span> wymagają ręcznej edycji.</p></div></div>`;
   const left = `<div class="card" style="padding:8px"><div class="tplist">${groups.map(gname => `<div class="grp">${esc(gname)}</div>${Object.entries(TEMPLATES).filter(([k, x]) => x.grp === gname).map(([k, x]) => `<button class="${k === m.tpl ? 'on' : ''}" data-act="tpl" data-k="${k}"><span class="pill outline tiny">${esc(x.kind)}</span>${esc(x.n)}</button>`).join('')}`).join('')}</div></div>`;
   const controls = `<div class="formgrid">
       <label class="field span2"><span>Kandydat</span><select id="msg-lead" data-msg="leadId">${opt('', '— bez leada (szablon ogólny) —', m.leadId)}${leads.map(x => opt(x.id, `${x.name}${x.city ? ' – ' + x.city : ''} (${STAGES[stageIdx(x)].short})`, m.leadId)).join('')}</select></label>
@@ -448,7 +452,7 @@ async function aiRewrite(btn) {
   const out = S.ui.msgOut || {};
   const l = S.msg.leadId ? D().leads[S.msg.leadId] : null;
   const o = offer();
-  const prompt = `Jesteś doświadczonym specjalistą od rekrutacji franczyzobiorców sieci Ship Center (punkty nadawcze paczek, wielu przewoźników). Pisz wyłącznie po polsku, poprawną polszczyzną, w formie zwrotu: ${formLabel(S.msg.form)}.
+  const prompt = `Jesteś doświadczonym specjalistą od rekrutacji franczyzobiorców sieci ShipCenter (punkty nadawcze paczek, wielu przewoźników). Pisz wyłącznie po polsku, poprawną polszczyzną, w formie zwrotu: ${formLabel(S.msg.form)}.
 Zasady: nie wymyślaj nowych liczb ani obietnic zarobków (franczyzodawca nie gwarantuje wyników); używaj tylko faktów z danych poniżej; zostaw pola w nawiasach [uzupełnij: …], jeśli brakuje danych; zwróć sam tekst wiadomości (jeśli to e-mail – pierwsza linia „Temat: …”), bez komentarzy.
 
 Warunki oferty: licencja ${o.licencja} zł netto, opłata miesięczna ${o.oplataMies} zł netto (0 zł w miesiącu po min. ${o.progRabatu} paczkach), ${o.prowizjaP24}% od płatności online, szkolenie ${o.szkolenie}, uruchomienie ${o.uruchomienie}, ochrona ${o.ochrona} km, godziny ${o.godziny}, min. ${o.minPaczek} paczek/mies., przewoźnicy: ${o.przewoznicy}. Franczyza bez punktu: ${o.licencjaBezPunktu} zł. Partner: ${o.partnerWstepna} zł + ${o.partnerMies} zł/mies.

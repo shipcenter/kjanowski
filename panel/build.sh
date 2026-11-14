@@ -4,19 +4,18 @@ set -euo pipefail
 cd "$(dirname "$0")"
 OUT=dist/index.html
 mkdir -p dist
-BOX=$(grep -o "box: '[^']*'" src/core.js | sed "s/^box: '//; s/'$//")
 {
   echo '<title>Panel franczyzy Ship Center</title>'
   echo '<meta name="claude:viewport-fit-sides" content="cover">'
   echo '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-  echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">'
+  echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">'
   echo '<style>'
   cat src/styles.css
   echo '</style>'
-  sed "s|__BOX__|${BOX}|" src/shell.html
+  cat src/shell.html
   echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>'
   echo '<script>'
-  for f in core ui dashboard leads plan messages location data main; do cat "src/$f.js"; echo; done
+  for f in core ui dashboard leads contacts messages location data main; do cat "src/$f.js"; echo; done
   echo '</script>'
 } > "$OUT"
 echo "Zbudowano $OUT ($(wc -c < "$OUT") B)"

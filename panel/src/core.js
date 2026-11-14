@@ -44,10 +44,13 @@ const SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7', '--s8'];
 
 const REGIONS = ['dolnośląskie', 'kujawsko-pomorskie', 'lubelskie', 'lubuskie', 'łódzkie', 'małopolskie', 'mazowieckie', 'opolskie', 'podkarpackie', 'podlaskie', 'pomorskie', 'śląskie', 'świętokrzyskie', 'warmińsko-mazurskie', 'wielkopolskie', 'zachodniopomorskie'];
 const MODELS = [
-  { k: 'punkt', n: 'Punkt stacjonarny (franczyza)' },
-  { k: 'bez_punktu', n: 'Franczyza bez punktu' },
-  { k: 'partner', n: 'Partner – Ship Center Point' }
+  { k: 'franczyza', n: 'Franczyza' },
+  { k: 'shippoint', n: 'Ship Point' }
 ];
+const MODEL_ALIAS = { punkt: 'franczyza', bez_punktu: 'franczyza', partner: 'shippoint' };
+const modelOf = l => MODEL_ALIAS[l.model] || l.model || 'franczyza';
+const modelName = k => (MODELS.find(m => m.k === (MODEL_ALIAS[k] || k)) || { n: '—' }).n;
+const PACKAGES = { smart: 'SMART – ma wyposażenie', flex: 'FLEX – dobiera sprzęt' };
 const CONTACT_TYPES = [
   { k: 'tel', n: 'Telefon' }, { k: 'email', n: 'E-mail' }, { k: 'sms', n: 'SMS' },
   { k: 'spotkanie', n: 'Spotkanie' }, { k: 'webinar', n: 'Webinar' }, { k: 'notatka', n: 'Notatka' },
@@ -62,14 +65,15 @@ const DEFAULT_CONV = [0.65, 0.40, 0.45, 0.60, 0.55, 0.45];
 const DEFAULT_MIX = { meta: 35, google: 20, portale: 15, linkedin: 5, polecenia: 8, targi: 5, www: 4, webinar: 4, outbound: 4, inne: 0 };
 
 const DEFAULT_OFFER = {
-  licencja: 12000, oplataMies: 199, prowizjaP24: 1.5, progRabatu: 600,
+  licencja: 7999, oplataMies: 199, prowizjaP24: 1.5, progRabatu: 600, flexRabat: 15,
   licencjaBezPunktu: 5000, partnerWstepna: 299, partnerMies: 19.99,
-  szkolenie: '3–4 dni w siedzibie Ship Center w Katowicach',
+  szkolenie: '3 dni w centrali ShipCenter w Katowicach',
   uruchomienie: 'do 1 miesiąca od podpisania umowy',
   ochrona: 3, godziny: '5 dni w tygodniu, w godz. 7:00–19:00 (min. 7 godz. dziennie)',
   minPaczek: 100, przewoznicy: 'InPost, DPD, DHL, UPS, FedEx, GLS, Poczta Polska (Pocztex), ORLEN Paczka, Ambro Express',
-  email: 'franczyza@shipcenter.pl', telefon: '+48 32 785 05 55', www: 'shipcenter.pl',
-  adres: 'ul. Gliwicka 51, 40-853 Katowice', linkSpotkanie: '', linkWebinar: ''
+  email: 'franczyza@shipcenter.pl', telefon: '+48 798 344 130', www: 'shipcenter.pl',
+  adres: 'ul. Gliwicka 51, 40-853 Katowice', linkSpotkanie: '', linkWebinar: '',
+  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', smsPodpis: 'ShipCenter'
 };
 
 /* ---------- utils ---------- */
@@ -80,8 +84,8 @@ const clone = o => JSON.parse(JSON.stringify(o ?? null));
 const uid = (p = '') => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const sum = (arr, f = x => x) => arr.reduce((a, x) => a + (+f(x) || 0), 0);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const nf0 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 });
-const nf1 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 1, minimumFractionDigits: 0 });
+const nf0 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0, useGrouping: 'always' });
+const nf1 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 1, minimumFractionDigits: 0, useGrouping: 'always' });
 const nf2 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 const fmt = (v, d = 0) => (v == null || !isFinite(v)) ? '—' : (d === 0 ? nf0 : d === 1 ? nf1 : nf2).format(v);
 const zl = (v, d = 0) => (v == null || !isFinite(v)) ? '—' : fmt(v, d) + ' zł';
@@ -98,6 +102,7 @@ const fdateShort = s => { const d = parseD(s); return d ? d.toLocaleDateString('
 const fdt = s => { const d = parseD(s); if (!d) return '—'; const t = String(s).includes('T') ? ' ' + d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : ''; return d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) + t; };
 const mondayOf = d => { const x = new Date(d); const wd = (x.getDay() + 6) % 7; x.setDate(x.getDate() - wd); x.setHours(0, 0, 0, 0); return x; };
 const inRange = (s, a, b) => { const d = parseD(s); return !!d && d >= a && d < b; };
+const firstName = n => String(n || '').replace(/^Przykład:\s*/, '').trim().split(/\s+/)[0] || '';
 const leadCode = id => 'SC-' + String(id).replace(/[^a-z0-9]/gi, '').slice(-5).toUpperCase();
 const erf = x => { const s = Math.sign(x); x = Math.abs(x); const t = 1 / (1 + 0.3275911 * x); const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return s * y; };
 const debounceMap = {};
@@ -128,14 +133,14 @@ const ICONS = {
 };
 
 /* ---------- stan ---------- */
-const COLS = ['leads', 'team', 'plans', 'tasks', 'spend', 'locations'];
-const emptyData = () => ({ leads: {}, team: {}, plans: {}, tasks: {}, spend: {}, locations: {}, settings: {} });
+const COLS = ['leads', 'team', 'plans', 'tasks', 'spend', 'locations', 'sms', 'ads'];
+const emptyData = () => ({ leads: {}, team: {}, plans: {}, tasks: {}, spend: {}, locations: {}, sms: {}, ads: {}, settings: {} });
 const store = { live: emptyData(), demo: null };
 const S = {
   db: null, mode: 'loading', demo: false, readonly: false, slow: false,
   confirmed: new Set(), pending: 0, sample: null, downloads: null,
   route: { view: 'centrala', id: null },
-  f: { period: 'plan', source: '', owner: '', region: '', status: '', q: '' },
+  f: { period: '30', source: '', owner: '', region: '', status: '', model: '', q: '' }, userId: null, user: null,
   leadsView: 'tabela', sort: { key: 'createdAt', dir: 'desc' }, selected: new Set(),
   planSel: null, msg: { tpl: 'email_pierwszy', leadId: '', form: 'panstwo' }, weekOffset: 0, ui: {}
 };
@@ -268,6 +273,7 @@ function initCapabilities() {
   }).catch(() => { S.mode = 'local'; scheduleRender(); });
   c.use('downloads').then(x => { S.downloads = x; scheduleRender(); }).catch(() => { });
   c.use('sample').then(x => { S.sample = x; scheduleRender(); }).catch(() => { });
+  c.use('user').then(async u => { S.user = u; if (u) { try { S.userId = await u.id(); } catch (e) { } scheduleRender(); } }).catch(() => { });
 }
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
 
@@ -286,8 +292,9 @@ function newLead(data = {}) {
   const today = todayISO();
   return {
     id: uid('l'), name: '', company: '', phone: '', email: '', city: '', region: '', source: 'meta', ownerId: '',
-    stage: 'nowy', status: 'do_kontaktu', capital: '', model: 'punkt', hasPremises: '', form: 'panstwo',
-    nextTask: 'Pierwszy kontakt telefoniczny', nextTaskDate: today, meetingAt: '', meetingType: '', meetingPlace: '',
+    stage: 'nowy', status: 'do_kontaktu', capital: '', model: 'franczyza', pkg: '', hasPremises: '', form: 'panstwo',
+    nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: today, nextTaskTime: '', firstCallAt: '', presentationAt: '',
+    meetingAt: '', meetingType: '', meetingPlace: '',
     notes: '', lostReason: '', handoffs: [], history: [], stageDates: { nowy: today },
     createdAt: today, createdTs: now, updatedTs: now, ...data
   };
@@ -314,7 +321,7 @@ function setStage(lead, k, opts = {}) {
 function periodRange(period, plan) {
   const now = new Date();
   const end = addDays(parseD(todayISO()), 1);
-  if (period === 'plan') { const s = parseD(plan.startDate) || parseD(todayISO()); return [s, addDays(s, 90), '90 dni planu']; }
+  if (period === 'plan' || period === '90') return [addDays(end, -90), end, 'ostatnie 90 dni'];
   if (period === 'month') return [new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 1), 'bieżący miesiąc'];
   if (period === '30') return [addDays(end, -30), end, 'ostatnie 30 dni'];
   if (period === '7') return [addDays(end, -7), end, 'ostatnie 7 dni'];
@@ -337,10 +344,13 @@ function filterLeads(arr, f = S.f) {
     (!f.source || l.source === f.source) &&
     (!f.owner || (f.owner === '_none' ? !l.ownerId : l.ownerId === f.owner)) &&
     (!f.region || l.region === f.region) &&
+    (!f.model || modelOf(l) === f.model) &&
     (!f.ids || f.ids.includes(l.id)) &&
     matchStatus(l, f.status) && matchQ(l, f.q));
 }
-const filtersActive = () => !!(S.f.source || S.f.owner || S.f.region || S.f.status || S.f.q || S.f.ids);
+const filtersActive = () => !!(S.f.source || S.f.owner || S.f.region || S.f.status || S.f.model || S.f.q || S.f.ids);
+const myMemberId = () => { if (!S.userId) return ''; const m = Object.values(D().team).find(x => x.userId === S.userId); return m ? m.id : ''; };
+const goal = () => +(settings().goal ?? 2.5) || 2.5;
 
 /* ---------- model planu ---------- */
 function cumConv(conv) { const p = [1]; for (let i = 0; i < 6; i++) p.push(p[i] * (+conv[i] || 0)); return p; }
@@ -410,8 +420,9 @@ function filteredSpend(f = S.f) {
   return Object.values(D().spend).filter(x => !f.source || x.source === f.source);
 }
 /* prognoza: lejek otwartych leadów + nowe leady z planu */
-function forecast(plan, leads) {
+function forecast(plan, leads, lpm = null) {
   const c = computePlan(plan);
+  if (lpm != null) c.leads = lpm;
   const buckets = [0, 0, 0];
   const pipeByStage = STAGES.map(() => ({ n: 0, exp: 0 }));
   leads.filter(isOpen).forEach(l => {

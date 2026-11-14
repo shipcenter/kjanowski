@@ -19,7 +19,7 @@ const COMP_TYPES = {
 };
 const LOC_DEFAULTS = {
   name: '', leadId: '', address: '', city: '', region: '', cityPop: 60000, catchment: 12000, type: 'ulica', traffic: 2000, visibility: 3, parking: 'ograniczony',
-  firms: 40, area: 30, storage: 8, rent: 2500, media: 450, stations: 1, staff: 0, ownerWorks: true, staffCost: 5500, hours: 9, days: 5,
+  firms: 40, area: 30, storage: 8, rent: 2500, media: 450, stations: 1, staff: 0, ownerWorks: true, staffCost: 0, hours: 9, days: 5,
   inpost: false, inpostParcels: 600, competitors: [],
   a: { indivRate: 0.25, capture: 0.06, bizShare: 0.15, bizAvg: 60, margin: 9, avgValue: 22, inpostFee: 0.7, minPerParcel: 4, storagePerM2: 20, fitout: 15000, signage: 4000, depositMonths: 2, other: 400 }
 };

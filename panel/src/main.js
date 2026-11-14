@@ -96,6 +96,8 @@ function handleAction(act, el, e) {
     case 'loc-ai-clear': patch('locations', id, { aiComment: '' }); return;
     case 'report-copy': { const x = D().locations[id]; if (x) copyText(reportSummaryText(x, analyzeLocation(x))); return; }
     case 'report-xlsx': exportLocationXLSX(id); return;
+    case 'report-pdf': downloadReportPdf(id, el); return;
+    case 'report-mail': openReportMailModal(id); return;
     case 'report-html': { const x = D().locations[id]; if (!x) return; const doc = reportHTML(x, analyzeLocation(x), true); offerDownload(`raport-lokalizacji-${slug(x.city || x.name)}.html`, doc, doc); return; }
     // zespół i ustawienia
     case 'member-new': openMemberModal(); return;

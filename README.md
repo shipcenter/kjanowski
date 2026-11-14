@@ -16,6 +16,10 @@ Opublikowany jako strona (Artifact) ze wspólną bazą danych zespołu.
 
 Kolorystyka wg shipcenter.pl (Poppins, pomarańcz #ea580c, skala szarości).
 
+**Dane dostępowe do integracji**
+
+Wzór zmiennych jest w `.env.example` (IMAP franczyza@, SMSAPI, SMTP, Google Maps, Google Ads). Prawdziwy plik `.env` tworzy się tylko tam, gdzie działa skrypt integracji. Jest w `.gitignore`, więc nie trafia do repozytorium. Danych dostępowych nie wkleja się do czatu. Klucze dla zadań uruchamianych przez Claude w chmurze wpisuje się w bezpiecznym formularzu sekretów środowiska.
+
 **Budowanie**
 
 ```bash

@@ -261,29 +261,29 @@ function reportHTML(x, r, standalone = true) {
   const radar = compRadar(r, true);
   const owner = l && l.ownerId ? D().team[l.ownerId] : null;
   const row = (k, v) => `<tr><td>${k}</td><td class="r">${v}</td></tr>`;
-  const css = `.rpt{font-family:"IBM Plex Sans",Arial,sans-serif;color:#0f1b2d;background:#fff;line-height:1.5;font-size:13px;color-scheme:light}
+  const css = `.rpt{font-family:Poppins,Arial,sans-serif;color:#0f1b2d;background:#fff;line-height:1.5;font-size:13px;color-scheme:light}
   .rpt .pg{max-width:820px;margin:0 auto;padding:32px 28px}
-  .rpt h1{font-family:Archivo,"Arial Narrow",Arial,sans-serif;font-size:26px;margin:4px 0 2px;font-stretch:88%;color:#0f1b2d}
-  .rpt h2{font-family:Archivo,"Arial Narrow",Arial,sans-serif;font-size:16px;margin:26px 0 8px;padding-bottom:4px;border-bottom:2px solid #13294b;color:#0f1b2d}
+  .rpt h1{font-family:Poppins,Arial,sans-serif;font-size:26px;margin:4px 0 2px;color:#0f1b2d}
+  .rpt h2{font-family:Poppins,Arial,sans-serif;font-size:16px;margin:26px 0 8px;padding-bottom:4px;border-bottom:2px solid #111827;color:#0f1b2d}
   .rpt ol{padding-left:20px}
-  .rpt .top{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #e2691a;padding-bottom:12px;gap:12px;flex-wrap:wrap}
-  .rpt .brand{font-family:Archivo,Arial,sans-serif;font-weight:800;font-size:18px;color:#13294b;letter-spacing:.02em}
+  .rpt .top{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #ea580c;padding-bottom:12px;gap:12px;flex-wrap:wrap}
+  .rpt .brand{font-family:Poppins,Arial,sans-serif;font-weight:700;font-size:22px;color:#111827;letter-spacing:-.03em}.rpt .brand b{color:#ea580c;font-weight:700}
   .rpt .code{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6f7c91;letter-spacing:.06em;text-transform:uppercase}
   .rpt .hero{display:flex;gap:20px;align-items:center;margin-top:18px;flex-wrap:wrap}
   .rpt .score{width:96px;height:96px;border-radius:50%;border:7px solid ${gradeCol};display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
-  .rpt .score b{font-size:32px;line-height:1;font-family:Archivo,Arial,sans-serif}.rpt .score span{font-size:10px;color:#6f7c91}
+  .rpt .score b{font-size:32px;line-height:1;font-family:Poppins,Arial,sans-serif}.rpt .score span{font-size:10px;color:#6f7c91}
   .rpt .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
-  .rpt .k{border:1px solid #dce2eb;border-radius:6px;padding:10px 12px}.rpt .k .l{font-size:11px;color:#44526a}.rpt .k .v{font-family:Archivo,Arial,sans-serif;font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}
+  .rpt .k{border:1px solid #dce2eb;border-radius:6px;padding:10px 12px}.rpt .k .l{font-size:11px;color:#44526a}.rpt .k .v{font-family:Poppins,Arial,sans-serif;font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}
   .rpt table{width:100%;border-collapse:collapse;font-size:12.5px}.rpt td,.rpt th{padding:6px 8px;border-bottom:1px solid #e4e9f0;text-align:left;color:#0f1b2d}.rpt th{background:#eef1f5;font-size:11px;color:#44526a}.rpt .r{text-align:right;font-variant-numeric:tabular-nums}
   .rpt .flag{padding:8px 10px;border-radius:5px;margin:6px 0;font-size:12.5px}.rpt .flag.bad{background:#fcebeb;color:#a82727}.rpt .flag.warn{background:#fff4dc;color:#7a5000}.rpt .flag.good{background:#e5f5e5;color:#006300}
   .rpt .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}@media(max-width:640px){.rpt .two{grid-template-columns:1fr}.rpt .pg{padding:20px 14px}}
   .rpt .bar{height:10px;background:#e4e9f0;border-radius:5px;overflow:hidden}.rpt .bar i{display:block;height:100%;border-radius:5px}
-  .rpt .muted{color:#6f7c91}.rpt .small{font-size:11.5px}.rpt .comment{background:#f2f4f7;border-left:3px solid #13294b;padding:10px 14px;white-space:pre-wrap}
+  .rpt .muted{color:#6f7c91}.rpt .small{font-size:11.5px}.rpt .comment{background:#f2f4f7;border-left:3px solid #111827;padding:10px 14px;white-space:pre-wrap}
   .rpt svg{max-width:100%;height:auto}
   .rpt .foot{margin-top:28px;padding-top:12px;border-top:1px solid #dce2eb;font-size:11px;color:#6f7c91}`;
   const capRow = (n, v, colr) => { const mx = Math.max(r.capacity, r.demand.high, r.demand.peak) * 1.05; return `<tr><td style="width:34%">${n}</td><td><div class="bar"><i style="width:${clamp(v / mx * 100, 0, 100)}%;background:${colr}"></i></div></td><td class="r" style="width:16%">${fmt(v)}</td></tr>`; };
   const body = `<div class="rpt"><div class="pg">
-  <div class="top"><div><div class="brand">SHIP CENTER</div><div class="code">Raport potencjału lokalizacji · ${esc(fdate(todayISO()))}</div></div><div class="code" style="text-align:right">Przygotowano dla:<br><b style="color:#0f1b2d;font-size:13px;text-transform:none;letter-spacing:0">${esc(l ? l.name : PH('kandydat'))}</b></div></div>
+  <div class="top"><div><div class="brand">Ship<b>Center</b></div><div class="code">Raport potencjału lokalizacji · ${esc(fdate(todayISO()))}</div></div><div class="code" style="text-align:right">Przygotowano dla:<br><b style="color:#0f1b2d;font-size:13px;text-transform:none;letter-spacing:0">${esc(l ? l.name : PH('kandydat'))}</b></div></div>
   <div class="hero"><div class="score"><b>${r.score}</b><span>/ 100</span></div><div><div class="code">Klasa ${r.grade}</div><h1>${esc(r.gradeText)}</h1><div>${esc(L.address || '')}${L.address && L.city ? ', ' : ''}${esc(L.city || '')}${L.region ? ' · woj. ' + esc(L.region) : ''}</div><div class="muted small">${esc(r.lt.n)} · ${fmt(+L.traffic)} osób dziennie przy lokalu · parking: ${esc(L.parking)}</div></div></div>
   <div class="kpis"><div class="k"><div class="l">Szacowany popyt</div><div class="v">${fmt(r.demand.base)}</div><div class="small muted">paczek / mies. (${fmt(r.demand.low)}–${fmt(r.demand.high)})</div></div>
   <div class="k"><div class="l">Przepustowość punktu</div><div class="v">${fmt(r.capacity)}</div><div class="small muted">wykorzystanie ${pct(r.util)}</div></div>
@@ -309,7 +309,7 @@ function reportHTML(x, r, standalone = true) {
   <div class="foot">Raport ma charakter szacunkowy i opiera się na danych o lokalu i okolicy przekazanych przez kandydata oraz na założeniach sieci Ship Center. Nie stanowi gwarancji wyników finansowych – sukces punktu zależy w szczególności od zaangażowania franczyzobiorcy, stosowania standardów sieci i aktywnego pozyskiwania klientów.<br><br>
   Ship Center Poland Sp. z o.o. · ${esc(o.adres)} · ${esc(o.email)} · ${esc(o.telefon)}${owner ? `<br>Opiekun: ${esc(owner.name)}${owner.phone ? ' · ' + esc(owner.phone) : ''}${owner.email ? ' · ' + esc(owner.email) : ''}` : ''}</div></div></div>`;
   if (!standalone) return { css, body };
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raport lokalizacji – ${esc(L.city || L.name || 'Ship Center')}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;600&display=swap"><style>body{margin:0;background:#fff}${css}</style></head><body>${body}</body></html>`;
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raport lokalizacji – ${esc(L.city || L.name || 'Ship Center')}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=IBM+Plex+Mono&display=swap"><style>body{margin:0;background:#fff}${css}</style></head><body>${body}</body></html>`;
 }
 
 function viewReport(id) {
@@ -323,8 +323,9 @@ function viewReport(id) {
     <div class="actions">${S.sample ? `<button class="btn" data-act="loc-ai" data-id="${id}">${ICONS.spark}${x.aiComment ? 'Napisz komentarz od nowa' : 'Dodaj komentarz analityka (Claude)'}</button>` : ''}
     <button class="btn" data-act="report-copy" data-id="${id}">${ICONS.copy}Kopiuj podsumowanie</button>
     <button class="btn" data-act="report-xlsx" data-id="${id}">${ICONS.down}XLSX</button>
-    <button class="btn primary" data-act="report-html" data-id="${id}">${ICONS.down}Pobierz raport (HTML)</button></div></div>
-    <div class="viewhead"><div class="grow"><span class="eyebrow">Raport dla potencjalnego franczyzobiorcy</span><h1>${esc(x.name || 'Raport lokalizacji')}</h1><p>Podgląd dokumentu, który wyślesz kandydatowi. Plik HTML otworzysz w przeglądarce i zapiszesz jako PDF (Drukuj → Zapisz jako PDF).</p></div></div>
+    <button class="btn" data-act="report-pdf" data-id="${id}">${ICONS.down}Pobierz PDF</button>
+    <button class="btn primary" data-act="report-mail" data-id="${id}">${ICONS.email}Wyślij raport mailem</button></div></div>
+    <div class="viewhead"><div class="grow"><span class="eyebrow">Raport dla potencjalnego franczyzobiorcy</span><h1>${esc(x.name || 'Raport lokalizacji')}</h1><p>Podgląd dokumentu dla kandydata. „Wyślij raport mailem” przygotuje wiadomość z podsumowaniem i plik PDF do załączenia.${x.reportSentAt ? ` Raport wysłano ${fdate(x.reportSentAt)}${x.reportSentTo ? ' na ' + esc(x.reportSentTo) : ''}.` : ''}</p></div></div>
     ${x.aiComment ? `<div class="card" style="margin-bottom:16px"><div class="cardhead"><h2>Komentarz analityka</h2><button class="btn sm ghost" data-act="loc-ai-clear" data-id="${id}">Usuń z raportu</button></div><label class="field"><span>Możesz poprawić tekst – zapisze się w raporcie</span><textarea id="loc-ai-text" data-loc-comment="${id}" rows="6">${esc(x.aiComment)}</textarea></label></div>` : ''}
     <div class="reportframe"><style>${inline.css}</style><div style="max-width:880px;margin:0 auto;border-radius:6px;overflow:hidden;box-shadow:var(--shadow)">${inline.body}</div></div>`;
 }
@@ -363,4 +364,105 @@ Konkurenci: ${r.compRows.map(c => `${c.tn} ${c.dist} m (siła ${c.strength || 3}
     else toast('Claude nie odpowiedział: ' + (e && e.message || 'błąd'), 'bad');
   }
   btn.disabled = false; scheduleRender();
+}
+
+/* ---------- PDF raportu (render w przeglądarce) ---------- */
+const PDF_LIBS = ['https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];
+let pdfLibsPromise = null;
+function loadPdfLibs() {
+  if (window.html2canvas && window.jspdf) return Promise.resolve();
+  if (!pdfLibsPromise) pdfLibsPromise = PDF_LIBS.reduce((p, src) => p.then(() => new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = () => rej(new Error('Nie udało się wczytać biblioteki PDF')); document.head.appendChild(sc); })), Promise.resolve()).catch(e => { pdfLibsPromise = null; throw e; });
+  return pdfLibsPromise;
+}
+async function reportPdfBytes(x) {
+  await loadPdfLibs();
+  const r = analyzeLocation(x);
+  const { css, body } = reportHTML(x, r, false);
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:820px;background:#fff;z-index:-1';
+  host.innerHTML = `<style>${css} .rpt .pg{padding:28px 30px}</style>${body}`;
+  document.body.appendChild(host);
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const root = host.querySelector('.rpt');
+    const scale = 2;
+    const canvas = await window.html2canvas(root, { scale, backgroundColor: '#ffffff', logging: false });
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+    const pageW = 210, pageH = 297, margin = 10;
+    const pxPerMm = canvas.width / (pageW - 2 * margin);
+    const pagePx = Math.floor((pageH - 2 * margin) * pxPerMm);
+    const top0 = root.getBoundingClientRect().top;
+    const breaks = [...root.querySelectorAll('h2, tr, .flag, .kpis, .two, ol, .foot, .comment, p')].map(el => Math.round((el.getBoundingClientRect().top - top0) * scale)).filter(v => v > 0).sort((a, b) => a - b);
+    const heads = [...root.querySelectorAll('h2')].map(el => Math.round((el.getBoundingClientRect().top - top0) * scale) - 6);
+    let y = 0, first = true;
+    while (y < canvas.height - 4) {
+      let end = Math.min(y + pagePx, canvas.height);
+      if (end < canvas.height) {
+        const cand = breaks.filter(b => b > y + pagePx * 0.5 && b <= end); if (cand.length) end = cand[cand.length - 1];
+        const orphan = heads.filter(h => h > y + pagePx * 0.4 && h < end && end - h < 70 * scale); if (orphan.length) end = orphan[0];
+      }
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width; slice.height = end - y;
+      const ctx = slice.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, slice.width, slice.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, end - y, 0, 0, canvas.width, end - y);
+      if (!first) pdf.addPage();
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.9), 'JPEG', margin, margin, pageW - 2 * margin, (end - y) / pxPerMm);
+      first = false; y = end;
+    }
+    const n = pdf.getNumberOfPages();
+    for (let i = 1; i <= n; i++) { pdf.setPage(i); pdf.setFontSize(8); pdf.setTextColor(140); pdf.text(`${i} / ${n}`, pageW - margin, pageH - 4, { align: 'right' }); }
+    return pdf.output('arraybuffer');
+  } finally { host.remove(); }
+}
+const reportFileName = x => `Raport-lokalizacji-ShipCenter-${slug(x.city || x.name)}.pdf`;
+async function downloadReportPdf(id, btn) {
+  const x = D().locations[id]; if (!x) return;
+  const label = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Tworzę PDF…'; }
+  try { const bytes = await reportPdfBytes(x); await offerDownload(reportFileName(x), bytes); }
+  catch (e) { toast('Nie udało się utworzyć PDF: ' + (e && e.message || 'błąd') + '. Możesz pobrać wersję HTML.', 'bad'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = label; } }
+}
+function openReportMailModal(id) {
+  const x = D().locations[id]; if (!x) return;
+  const l = x.leadId ? D().leads[x.leadId] : null;
+  const c = msgContext(l ? { ...l, locId: x.id } : { locId: x.id }, l ? l.form : 'panstwo');
+  c.loc = analyzeLocation(x); c.locDoc = x;
+  const out = TEMPLATES.email_raport.f(c);
+  const body = out.body.replace('w załączniku przesyłam raport analizy lokalizacji', 'w załączniku (PDF) przesyłam raport analizy lokalizacji');
+  openModal(`<div class="mh"><h2>Wyślij raport mailem</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb">
+      ${x.reportSentAt ? `<p class="callout">Raport był już wysłany ${fdate(x.reportSentAt)}${x.reportSentTo ? ' na ' + esc(x.reportSentTo) : ''}.</p>` : ''}
+      <ol class="small ink2" style="margin:0;padding-left:18px"><li>Pobierz PDF i dołącz go do wiadomości.</li><li>Skopiuj temat i treść albo otwórz program pocztowy.</li><li>Po wysłaniu kliknij „Zapisz jako wysłany”.</li></ol>
+      <div class="formgrid">
+        <label class="field span2"><span>Do</span><input type="email" id="rm-to" value="${esc(l && l.email || '')}" placeholder="adres kandydata"></label>
+        <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="rm-copy-to">${ICONS.copy}Kopiuj adres</button></div>
+        <label class="field full"><span>Temat</span><input type="text" id="rm-subj" value="${esc(out.subject)}"></label>
+        <label class="field full"><span>Treść</span><textarea id="rm-body" rows="13">${esc(body)}</textarea></label>
+      </div>
+      <div class="row"><button type="button" class="btn primary sm" id="rm-pdf">${ICONS.down}Pobierz PDF (załącznik)</button><button type="button" class="btn sm" id="rm-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="rm-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="rm-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      <p class="note">Dlaczego PDF, a nie HTML w treści: Gmail i Outlook wycinają style i wykresy z HTML-a, a załączniki .html bywają oznaczane jako podejrzane. PDF wygląda u kandydata tak samo jak w podglądzie. Panel nie wysyła maili sam – wyślij ze skrzynki ${esc(offer().email)}.</p>
+    </div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="rm-save">Zapisz jako wysłany</button></div>`, { wide: true });
+  const href = () => `mailto:${encodeURIComponent($('#rm-to').value)}?subject=${encodeURIComponent($('#rm-subj').value)}&body=${encodeURIComponent($('#rm-body').value)}`;
+  const upd = () => { $('#rm-open').href = href(); };
+  upd(); ['rm-to', 'rm-subj', 'rm-body'].forEach(i => { $('#' + i).oninput = upd; });
+  $('#rm-copy-to').onclick = () => copyText($('#rm-to').value);
+  $('#rm-copy-subj').onclick = () => copyText($('#rm-subj').value);
+  $('#rm-copy-body').onclick = () => copyText($('#rm-body').value);
+  $('#rm-pdf').onclick = e => downloadReportPdf(id, e.currentTarget);
+  $('#rm-save').onclick = () => {
+    const to = $('#rm-to').value.trim();
+    patch('locations', id, { reportSentAt: todayISO(), reportSentTo: to, updatedTs: new Date().toISOString() });
+    if (l) {
+      const cur = D().leads[l.id];
+      const hist = (cur.history || []).slice();
+      hist.push(histEntry('email', `Wysłano raport lokalizacji (PDF): ${x.address || x.city || x.name}`, { by: myMemberId() || cur.ownerId || '', result: 'Wysłano materiały' }));
+      const p = { history: hist, updatedTs: new Date().toISOString() };
+      if (to && to !== cur.email) p.email = to;
+      if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Omówić raport lokalizacji'; p.nextTaskDate = isoDate(addDays(new Date(), 2)); }
+      patch('leads', l.id, p);
+    }
+    closeModal(); toast('Zapisano wysłanie raportu');
+  };
 }

@@ -97,6 +97,7 @@ function handleAction(act, el, e) {
     case 'report-copy': { const x = D().locations[id]; if (x) copyText(reportSummaryText(x, analyzeLocation(x))); return; }
     case 'report-xlsx': exportLocationXLSX(id); return;
     case 'report-pdf': downloadReportPdf(id, el); return;
+    case 'loc-autofill': autoFillLocation(id, el); return;
     case 'report-mail': openReportMailModal(id); return;
     case 'report-html': { const x = D().locations[id]; if (!x) return; const doc = reportHTML(x, analyzeLocation(x), true); offerDownload(`raport-lokalizacji-${slug(x.city || x.name)}.html`, doc, doc); return; }
     // zespół i ustawienia
@@ -138,7 +139,7 @@ document.addEventListener('change', e => {
     if (el.dataset.msg === 'leadId') { const l = D().leads[el.value]; S.msg.form = l ? (l.form || 'panstwo') : S.msg.form; }
     S.ui.aiText = ''; scheduleRender(); return;
   }
-  if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { onLocInput(el); return; }
+  if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { onLocInput(el); if (el.dataset.loc === 'address' || el.dataset.loc === 'city') setTimeout(() => maybeAutoFill(S.route.id), 1000); return; }
   if (el.dataset.offer) {
     const o = { ...(settings().offer || {}) };
     o[el.dataset.offer] = el.type === 'number' ? +el.value : el.value;

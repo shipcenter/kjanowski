@@ -2441,7 +2441,8 @@ function viewLocationEditor(id) {
       <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" value="${esc(L.city)}"></label>
       <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select></label>
     </div></div>
-    <div class="card"><div class="cardhead"><h2>Okolica i popyt</h2></div><div class="formgrid">
+    <div class="card"><div class="cardhead"><h2>Okolica i popyt</h2>${S.sample ? `<button class="btn sm ${L.auto && L.auto.status === 'done' ? '' : 'primary'}" data-act="loc-autofill" data-id="${x.id}" ${L.city ? '' : 'disabled title="Wpisz najpierw miasto"'}>${ICONS.spark}${L.auto && L.auto.status === 'done' ? 'Uzupełnij ponownie' : 'Uzupełnij automatycznie'}</button>` : ''}</div>
+      ${autoInfo(L)}<div class="formgrid">
       ${num('cityPop', 'Mieszkańcy miasta', 1000)}
       ${num('catchment', 'Mieszkańcy w zasięgu punktu', 500, 'ok. 1,5 km pieszo / 5 min autem')}
       <label class="field"><span>Typ lokalizacji</span><select id="lo-type" data-loc="type">${Object.entries(LOC_TYPES).map(([k, t]) => opt(k, t.n, L.type)).join('')}</select></label>
@@ -2764,6 +2765,56 @@ function openReportMailModal(id) {
     }
     closeModal(); toast('Zapisano wysłanie raportu');
   };
+}
+
+/* ---------- automatyczne uzupełnianie „Okolica i popyt” ---------- */
+const AUTO_BUSY = {};
+function autoInfo(L) {
+  if (AUTO_BUSY[L.id]) return `<p class="callout" style="margin-bottom:12px">Claude ustala dane o okolicy dla: ${esc([L.address, L.city].filter(Boolean).join(', '))}…</p>`;
+  const a = L.auto;
+  if (!a) return L.city ? '' : '<p class="note" style="margin-bottom:10px">Wpisz miasto i ulicę w sekcji „Lokal i kandydat” – pola poniżej uzupełnią się automatycznie.</p>';
+  if (a.status === 'error') return `<p class="callout bad" style="margin-bottom:12px">Nie udało się uzupełnić danych: ${esc(a.error || 'błąd')}</p>`;
+  const src = (a.sources || []).length ? ` · źródła: ${a.sources.slice(0, 3).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(String(u).replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}</a>`).join(', ')}` : '';
+  return `<div class="callout ${a.confidence === 'niska' ? 'bad' : 'good'}" style="margin-bottom:12px"><b>Uzupełniono automatycznie ${fdt(a.at)}</b> · pewność: ${esc(a.confidence || '—')}${a.forAddress ? ' · ' + esc(a.forAddress) : ''}${src}<br><span class="small">${esc(a.notes || '')}</span><br><span class="tiny muted">${esc(a.source || '')} Sprawdź liczby i popraw je, jeśli znasz okolicę lepiej.</span></div>`;
+}
+function maybeAutoFill(id) {
+  const x = D().locations[id];
+  if (!x || !S.sample || !x.city || AUTO_BUSY[id]) return;
+  const key = [x.address, x.city].filter(Boolean).join(', ');
+  if (x.auto && x.auto.forAddress === key) return;
+  autoFillLocation(id);
+}
+async function autoFillLocation(id, btn) {
+  const x = D().locations[id]; if (!x || !S.sample) return;
+  const key = [x.address, x.city].filter(Boolean).join(', ');
+  AUTO_BUSY[id] = true; scheduleRender();
+  const prompt = `Jesteś analitykiem lokalizacji sieci ShipCenter (punkty nadawcze paczek) w Polsce. Dla adresu "${key}"${x.region ? ' (województwo ' + x.region + ')' : ''} ustal dane o okolicy na podstawie swojej wiedzy: dane GUS o mieście i dzielnicach, charakter dzielnicy i ulicy (centrum, osiedle bloków, domy jednorodzinne, strefa przemysłowa, galeria, dworzec). Zwróć wyłącznie obiekt JSON z polami:
+{"city": "nazwa miasta", "region": "województwo małymi literami, np. śląskie", "cityPop": liczba mieszkańców miasta lub gminy, "cityAreaKm2": powierzchnia miasta w km2, "district": "dzielnica lub pusty tekst", "catchment": mieszkańcy w promieniu ok. 1,5 km od adresu (gęstość dzielnicy razy ok. 7 km2, nie więcej niż cityPop), "type": jedno z "ulica" | "osiedle" | "galeria" | "park" | "biznes" | "wezel" (ulica = ulica handlowa lub centrum, park = park handlowy lub przy markecie, biznes = strefa biznesowa lub przemysłowa, wezel = dworzec lub węzeł komunikacyjny), "traffic": szacowany ruch pieszy przy lokalu w osobach na dzień (deptak dużego miasta 5000-15000, ulica handlowa 2000-5000, osiedle 500-1500, strefa przemysłowa 200-600), "parking": "brak" | "ograniczony" | "dobry", "firms": szacowana liczba firm w promieniu 3 km regularnie wysyłających paczki (około 1-1,5% podmiotów REGON w tym obszarze, minimum 10), "confidence": "niska" | "średnia" | "wysoka", "notes": "2-3 zdania po polsku: skąd liczby i co jest niepewne, np. czy taka ulica istnieje w tym mieście"}
+Liczby podawaj jako liczby całkowite. Jeśli nie znasz ulicy, oprzyj się na mieście, napisz to w notes i ustaw confidence na "niska".`;
+  try {
+    const r = await S.sample.json(prompt, { modelTier: 'default' });
+    const num = (v, lo, hi) => { const n = Math.round(+v); return isFinite(n) ? clamp(n, lo, hi) : null; };
+    const cur = D().locations[id]; if (!cur) return;
+    const p = { updatedTs: new Date().toISOString() };
+    const cityPop = num(r.cityPop, 100, 5000000); if (cityPop) p.cityPop = cityPop;
+    const catchment = num(r.catchment, 50, 500000); if (catchment) p.catchment = Math.min(catchment, cityPop || catchment);
+    if (LOC_TYPES[r.type]) p.type = r.type;
+    const traffic = num(r.traffic, 50, 50000); if (traffic) p.traffic = traffic;
+    if (['brak', 'ograniczony', 'dobry'].includes(r.parking)) p.parking = r.parking;
+    const firms = num(r.firms, 1, 20000); if (firms) p.firms = firms;
+    const reg = String(r.region || '').toLowerCase().replace('województwo', '').trim();
+    if (REGIONS.includes(reg) && !cur.region) p.region = reg;
+    if (r.city && !cur.city) p.city = String(r.city);
+    p.auto = { status: 'done', at: nowLocal(), forAddress: key, confidence: ['niska', 'średnia', 'wysoka'].includes(r.confidence) ? r.confidence : 'średnia', notes: String(r.notes || '').slice(0, 600) + (r.district ? ` Dzielnica: ${r.district}.` : '') + (r.cityAreaKm2 ? ` Powierzchnia miasta ok. ${fmt(+r.cityAreaKm2)} km².` : ''), source: 'Źródło: wiedza Claude (dane GUS i charakter okolicy, bez wyszukiwania na żywo).' };
+    if (reg && cur.region && REGIONS.includes(reg) && reg !== cur.region) p.auto.notes += ` Uwaga: adres wskazuje na województwo ${reg}, a w analizie wpisano ${cur.region}.`;
+    await patch('locations', id, p);
+    toast('Uzupełniono dane o okolicy');
+  } catch (e) {
+    const code = e && e.code;
+    if (code === 'not_granted') { S.sample = null; toast('Claude nie ma zgody na odpowiedzi w tym panelu – uzupełnij dane ręcznie.', 'bad'); }
+    else if (code === 'rate_limited') toast('Za dużo zapytań do Claude – spróbuj za chwilę.', 'bad');
+    else patch('locations', id, { auto: { status: 'error', at: nowLocal(), forAddress: key, error: (e && e.message) || 'brak odpowiedzi' } });
+  } finally { delete AUTO_BUSY[id]; scheduleRender(); }
 }
 
 /* ===== Import, eksport (CSV / XLSX), ustawienia, dane podglądowe ===== */
@@ -3255,6 +3306,7 @@ function handleAction(act, el, e) {
     case 'report-copy': { const x = D().locations[id]; if (x) copyText(reportSummaryText(x, analyzeLocation(x))); return; }
     case 'report-xlsx': exportLocationXLSX(id); return;
     case 'report-pdf': downloadReportPdf(id, el); return;
+    case 'loc-autofill': autoFillLocation(id, el); return;
     case 'report-mail': openReportMailModal(id); return;
     case 'report-html': { const x = D().locations[id]; if (!x) return; const doc = reportHTML(x, analyzeLocation(x), true); offerDownload(`raport-lokalizacji-${slug(x.city || x.name)}.html`, doc, doc); return; }
     // zespół i ustawienia
@@ -3296,7 +3348,7 @@ document.addEventListener('change', e => {
     if (el.dataset.msg === 'leadId') { const l = D().leads[el.value]; S.msg.form = l ? (l.form || 'panstwo') : S.msg.form; }
     S.ui.aiText = ''; scheduleRender(); return;
   }
-  if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { onLocInput(el); return; }
+  if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { onLocInput(el); if (el.dataset.loc === 'address' || el.dataset.loc === 'city') setTimeout(() => maybeAutoFill(S.route.id), 1000); return; }
   if (el.dataset.offer) {
     const o = { ...(settings().offer || {}) };
     o[el.dataset.offer] = el.type === 'number' ? +el.value : el.value;

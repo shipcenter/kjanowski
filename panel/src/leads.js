@@ -178,7 +178,13 @@ function viewLead(id) {
   const next = `<div class="card"><div class="cardhead"><h2>Przebieg kontaktu</h2><p>${l.firstCallAt ? 'pierwsza rozmowa ' + fdate(l.firstCallAt) : 'czeka na pierwszą rozmowę'}</p></div>
     <div class="progress3">
       <div class="pstep ${l.firstCallAt ? 'done' : 'due'}"><span class="lbl">1 · Pierwsza rozmowa</span>${l.firstCallAt ? `<span class="val">${fdate(l.firstCallAt)}</span>` : `<span class="small ink2">Zadzwoń, porozmawiaj i zapisz notatkę. Po rozmowie można wysłać SMS z podziękowaniem.</span><button class="btn sm primary" data-act="call-log" data-id="${l.id}">Zapisz pierwszą rozmowę</button>`}</div>
-      <div class="pstep ${l.presentationAt ? 'done' : ''}"><span class="lbl">2 · Prezentacja</span>${l.presentationAt ? `<span class="val">wysłana ${fdate(l.presentationAt)}</span><button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij</button>` : `<span class="small ink2">Zaznacz, kiedy kandydat dostał prezentację oferty.</span><button class="btn sm" data-act="pres-sent" data-id="${l.id}">Wysłano prezentację dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label>`}</div>
+      <div class="pstep ${l.presentationAt ? 'done' : ''}"><span class="lbl">2 · Prezentacja${modelOf(l) === 'franczyza' ? ' i kalkulator' : ''}</span>
+        ${l.presentationAt ? `<span class="val">prezentacja ${fdate(l.presentationAt)}</span>${l.presentationLastAt && l.presentationLastAt !== l.presentationAt ? `<span class="tiny muted">ponownie ${fdate(l.presentationLastAt)}${l.presentationSends > 2 ? ' · razem ' + l.presentationSends + '×' : ''}</span>` : ''}` : `<span class="small ink2">Wyślij kandydatowi maila z prezentacją${modelOf(l) === 'franczyza' ? ' albo z linkiem do kalkulatora' : ''}.</span>`}
+        ${l.calcSentAt ? `<span class="small">kalkulator ${fdate(l.calcLastAt || l.calcSentAt)}</span>` : ''}
+        <button class="btn sm ${l.presentationAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_prezentacja">${ICONS.email}${l.presentationAt ? 'Wyślij ponownie prezentację' : 'Mail z prezentacją'}</button>
+        ${modelOf(l) === 'franczyza' ? `<button class="btn sm" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_kalkulator">${ICONS.email}${l.calcSentAt ? 'Wyślij ponownie kalkulator' : 'Mail z kalkulatorem'}</button>` : ''}
+        ${l.presentationAt ? `<button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij datę prezentacji</button>` : `<details><summary class="small muted" style="cursor:pointer">Zaznacz bez maila</summary><div class="stack" style="gap:6px;margin-top:6px"><button class="btn sm ghost" data-act="pres-sent" data-id="${l.id}">Prezentacja wysłana dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label></div></details>`}
+      </div>
       <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
         <input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg" placeholder="Co zrobić, np. telefon po prezentacji" aria-label="Kolejny kontakt – co zrobić">
         <div class="row" style="flex-wrap:nowrap"><input type="date" id="ld-taskdate" data-lead-field="nextTaskDate" value="${esc(l.nextTaskDate)}" aria-label="Data kolejnego kontaktu"><input type="time" id="ld-tasktime" data-lead-field="nextTaskTime" value="${esc(l.nextTaskTime || '')}" aria-label="Godzina" style="max-width:110px"></div>
@@ -236,11 +242,11 @@ function viewLead(id) {
 
 function suggestedTemplate(l) {
   const i = stageIdx(l);
-  if (modelOf(l) === 'shippoint') return ['email_partner', 'sms_po_rozmowie', 'skrypt_pierwsza'];
+  if (modelOf(l) === 'shippoint') return ['email_partner', 'email_prezentacja', 'skrypt_pierwsza'];
   if (l.status === 'wstrzymany' || l.status === 'utracony') return ['email_reaktywacja', 'skrypt_obiekcje'];
   if (l.status === 'proba') return ['sms_pierwszy', 'email_followup', 'email_ostatni'];
   return [
-    ['email_pierwszy', 'skrypt_pierwsza', 'sms_po_rozmowie'],
+    ['email_pierwszy', 'skrypt_pierwsza', 'email_prezentacja'],
     ['skrypt_pierwsza', 'email_zaproszenie', 'skrypt_obiekcje'],
     ['email_zaproszenie', 'skrypt_prezentacja', 'skrypt_obiekcje'],
     ['email_podsumowanie', 'email_dane_lokalizacji', 'skrypt_obiekcje'],

@@ -399,6 +399,7 @@ details.adv[open] summary { margin-bottom: 10px; }
 .pstep.late { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-wash); }
 .pstep .lbl { font-size: .72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .pstep .val { font-weight: 600; font-size: 1rem; }
+.pstep .btn { white-space: normal; text-align: left; justify-content: flex-start; }
 .daygroup h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .contact-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .contact-row:last-child { border-bottom: none; }
@@ -505,7 +506,7 @@ const DEFAULT_OFFER = {
   minPaczek: 100, przewoznicy: 'InPost, DPD, DHL, UPS, FedEx, GLS, Poczta Polska (Pocztex), ORLEN Paczka, Ambro Express',
   email: 'franczyza@shipcenter.pl', telefon: '+48 798 344 130', www: 'shipcenter.pl',
   adres: 'ul. Gliwicka 51, 40-853 Katowice', linkSpotkanie: '', linkWebinar: '',
-  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', smsPodpis: 'ShipCenter'
+  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', linkPrezentacja: '', linkPrezentacjaShipPoint: '', smsPodpis: 'ShipCenter'
 };
 
 /* ---------- utils ---------- */
@@ -1468,7 +1469,13 @@ function viewLead(id) {
   const next = `<div class="card"><div class="cardhead"><h2>Przebieg kontaktu</h2><p>${l.firstCallAt ? 'pierwsza rozmowa ' + fdate(l.firstCallAt) : 'czeka na pierwszą rozmowę'}</p></div>
     <div class="progress3">
       <div class="pstep ${l.firstCallAt ? 'done' : 'due'}"><span class="lbl">1 · Pierwsza rozmowa</span>${l.firstCallAt ? `<span class="val">${fdate(l.firstCallAt)}</span>` : `<span class="small ink2">Zadzwoń, porozmawiaj i zapisz notatkę. Po rozmowie można wysłać SMS z podziękowaniem.</span><button class="btn sm primary" data-act="call-log" data-id="${l.id}">Zapisz pierwszą rozmowę</button>`}</div>
-      <div class="pstep ${l.presentationAt ? 'done' : ''}"><span class="lbl">2 · Prezentacja</span>${l.presentationAt ? `<span class="val">wysłana ${fdate(l.presentationAt)}</span><button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij</button>` : `<span class="small ink2">Zaznacz, kiedy kandydat dostał prezentację oferty.</span><button class="btn sm" data-act="pres-sent" data-id="${l.id}">Wysłano prezentację dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label>`}</div>
+      <div class="pstep ${l.presentationAt ? 'done' : ''}"><span class="lbl">2 · Prezentacja${modelOf(l) === 'franczyza' ? ' i kalkulator' : ''}</span>
+        ${l.presentationAt ? `<span class="val">prezentacja ${fdate(l.presentationAt)}</span>${l.presentationLastAt && l.presentationLastAt !== l.presentationAt ? `<span class="tiny muted">ponownie ${fdate(l.presentationLastAt)}${l.presentationSends > 2 ? ' · razem ' + l.presentationSends + '×' : ''}</span>` : ''}` : `<span class="small ink2">Wyślij kandydatowi maila z prezentacją${modelOf(l) === 'franczyza' ? ' albo z linkiem do kalkulatora' : ''}.</span>`}
+        ${l.calcSentAt ? `<span class="small">kalkulator ${fdate(l.calcLastAt || l.calcSentAt)}</span>` : ''}
+        <button class="btn sm ${l.presentationAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_prezentacja">${ICONS.email}${l.presentationAt ? 'Wyślij ponownie prezentację' : 'Mail z prezentacją'}</button>
+        ${modelOf(l) === 'franczyza' ? `<button class="btn sm" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_kalkulator">${ICONS.email}${l.calcSentAt ? 'Wyślij ponownie kalkulator' : 'Mail z kalkulatorem'}</button>` : ''}
+        ${l.presentationAt ? `<button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij datę prezentacji</button>` : `<details><summary class="small muted" style="cursor:pointer">Zaznacz bez maila</summary><div class="stack" style="gap:6px;margin-top:6px"><button class="btn sm ghost" data-act="pres-sent" data-id="${l.id}">Prezentacja wysłana dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label></div></details>`}
+      </div>
       <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
         <input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg" placeholder="Co zrobić, np. telefon po prezentacji" aria-label="Kolejny kontakt – co zrobić">
         <div class="row" style="flex-wrap:nowrap"><input type="date" id="ld-taskdate" data-lead-field="nextTaskDate" value="${esc(l.nextTaskDate)}" aria-label="Data kolejnego kontaktu"><input type="time" id="ld-tasktime" data-lead-field="nextTaskTime" value="${esc(l.nextTaskTime || '')}" aria-label="Godzina" style="max-width:110px"></div>
@@ -1526,11 +1533,11 @@ function viewLead(id) {
 
 function suggestedTemplate(l) {
   const i = stageIdx(l);
-  if (modelOf(l) === 'shippoint') return ['email_partner', 'sms_po_rozmowie', 'skrypt_pierwsza'];
+  if (modelOf(l) === 'shippoint') return ['email_partner', 'email_prezentacja', 'skrypt_pierwsza'];
   if (l.status === 'wstrzymany' || l.status === 'utracony') return ['email_reaktywacja', 'skrypt_obiekcje'];
   if (l.status === 'proba') return ['sms_pierwszy', 'email_followup', 'email_ostatni'];
   return [
-    ['email_pierwszy', 'skrypt_pierwsza', 'sms_po_rozmowie'],
+    ['email_pierwszy', 'skrypt_pierwsza', 'email_prezentacja'],
     ['skrypt_pierwsza', 'email_zaproszenie', 'skrypt_obiekcje'],
     ['email_zaproszenie', 'skrypt_prezentacja', 'skrypt_obiekcje'],
     ['email_podsumowanie', 'email_dane_lokalizacji', 'skrypt_obiekcje'],
@@ -1724,6 +1731,50 @@ function viewContacts() {
   return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
 }
 
+/* mail z prezentacją / kalkulatorem: gotowa wiadomość + zapis wysłania */
+function openMailModal(l, tplKey) {
+  const t = TEMPLATES[tplKey]; if (!t) return;
+  const out = t.f(msgContext(l, l.form));
+  const isPres = tplKey === 'email_prezentacja';
+  const again = isPres ? !!l.presentationAt : !!l.calcSentAt;
+  const mailto = () => `mailto:${encodeURIComponent(l.email || '')}?subject=${encodeURIComponent($('#ml-subj').value)}&body=${encodeURIComponent($('#ml-body').value)}`;
+  openModal(`<div class="mh"><h2>${esc(again ? 'Wyślij ponownie: ' + t.n.toLowerCase() : t.n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb">
+      ${again ? `<p class="callout">${isPres ? 'Prezentacja' : 'Kalkulator'} był już wysłany ${fdate(isPres ? l.presentationAt : l.calcSentAt)}.</p>` : ''}
+      <div class="formgrid">
+        <label class="field span2"><span>Do</span><input type="email" id="ml-to" value="${esc(l.email || '')}" placeholder="brak adresu e-mail w karcie leada"></label>
+        <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="ml-copy-to">${ICONS.copy}Kopiuj adres</button></div>
+        <label class="field full"><span>Temat</span><input type="text" id="ml-subj" value="${esc(out.subject || '')}"></label>
+        <label class="field full"><span>Treść</span><textarea id="ml-body" rows="14">${esc(out.body)}</textarea></label>
+      </div>
+      <div class="row"><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz prezentację, jeśli nie ma linku, i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
+    </div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
+  const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
+  refreshLink();
+  ['ml-to', 'ml-subj', 'ml-body'].forEach(id => { $('#' + id).oninput = refreshLink; });
+  $('#ml-copy-to').onclick = () => copyText($('#ml-to').value);
+  $('#ml-copy-subj').onclick = () => copyText($('#ml-subj').value);
+  $('#ml-copy-body').onclick = () => copyText($('#ml-body').value);
+  $('#ml-save').onclick = () => {
+    const cur = D().leads[l.id]; if (!cur) return closeModal();
+    const by = myMemberId() || cur.ownerId || '';
+    const hist = (cur.history || []).slice();
+    hist.push(histEntry('email', `${again ? 'Ponownie wysłano' : 'Wysłano'}: ${t.n.toLowerCase()} – „${$('#ml-subj').value}”`, { by, result: 'Wysłano materiały' }));
+    const p = { history: hist, updatedTs: new Date().toISOString() };
+    const to = $('#ml-to').value.trim();
+    if (to && to !== cur.email) p.email = to;
+    if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
+    else { if (!cur.calcSentAt) p.calcSentAt = todayISO(); p.calcLastAt = todayISO(); }
+    if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
+    if (cur.status === 'do_kontaktu') p.status = 'w_kontakcie';
+    patch('leads', l.id, p);
+    closeModal();
+    toast('Zapisano wysłanie maila' + (p.nextTaskDate ? ' · kolejny kontakt ' + fdate(p.nextTaskDate) : ''));
+  };
+}
+
 /* ===== Generator wiadomości i skryptów rozmów (PL) ===== */
 
 const FORMS = { panstwo: 'forma „Państwo”', pan: 'forma „Pan”', pani: 'forma „Pani”', ty: 'forma „Ty”' };
@@ -1734,7 +1785,7 @@ const PH = t => `[uzupełnij: ${t}]`;
 
 function msgContext(l, form) {
   const o = offer();
-  const m = l && l.ownerId ? D().team[l.ownerId] : null;
+  const m = (myMemberId() && D().team[myMemberId()]) || (l && l.ownerId ? D().team[l.ownerId] : null);
   form = form || (l && l.form) || 'panstwo';
   const g = (pan, pani, panstwo, ty) => ({ pan, pani, panstwo, ty })[form] ?? panstwo;
   const first = l && l.name ? l.name.trim().split(/\s+/)[0] : '';
@@ -1778,6 +1829,52 @@ Najważniejsze informacje w skrócie:
 ${offerBullets(c)}${kalk(c)}
 
 Proponuję krótką rozmowę telefoniczną (ok. 15 minut): opowiem o modelu współpracy, odpowiem na pytania i sprawdzimy, czy wybrana lokalizacja ma potencjał. ${c.g('Kiedy będzie Panu wygodnie porozmawiać?', 'Kiedy będzie Pani wygodnie porozmawiać?', 'Kiedy będzie Państwu wygodnie porozmawiać?', 'Kiedy będzie Ci wygodnie porozmawiać?')} Termin można też wybrać tutaj: ${c.linkKalendarz}${podpis(c)}` }) },
+
+  email_prezentacja: { grp: 'Prezentacja i kalkulator', n: 'Mail z prezentacją', kind: 'E-mail', f: c => {
+    const sp = c.model === 'shippoint' || MODEL_ALIAS[c.model] === 'shippoint';
+    const link = sp ? (c.o.linkPrezentacjaShipPoint || c.o.linkPrezentacja) : c.o.linkPrezentacja;
+    const kiedy = c.l.nextTaskDate && c.l.nextTaskDate > todayISO() ? fdtLong(c.l.nextTaskDate + (c.l.nextTaskTime ? 'T' + c.l.nextTaskTime : '')) : 'w ciągu 2–3 dni';
+    if (sp) return {
+      subject: 'Ship Point – informacje o współpracy z ShipCenter',
+      body: `${powitanie(c)}
+
+dziękuję za rozmowę. Zgodnie z obietnicą przesyłam informacje o współpracy w modelu Ship Point${link ? ': ' + link : ' (prezentacja w załączniku)'}.
+
+W skrócie:
+• w obecnym lokalu można przyjmować nadania paczek u wielu przewoźników przez platformę ${c.o.www},
+• opłata wstępna to ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
+• ShipCenter zapewnia dostęp do przewoźników, konto na platformie, naklejkę i materiały,
+• można też prowadzić PaczkoPunkt InPost.
+
+Zadzwonię ${kiedy}, żeby odpowiedzieć na pytania.${podpis(c)}` };
+    return {
+      subject: 'Prezentacja oferty franczyzowej ShipCenter',
+      body: `${powitanie(c)}
+
+dziękuję za rozmowę. Zgodnie z obietnicą przesyłam prezentację oferty franczyzowej ShipCenter${link ? ': ' + link : ' (w załączniku)'}.
+
+W prezentacji jest opisane, jak działa punkt ShipCenter, z czego składa się przychód, co obejmuje pakiet startowy SMART (${fmtZl(c.o.licencja)} jednorazowo) i jak wygląda start punktu krok po kroku.${c.o.linkKalkulator ? `
+
+Koszt startu razem z wyposażeniem można policzyć w kalkulatorze: ${c.o.linkKalkulator}` : ''}
+
+Zadzwonię ${kiedy}, żeby odpowiedzieć na pytania.${podpis(c)}` };
+  } },
+
+  email_kalkulator: { grp: 'Prezentacja i kalkulator', n: 'Mail z kalkulatorem', kind: 'E-mail', f: c => ({
+    subject: 'Kalkulator kosztów punktu ShipCenter',
+    body: `${powitanie(c)}
+
+przesyłam link do kalkulatora, w którym można samodzielnie skonfigurować punkt i sprawdzić koszt startu:
+${c.o.linkKalkulator || PH('link do kalkulatora')}
+
+Jak z niego korzystać:
+1. Wariant SMART – jeśli ${c.g('ma Pan', 'ma Pani', 'mają Państwo', 'masz')} wyposażenie zgodne ze standardem ShipCenter: ${fmtZl(c.o.licencja)} jednorazowo.
+2. Wariant FLEX – ${c.g('dobiera Pan', 'dobiera Pani', 'dobierają Państwo', 'dobierasz')} tylko brakujący sprzęt (meble, komputer, drukarki, skaner). Rabat rośnie z liczbą produktów, do ${c.o.flexRabat || 15}%.
+3. Gotową konfigurację można wysłać z kalkulatora prosto do działu franczyzy.
+
+Opłata miesięczna wynosi 0 zł w miesiącu, w którym punkt wyśle ponad ${c.o.progRabatu} paczek, a w pozostałych ${fmtZl(c.o.oplataMies)}.
+
+Chętnie omówię konfigurację telefonicznie.${podpis(c)}` }) },
 
   sms_po_rozmowie: { grp: 'Pierwszy kontakt', n: 'Podziękowanie po rozmowie (SMS)', kind: 'SMS', f: c => ({ body: smsThanksText(c.l.id ? c.l : { model: 'franczyza' }) }) },
 
@@ -2868,6 +2965,7 @@ function viewSettings() {
       <label class="field full"><span>Przewoźnicy</span><input type="text" id="of-przewoznicy" data-offer="przewoznicy" value="${esc(o.przewoznicy)}"></label>
       ${f('email', 'E-mail działu franczyzy', 'email')}${f('telefon', 'Telefon', 'tel')}${f('www', 'Strona', 'text')}${f('adres', 'Adres centrali', 'text')}
       ${f('linkKalkulator', 'Link do kalkulatora franczyzy', 'url')}${f('smsPodpis', 'Podpis w SMS', 'text')}
+      ${f('linkPrezentacja', 'Link do prezentacji – franczyza', 'url', 'np. PDF na Dysku Google; puste = prezentacja w załączniku')}${f('linkPrezentacjaShipPoint', 'Link do prezentacji – Ship Point', 'url')}
       ${f('linkSpotkanie', 'Link do kalendarza spotkań', 'url', 'np. Calendly, Google Kalendarz')}${f('linkWebinar', 'Link do zapisów na webinar', 'url')}
     </div>
     <div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="offer-reset">Przywróć wartości domyślne</button><span class="note">Zmiany zapisują się automatycznie po opuszczeniu pola.</span></div></div>`;
@@ -3005,8 +3103,9 @@ function handleAction(act, el, e) {
     case 'task-done': case 'call-log': if (L) openCallModal(L, {}); return;
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
     case 'pres-sent': if (L) markPresentation(L); return;
+    case 'mail-tpl': if (L) openMailModal(L, el.dataset.tpl); return;
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
-    case 'pres-clear': if (L) patch('leads', id, { presentationAt: '' }); return;
+    case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
     case 'sms-cancel': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'anulowany' }); return; }
     case 'me-bind': { if (!S.userId) { toast('Nie udało się ustalić Twojego konta – otwórz panel w claude.ai po zalogowaniu.', 'bad'); return; } Object.values(D().team).filter(m => m.userId === S.userId && m.id !== id).forEach(m => patch('team', m.id, { userId: '' })); patch('team', id, { userId: S.userId }); S.ui.cOwner = null; toast('Zapamiętano: to Ty'); return; }

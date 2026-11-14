@@ -296,6 +296,7 @@ function viewSettings() {
       <label class="field full"><span>Przewoźnicy</span><input type="text" id="of-przewoznicy" data-offer="przewoznicy" value="${esc(o.przewoznicy)}"></label>
       ${f('email', 'E-mail działu franczyzy', 'email')}${f('telefon', 'Telefon', 'tel')}${f('www', 'Strona', 'text')}${f('adres', 'Adres centrali', 'text')}
       ${f('linkKalkulator', 'Link do kalkulatora franczyzy', 'url')}${f('smsPodpis', 'Podpis w SMS', 'text')}
+      ${f('linkPrezentacja', 'Link do prezentacji – franczyza', 'url', 'np. PDF na Dysku Google; puste = prezentacja w załączniku')}${f('linkPrezentacjaShipPoint', 'Link do prezentacji – Ship Point', 'url')}
       ${f('linkSpotkanie', 'Link do kalendarza spotkań', 'url', 'np. Calendly, Google Kalendarz')}${f('linkWebinar', 'Link do zapisów na webinar', 'url')}
     </div>
     <div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="offer-reset">Przywróć wartości domyślne</button><span class="note">Zmiany zapisują się automatycznie po opuszczeniu pola.</span></div></div>`;

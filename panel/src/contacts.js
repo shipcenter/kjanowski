@@ -145,3 +145,47 @@ function viewContacts() {
   const empty = !groups.some(g => g[2].length) ? `<div class="card"><div class="empty"><h3>Brak zaplanowanych kontaktów na najbliższy tydzień</h3><p>Kolejny kontakt ustawisz przy zapisie rozmowy albo w karcie leada.</p></div></div>` : '';
   return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
 }
+
+/* mail z prezentacją / kalkulatorem: gotowa wiadomość + zapis wysłania */
+function openMailModal(l, tplKey) {
+  const t = TEMPLATES[tplKey]; if (!t) return;
+  const out = t.f(msgContext(l, l.form));
+  const isPres = tplKey === 'email_prezentacja';
+  const again = isPres ? !!l.presentationAt : !!l.calcSentAt;
+  const mailto = () => `mailto:${encodeURIComponent(l.email || '')}?subject=${encodeURIComponent($('#ml-subj').value)}&body=${encodeURIComponent($('#ml-body').value)}`;
+  openModal(`<div class="mh"><h2>${esc(again ? 'Wyślij ponownie: ' + t.n.toLowerCase() : t.n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb">
+      ${again ? `<p class="callout">${isPres ? 'Prezentacja' : 'Kalkulator'} był już wysłany ${fdate(isPres ? l.presentationAt : l.calcSentAt)}.</p>` : ''}
+      <div class="formgrid">
+        <label class="field span2"><span>Do</span><input type="email" id="ml-to" value="${esc(l.email || '')}" placeholder="brak adresu e-mail w karcie leada"></label>
+        <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="ml-copy-to">${ICONS.copy}Kopiuj adres</button></div>
+        <label class="field full"><span>Temat</span><input type="text" id="ml-subj" value="${esc(out.subject || '')}"></label>
+        <label class="field full"><span>Treść</span><textarea id="ml-body" rows="14">${esc(out.body)}</textarea></label>
+      </div>
+      <div class="row"><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz prezentację, jeśli nie ma linku, i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
+    </div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
+  const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
+  refreshLink();
+  ['ml-to', 'ml-subj', 'ml-body'].forEach(id => { $('#' + id).oninput = refreshLink; });
+  $('#ml-copy-to').onclick = () => copyText($('#ml-to').value);
+  $('#ml-copy-subj').onclick = () => copyText($('#ml-subj').value);
+  $('#ml-copy-body').onclick = () => copyText($('#ml-body').value);
+  $('#ml-save').onclick = () => {
+    const cur = D().leads[l.id]; if (!cur) return closeModal();
+    const by = myMemberId() || cur.ownerId || '';
+    const hist = (cur.history || []).slice();
+    hist.push(histEntry('email', `${again ? 'Ponownie wysłano' : 'Wysłano'}: ${t.n.toLowerCase()} – „${$('#ml-subj').value}”`, { by, result: 'Wysłano materiały' }));
+    const p = { history: hist, updatedTs: new Date().toISOString() };
+    const to = $('#ml-to').value.trim();
+    if (to && to !== cur.email) p.email = to;
+    if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
+    else { if (!cur.calcSentAt) p.calcSentAt = todayISO(); p.calcLastAt = todayISO(); }
+    if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
+    if (cur.status === 'do_kontaktu') p.status = 'w_kontakcie';
+    patch('leads', l.id, p);
+    closeModal();
+    toast('Zapisano wysłanie maila' + (p.nextTaskDate ? ' · kolejny kontakt ' + fdate(p.nextTaskDate) : ''));
+  };
+}

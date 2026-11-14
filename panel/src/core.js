@@ -73,7 +73,7 @@ const DEFAULT_OFFER = {
   minPaczek: 100, przewoznicy: 'InPost, DPD, DHL, UPS, FedEx, GLS, Poczta Polska (Pocztex), ORLEN Paczka, Ambro Express',
   email: 'franczyza@shipcenter.pl', telefon: '+48 798 344 130', www: 'shipcenter.pl',
   adres: 'ul. Gliwicka 51, 40-853 Katowice', linkSpotkanie: '', linkWebinar: '',
-  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', smsPodpis: 'ShipCenter'
+  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', linkPrezentacja: '', linkPrezentacjaShipPoint: '', smsPodpis: 'ShipCenter'
 };
 
 /* ---------- utils ---------- */

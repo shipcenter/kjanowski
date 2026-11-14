@@ -8,7 +8,7 @@ const PH = t => `[uzupełnij: ${t}]`;
 
 function msgContext(l, form) {
   const o = offer();
-  const m = l && l.ownerId ? D().team[l.ownerId] : null;
+  const m = (myMemberId() && D().team[myMemberId()]) || (l && l.ownerId ? D().team[l.ownerId] : null);
   form = form || (l && l.form) || 'panstwo';
   const g = (pan, pani, panstwo, ty) => ({ pan, pani, panstwo, ty })[form] ?? panstwo;
   const first = l && l.name ? l.name.trim().split(/\s+/)[0] : '';
@@ -52,6 +52,52 @@ Najważniejsze informacje w skrócie:
 ${offerBullets(c)}${kalk(c)}
 
 Proponuję krótką rozmowę telefoniczną (ok. 15 minut): opowiem o modelu współpracy, odpowiem na pytania i sprawdzimy, czy wybrana lokalizacja ma potencjał. ${c.g('Kiedy będzie Panu wygodnie porozmawiać?', 'Kiedy będzie Pani wygodnie porozmawiać?', 'Kiedy będzie Państwu wygodnie porozmawiać?', 'Kiedy będzie Ci wygodnie porozmawiać?')} Termin można też wybrać tutaj: ${c.linkKalendarz}${podpis(c)}` }) },
+
+  email_prezentacja: { grp: 'Prezentacja i kalkulator', n: 'Mail z prezentacją', kind: 'E-mail', f: c => {
+    const sp = c.model === 'shippoint' || MODEL_ALIAS[c.model] === 'shippoint';
+    const link = sp ? (c.o.linkPrezentacjaShipPoint || c.o.linkPrezentacja) : c.o.linkPrezentacja;
+    const kiedy = c.l.nextTaskDate && c.l.nextTaskDate > todayISO() ? fdtLong(c.l.nextTaskDate + (c.l.nextTaskTime ? 'T' + c.l.nextTaskTime : '')) : 'w ciągu 2–3 dni';
+    if (sp) return {
+      subject: 'Ship Point – informacje o współpracy z ShipCenter',
+      body: `${powitanie(c)}
+
+dziękuję za rozmowę. Zgodnie z obietnicą przesyłam informacje o współpracy w modelu Ship Point${link ? ': ' + link : ' (prezentacja w załączniku)'}.
+
+W skrócie:
+• w obecnym lokalu można przyjmować nadania paczek u wielu przewoźników przez platformę ${c.o.www},
+• opłata wstępna to ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
+• ShipCenter zapewnia dostęp do przewoźników, konto na platformie, naklejkę i materiały,
+• można też prowadzić PaczkoPunkt InPost.
+
+Zadzwonię ${kiedy}, żeby odpowiedzieć na pytania.${podpis(c)}` };
+    return {
+      subject: 'Prezentacja oferty franczyzowej ShipCenter',
+      body: `${powitanie(c)}
+
+dziękuję za rozmowę. Zgodnie z obietnicą przesyłam prezentację oferty franczyzowej ShipCenter${link ? ': ' + link : ' (w załączniku)'}.
+
+W prezentacji jest opisane, jak działa punkt ShipCenter, z czego składa się przychód, co obejmuje pakiet startowy SMART (${fmtZl(c.o.licencja)} jednorazowo) i jak wygląda start punktu krok po kroku.${c.o.linkKalkulator ? `
+
+Koszt startu razem z wyposażeniem można policzyć w kalkulatorze: ${c.o.linkKalkulator}` : ''}
+
+Zadzwonię ${kiedy}, żeby odpowiedzieć na pytania.${podpis(c)}` };
+  } },
+
+  email_kalkulator: { grp: 'Prezentacja i kalkulator', n: 'Mail z kalkulatorem', kind: 'E-mail', f: c => ({
+    subject: 'Kalkulator kosztów punktu ShipCenter',
+    body: `${powitanie(c)}
+
+przesyłam link do kalkulatora, w którym można samodzielnie skonfigurować punkt i sprawdzić koszt startu:
+${c.o.linkKalkulator || PH('link do kalkulatora')}
+
+Jak z niego korzystać:
+1. Wariant SMART – jeśli ${c.g('ma Pan', 'ma Pani', 'mają Państwo', 'masz')} wyposażenie zgodne ze standardem ShipCenter: ${fmtZl(c.o.licencja)} jednorazowo.
+2. Wariant FLEX – ${c.g('dobiera Pan', 'dobiera Pani', 'dobierają Państwo', 'dobierasz')} tylko brakujący sprzęt (meble, komputer, drukarki, skaner). Rabat rośnie z liczbą produktów, do ${c.o.flexRabat || 15}%.
+3. Gotową konfigurację można wysłać z kalkulatora prosto do działu franczyzy.
+
+Opłata miesięczna wynosi 0 zł w miesiącu, w którym punkt wyśle ponad ${c.o.progRabatu} paczek, a w pozostałych ${fmtZl(c.o.oplataMies)}.
+
+Chętnie omówię konfigurację telefonicznie.${podpis(c)}` }) },
 
   sms_po_rozmowie: { grp: 'Pierwszy kontakt', n: 'Podziękowanie po rozmowie (SMS)', kind: 'SMS', f: c => ({ body: smsThanksText(c.l.id ? c.l : { model: 'franczyza' }) }) },
 

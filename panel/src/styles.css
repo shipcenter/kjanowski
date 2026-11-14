@@ -394,6 +394,7 @@ details.adv[open] summary { margin-bottom: 10px; }
 .pstep.late { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-wash); }
 .pstep .lbl { font-size: .72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .pstep .val { font-weight: 600; font-size: 1rem; }
+.pstep .btn { white-space: normal; text-align: left; justify-content: flex-start; }
 .daygroup h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .contact-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .contact-row:last-child { border-bottom: none; }

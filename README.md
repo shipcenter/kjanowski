@@ -20,6 +20,10 @@ Kolorystyka wg shipcenter.pl (Poppins, pomarańcz #ea580c, skala szarości).
 
 Wzór zmiennych jest w `.env.example` (IMAP franczyza@, SMSAPI, SMTP, Google Maps, Google Ads). Prawdziwy plik `.env` tworzy się tylko tam, gdzie działa skrypt integracji. Jest w `.gitignore`, więc nie trafia do repozytorium. Danych dostępowych nie wkleja się do czatu. Klucze dla zadań uruchamianych przez Claude w chmurze wpisuje się w bezpiecznym formularzu sekretów środowiska.
 
+**Automatyczna analiza lokalizacji (Mapy Google)**
+
+`panel/tools/analiza_lokalizacji.py "adres"` geokoduje adres przez Places API (New). Potem szuka w promieniu 3 km punktów konkurencji: Epaka, Furgonetka, punkty nadawcze, paczkomaty i PaczkoPunkty InPost, Poczta Polska, DPD Pickup, DHL POP, Orlen Paczka, Żabka, Allegro One Box, GLS, UPS, inne punkty ShipCenter. Zwraca JSON z typem i odległością każdego punktu oraz podpowiedziami typu lokalizacji i ruchu, w formacie pól analizy w panelu. Klucz: sekret sieciowy środowiska dla `places.googleapis.com` (nagłówek `X-Goog-Api-Key`) albo zmienna `GOOGLE_MAPS_API_KEY`.
+
 **Budowanie**
 
 ```bash

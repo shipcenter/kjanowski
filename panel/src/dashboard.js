@@ -16,17 +16,17 @@ function adsRows(a, b) { return Object.values(D().ads || {}).filter(x => inRange
 function viewDashboard() {
   if (isLoading()) return `<div class="skeleton">Wczytywanie danych zespołu…</div>`;
   const plan = activePlan();
-  const conv = (plan.conv && plan.conv.length === 6) ? plan.conv : DEFAULT_CONV;
+  const conv = (plan.conv && plan.conv.length === NS - 1) ? plan.conv : DEFAULT_CONV;
   const all = leadsArr();
   const leads = filterLeads(all);
   const [a, b, plabel] = periodRange(S.f.period, plan);
   const isAll = S.f.period === 'all';
   const days = isAll ? null : Math.max(1, daysBetween(a, b));
   const cohort = leads.filter(l => inRange(l.createdAt, a, b));
-  const won = leads.filter(l => inRange((l.stageDates || {}).umowa, a, b)).length;
+  const won = leads.filter(l => inRange(stageDatesOf(l).umowa, a, b)).length;
   const fr = cohort.filter(l => modelOf(l) === 'franczyza').length, sp = cohort.length - fr;
   const fun = funnelOf(cohort);
-  const overallAct = fun.reached[0] > 0 ? fun.reached[6] / fun.reached[0] : null;
+  const overallAct = fun.reached[0] > 0 ? fun.reached[NS - 1] / fun.reached[0] : null;
   const fastCall = cohort.filter(l => l.firstCallAt && daysBetween(parseD(l.createdAt), parseD(l.firstCallAt)) <= 1).length;
   const called = cohort.filter(l => l.firstCallAt).length;
   const pres = leads.filter(l => inRange(l.presentationAt, a, b)).length;
@@ -56,10 +56,10 @@ function viewDashboard() {
       const cv = i > 0 ? fun.conv[i - 1] : null;
       return `<div class="frow" data-tip="${esc(s.n + ': ' + r + ' leadów' + (cv != null ? ' · konwersja z poprzedniego etapu ' + pct(cv) : ''))}">
         <span class="fl">${esc(s.n)}</span>
-        <div class="ftrack"><div class="fbar ${i === 6 ? 'won' : ''}" style="width:${w}%"></div><span class="fnum" style="${w > 82 ? `right:calc(${100 - w}% + 8px);color:#fff` : `left:calc(${w}% + 6px)`}">${fmt(r)}</span></div>
+        <div class="ftrack"><div class="fbar ${i === NS - 1 ? 'won' : ''}" style="width:${w}%"></div><span class="fnum" style="${w > 82 ? `right:calc(${100 - w}% + 8px);color:#fff` : `left:calc(${w}% + 6px)`}">${fmt(r)}</span></div>
         <span class="fconv">${i === 0 ? '<span class="muted">100%</span>' : `<b>${cv == null ? '—' : pct(cv)}</b>`}</span></div>`;
     }).join('')}</div>
-    <p class="note" style="margin-top:8px">Procent to odsetek leadów z poprzedniego etapu, które doszły dalej. Utracone liczą się do etapu, na którym odpadły.</p></div>`;
+    <p class="note" style="margin-top:8px">Etapy ustawiają się same: zapis pierwszej rozmowy, wysłanie prezentacji, odbyte spotkanie i status „Pozyskany”. Procent to odsetek leadów z poprzedniego etapu, które doszły dalej.</p></div>`;
 
   const t = todayISO(), tomorrow = isoDate(addDays(new Date(), 1));
   const open = leads.filter(isOpen);
@@ -93,12 +93,12 @@ function viewDashboard() {
     <div class="legend"><span><i style="background:var(--s1)"></i>Z obecnych leadów</span><span><i style="background:var(--s2)"></i>Z nowych leadów</span></div>
     <div class="sep"></div>
     <div class="tablewrap"><table class="t"><thead><tr><th>Etap</th><th class="r">Otwarte leady</th><th class="r">Szansa na umowę</th><th class="r">Oczekiwane punkty</th></tr></thead><tbody>
-    ${STAGES.slice(0, 6).map((s, i) => `<tr><td>${esc(s.n)}</td><td class="r">${fc.pipeByStage[i].n}</td><td class="r muted">${pct(winProbFrom(i, conv), 1)}</td><td class="r">${fmt(fc.pipeByStage[i].exp, 1)}</td></tr>`).join('')}
+    ${STAGES.slice(0, -1).map((s, i) => `<tr><td>${esc(s.n)}</td><td class="r">${fc.pipeByStage[i].n}</td><td class="r muted">${pct(winProbFrom(i, conv), 1)}</td><td class="r">${fmt(fc.pipeByStage[i].exp, 1)}</td></tr>`).join('')}
     </tbody></table></div><p class="note" style="margin-top:6px">Szanse z etapów to założenia (konwersje i cykl ok. ${fmt(plan.cycleDays || 60)} dni) – po zebraniu danych można je zastąpić rzeczywistymi.</p></div>`;
 
   const srcRows = SOURCES.map((s, i) => {
     const inP = leads.filter(l => l.source === s.k && inRange(l.createdAt, a, b));
-    const w = leads.filter(l => l.source === s.k && inRange((l.stageDates || {}).umowa, a, b)).length;
+    const w = leads.filter(l => l.source === s.k && inRange(stageDatesOf(l).umowa, a, b)).length;
     const cost = s.k === 'google' && ads.length ? adsCost : null;
     return { s, i, leads: inP.length, calls: inP.filter(l => l.firstCallAt).length, meet: inP.filter(l => stageIdx(l) >= 3).length, won: w, cost, cpl: cost != null && inP.length ? cost / inP.length : null };
   }).filter(r => r.leads || r.won);
@@ -112,7 +112,7 @@ function viewDashboard() {
     const ls = leads.filter(l => (l.ownerId || '') === m.id);
     const op = ls.filter(isOpen);
     return { m, total: ls.length, open: op.length, overdue: op.filter(l => l.nextTaskDate && l.nextTaskDate < t).length, today: op.filter(l => l.nextTaskDate === t).length,
-      pres: ls.filter(l => inRange(l.presentationAt, a, b)).length, won: ls.filter(l => inRange((l.stageDates || {}).umowa, a, b)).length,
+      pres: ls.filter(l => inRange(l.presentationAt, a, b)).length, won: ls.filter(l => inRange(stageDatesOf(l).umowa, a, b)).length,
       stale: op.filter(l => { const lc = lastContact(l) || l.createdAt; return lc && daysBetween(parseD(lc), new Date()) > 7; }).length };
   }).filter(r => r.total);
   const ownersCard = `<div class="card"><div class="cardhead"><h2>Opiekunowie</h2><p>Obciążenie i wyniki</p></div>
@@ -120,7 +120,7 @@ function viewDashboard() {
     ${owners.map(r => `<tr class="click" data-act="filter-owner" data-k="${r.m.id || '_none'}"><td>${esc(r.m.name)}</td><td class="r">${r.open}</td><td class="r ${r.today ? 'today' : ''}">${r.today}</td><td class="r ${r.overdue ? 'overdue' : ''}">${r.overdue}</td><td class="r">${r.stale}</td><td class="r">${r.pres}</td><td class="r"><b>${r.won}</b></td></tr>`).join('')}
     </tbody></table></div>` : `<p class="muted">Dodaj osoby w zakładce „Zespół i ustawienia” i przypisz im leady.</p>`}</div>`;
 
-  const regs = REGIONS.map(r => ({ r, n: cohort.filter(l => l.region === r).length, w: leads.filter(l => l.region === r && inRange((l.stageDates || {}).umowa, a, b)).length })).filter(x => x.n || x.w).sort((x, y) => y.n - x.n);
+  const regs = REGIONS.map(r => ({ r, n: cohort.filter(l => l.region === r).length, w: leads.filter(l => l.region === r && inRange(stageDatesOf(l).umowa, a, b)).length })).filter(x => x.n || x.w).sort((x, y) => y.n - x.n);
   const maxReg = Math.max(1, ...regs.map(x => x.n));
   const regionsCard = `<div class="card"><div class="cardhead"><h2>Regiony</h2><p>Leady i umowy</p></div>
     ${regs.length ? `<div class="subbars">${regs.slice(0, 10).map(x => `<div class="subbar" data-tip="${esc(x.r + ': ' + x.n + ' leadów, ' + x.w + ' umów')}"><span class="small">${esc(x.r)}</span><div class="track"><i style="width:${x.n / maxReg * 100}%"></i></div><span class="small num r">${x.n}${x.w ? ` · <b>${x.w}</b>` : ''}</span></div>`).join('')}</div>` : `<p class="muted">Uzupełnij województwa w leadach, aby zobaczyć rozkład.</p>`}</div>`;
@@ -137,7 +137,7 @@ function adsCard(a, b, plabel, gLeads, leads = []) {
       <div class="row" style="margin-top:10px"><a class="btn sm" href="#ustawienia">Jak podłączyć</a></div></div>`;
   }
   const cost = sum(rows, x => x.cost), clicks = sum(rows, x => x.clicks), convs = sum(rows, x => x.conversions), impr = sum(rows, x => x.impressions);
-  const won = leads.filter(l => l.source === 'google' && inRange((l.stageDates || {}).umowa, a, b)).length;
+  const won = leads.filter(l => l.source === 'google' && inRange(stageDatesOf(l).umowa, a, b)).length;
   const data = rows.slice(-30).map(x => ({ label: fdateShort(x.date), value: +x.cost || 0, tip: `${fdate(x.date)}: ${zl(x.cost)} · ${x.clicks || 0} kliknięć · ${fmt(x.conversions || 0, 1)} konwersji` }));
   return `<div class="card"><div class="cardhead"><h2>Google Ads – kampania franczyza</h2><p>${esc(plabel)}</p></div>
     <div class="grid2" style="gap:10px">

@@ -23,11 +23,10 @@ function handleAction(act, el, e) {
     case 'sel': if (el.checked) S.selected.add(id); else S.selected.delete(id); scheduleRender(); return;
     case 'bulk-clear': S.selected.clear(); scheduleRender(); return;
     case 'bulk-apply': {
-      const owner = $('#bulk-owner').value, stage = $('#bulk-stage').value, status = $('#bulk-status').value;
-      if (!owner && !stage && !status) { toast('Wybierz, co zmienić.', 'bad'); return; }
+      const owner = $('#bulk-owner').value, status = $('#bulk-status').value;
+      if (!owner && !status) { toast('Wybierz, co zmienić.', 'bad'); return; }
       [...S.selected].forEach(lid => {
         const l = D().leads[lid]; if (!l) return;
-        if (stage) { setStage(l, stage); }
         const p = {}; const hist = (D().leads[lid].history || []).slice();
         if (owner) { p.ownerId = owner; hist.push(histEntry('system', `Opiekun (zbiorczo): ${memberName(l.ownerId) || 'brak'} → ${memberName(owner)}`)); }
         if (status) { p.status = status; hist.push(histEntry('system', `Status (zbiorczo): ${STATUS_MAP[status].n}`)); }
@@ -37,8 +36,6 @@ function handleAction(act, el, e) {
     }
     case 'bulk-delete': { const n = S.selected.size; confirmBox('Usunąć leady?', `Usuniesz <b>${n}</b> leadów razem z historią kontaktów. Tej operacji nie można cofnąć.`, `Usuń ${n}`, () => { [...S.selected].forEach(lid => remove('leads', lid)); S.selected.clear(); toast('Usunięto'); }); return; }
     case 'open-lead': if (e.target.closest('[data-stop]')) return; go('lead-' + id); return;
-    case 'stage-next': if (L) { const i = stageIdx(L); if (i < 6) setStage(L, STAGES[i + 1].k); } return;
-    case 'set-stage': if (L && L.stage !== el.dataset.k) setStage(L, el.dataset.k); return;
     case 'task-done': case 'call-log': if (L) openCallModal(L, {}); return;
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
     case 'pres-sent': if (L) markPresentation(L); return;
@@ -69,7 +66,8 @@ function handleAction(act, el, e) {
       const p = { history: hist, updatedTs: new Date().toISOString() };
       if (L.status === 'do_kontaktu' && entry.result !== 'Nie odebrał') p.status = 'w_kontakcie';
       if (L.status === 'do_kontaktu' && entry.result === 'Nie odebrał') p.status = 'proba';
-      if (stageIdx(L) === 0 && entry.result !== 'Nie odebrał') { p.stage = 'kontakt'; p.stageDates = { ...(L.stageDates || {}), kontakt: todayISO() }; }
+      if (entry.type === 'tel' && entry.result !== 'Nie odebrał' && !L.firstCallAt) p.firstCallAt = (entry.at || todayISO()).slice(0, 10);
+      if (entry.type === 'spotkanie' && !(L.stageDates || {}).spotkanie) p.stageDates = { ...(L.stageDates || {}), spotkanie: (entry.at || todayISO()).slice(0, 10) };
       patch('leads', id, p); toast('Dodano wpis'); return;
     }
     case 'hist-del': if (L) patch('leads', id, { history: (L.history || []).filter(h => h.id !== el.dataset.h) }); return;
@@ -156,26 +154,6 @@ function keepImpDefaults() {
   IMP.dups = ($('#imp-dups') || {}).value || IMP.dups;
 }
 
-/* przeciąganie kart w kanbanie */
-document.addEventListener('dragstart', e => {
-  const c = e.target.closest && e.target.closest('[data-drag-lead]');
-  if (c) { e.dataTransfer.setData('text/plain', c.dataset.dragLead); e.dataTransfer.effectAllowed = 'move'; }
-});
-document.addEventListener('dragover', e => {
-  const col = e.target.closest && e.target.closest('[data-drop-stage]');
-  if (col) { e.preventDefault(); $$('.kcol.drop').forEach(x => x !== col && x.classList.remove('drop')); col.classList.add('drop'); }
-});
-document.addEventListener('dragleave', e => {
-  const col = e.target.closest && e.target.closest('[data-drop-stage]');
-  if (col && !col.contains(e.relatedTarget)) col.classList.remove('drop');
-});
-document.addEventListener('drop', e => {
-  const col = e.target.closest && e.target.closest('[data-drop-stage]');
-  if (!col) return;
-  e.preventDefault(); col.classList.remove('drop');
-  const id = e.dataTransfer.getData('text/plain'); const l = D().leads[id];
-  if (l && l.stage !== col.dataset.dropStage) setStage(l, col.dataset.dropStage);
-});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
 function afterRender() { }

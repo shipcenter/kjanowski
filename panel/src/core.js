@@ -1,17 +1,17 @@
 /* ===== Ship Center – rekrutacja franczyzobiorców: rdzeń (stałe, stan, zapis, obliczenia) ===== */
 'use strict';
 
+/* Etapy ustalane automatycznie z działań: rozmowa, prezentacja, spotkanie, status „Pozyskany”. */
 const STAGES = [
   { k: 'nowy', n: 'Nowy lead', short: 'Nowy' },
-  { k: 'kontakt', n: 'Pierwszy kontakt', short: 'Kontakt' },
-  { k: 'kwalifikacja', n: 'Kwalifikacja', short: 'Kwalif.' },
-  { k: 'spotkanie', n: 'Spotkanie / prezentacja', short: 'Spotkanie' },
-  { k: 'lokalizacja', n: 'Analiza lokalizacji', short: 'Lokalizacja' },
-  { k: 'oferta', n: 'Oferta i negocjacje', short: 'Oferta' },
+  { k: 'kontakt', n: 'Po pierwszej rozmowie', short: 'Po rozmowie' },
+  { k: 'prezentacja', n: 'Prezentacja wysłana', short: 'Prezentacja' },
+  { k: 'spotkanie', n: 'Spotkanie / negocjacje', short: 'Spotkanie' },
   { k: 'umowa', n: 'Umowa podpisana', short: 'Umowa' }
 ];
+const NS = STAGES.length;
 const STAGE_IDX = Object.fromEntries(STAGES.map((s, i) => [s.k, i]));
-const CONV_LABELS = ['Lead → kontakt', 'Kontakt → kwalifikacja', 'Kwalifikacja → spotkanie', 'Spotkanie → analiza lokalizacji', 'Analiza → oferta', 'Oferta → umowa'];
+const CONV_LABELS = ['Lead → pierwsza rozmowa', 'Rozmowa → prezentacja', 'Prezentacja → spotkanie', 'Spotkanie → umowa'];
 
 const STATUSES = [
   { k: 'do_kontaktu', n: 'Do kontaktu', tone: 'acc' },
@@ -21,7 +21,7 @@ const STATUSES = [
   { k: 'umowione', n: 'Spotkanie umówione', tone: 'acc' },
   { k: 'wstrzymany', n: 'Wstrzymany', tone: 'outline' },
   { k: 'utracony', n: 'Utracony', tone: 'bad' },
-  { k: 'pozyskany', n: 'Pozyskany', tone: 'good' }
+  { k: 'pozyskany', n: 'Pozyskany – umowa podpisana', tone: 'good' }
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.k, s]));
 const CLOSED = new Set(['utracony', 'pozyskany']);
@@ -61,7 +61,7 @@ const ROLES = ['Centrala – dyrektor rozwoju', 'Opiekun regionalny', 'Analityk 
 const STREAMS = { mkt: 'Marketing', sprz: 'Sprzedaż', lok: 'Lokalizacje', anl: 'Analityka' };
 const STREAM_COLOR = { mkt: '--s2', sprz: '--s1', lok: '--s3', anl: '--s7' };
 
-const DEFAULT_CONV = [0.65, 0.40, 0.45, 0.60, 0.55, 0.45];
+const DEFAULT_CONV = [0.75, 0.60, 0.35, 0.35];
 const DEFAULT_MIX = { meta: 35, google: 20, portale: 15, linkedin: 5, polecenia: 8, targi: 5, www: 4, webinar: 4, outbound: 4, inne: 0 };
 
 const DEFAULT_OFFER = {
@@ -278,9 +278,20 @@ function initCapabilities() {
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
 
 /* ---------- logika leadów ---------- */
-const stageIdx = l => STAGE_IDX[l.stage] ?? 0;
+function stageDatesOf(l) {
+  const old = l.stageDates || {};
+  const meetHist = (l.history || []).find(h => h.type === 'spotkanie' && h.result !== 'Nie odebrał');
+  return {
+    nowy: l.createdAt || '',
+    kontakt: l.firstCallAt || old.kontakt || '',
+    prezentacja: l.presentationAt || '',
+    spotkanie: old.spotkanie || (meetHist ? String(meetHist.at).slice(0, 10) : ''),
+    umowa: old.umowa || (l.status === 'pozyskany' ? (l.updatedTs || '').slice(0, 10) : '')
+  };
+}
+const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : d.spotkanie ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
 const isOpen = l => !CLOSED.has(l.status);
-const isWon = l => l.stage === 'umowa' || l.status === 'pozyskany';
+const isWon = l => l.status === 'pozyskany' || !!(l.stageDates || {}).umowa;
 const lastContact = l => {
   const h = (l.history || []).filter(x => x.type !== 'system').map(x => x.at).sort();
   return h.length ? h[h.length - 1] : null;
@@ -292,29 +303,20 @@ function newLead(data = {}) {
   const today = todayISO();
   return {
     id: uid('l'), name: '', company: '', phone: '', email: '', city: '', region: '', source: 'meta', ownerId: '',
-    stage: 'nowy', status: 'do_kontaktu', capital: '', model: 'franczyza', pkg: '', hasPremises: '', form: 'panstwo',
+    status: 'do_kontaktu', capital: '', model: 'franczyza', pkg: '', hasPremises: '', form: 'panstwo',
     nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: today, nextTaskTime: '', firstCallAt: '', presentationAt: '',
     meetingAt: '', meetingType: '', meetingPlace: '',
-    notes: '', lostReason: '', handoffs: [], history: [], stageDates: { nowy: today },
+    notes: '', lostReason: '', handoffs: [], history: [], stageDates: {},
     createdAt: today, createdTs: now, updatedTs: now, ...data
   };
 }
 function histEntry(type, text, extra = {}) {
   return { id: uid('h'), at: nowLocal(), type, text, by: extra.by || '', result: extra.result || '' };
 }
-function setStage(lead, k, opts = {}) {
-  const idx = STAGE_IDX[k];
-  const sd = { ...(lead.stageDates || {}) };
-  const today = todayISO();
-  for (let i = 0; i <= idx; i++) if (!sd[STAGES[i].k]) sd[STAGES[i].k] = today;
-  const p = { stage: k, stageDates: sd, updatedTs: new Date().toISOString() };
-  if (k === 'umowa') p.status = 'pozyskany';
-  else if (lead.status === 'pozyskany') p.status = 'w_kontakcie';
-  if (k === 'kontakt' && lead.status === 'do_kontaktu') p.status = 'w_kontakcie';
+function setWon(lead) {
   const hist = (lead.history || []).slice();
-  hist.push(histEntry('system', `Etap: ${STAGES[stageIdx(lead)].n} → ${STAGES[idx].n}`));
-  p.history = hist;
-  return patch('leads', lead.id, p);
+  hist.push(histEntry('system', 'Umowa podpisana – status „Pozyskany”'));
+  return patch('leads', lead.id, { status: 'pozyskany', stageDates: { ...(lead.stageDates || {}), umowa: (lead.stageDates || {}).umowa || todayISO() }, history: hist, updatedTs: new Date().toISOString() });
 }
 
 /* filtry globalne */
@@ -330,7 +332,7 @@ function periodRange(period, plan) {
 function matchStatus(l, st) {
   if (!st) return true;
   if (st === 'aktywne') return isOpen(l);
-  if (st.startsWith('etap:')) return l.stage === st.slice(5);
+  if (st.startsWith('etap:')) return STAGES[stageIdx(l)].k === st.slice(5);
   if (st.startsWith('st:')) return l.status === st.slice(3);
   return true;
 }
@@ -353,8 +355,8 @@ const myMemberId = () => { if (!S.userId) return ''; const m = Object.values(D()
 const goal = () => +(settings().goal ?? 2.5) || 2.5;
 
 /* ---------- model planu ---------- */
-function cumConv(conv) { const p = [1]; for (let i = 0; i < 6; i++) p.push(p[i] * (+conv[i] || 0)); return p; }
-function winProbFrom(idx, conv) { let p = 1; for (let i = idx; i < 6; i++) p *= (+conv[i] || 0); return p; }
+function cumConv(conv) { const p = [1]; for (let i = 0; i < NS - 1; i++) p.push(p[i] * (+conv[i] || 0)); return p; }
+function winProbFrom(idx, conv) { let p = 1; for (let i = idx; i < NS - 1; i++) p *= (+conv[i] || 0); return p; }
 function lagWeights(days, n = 6) {
   days = Math.max(1, +days || 60);
   const sd = Math.max(7, days * 0.45);
@@ -366,7 +368,7 @@ function lagWeights(days, n = 6) {
 }
 function computePlan(plan) {
   const budget = +plan.budget || 0;
-  const conv = (plan.conv && plan.conv.length === 6) ? plan.conv.map(Number) : DEFAULT_CONV;
+  const conv = (plan.conv && plan.conv.length === NS - 1) ? plan.conv.map(Number) : DEFAULT_CONV;
   const rows = SOURCES.map(s => {
     const share = +((plan.mix || {})[s.k]) || 0;
     const cpl = +((plan.cpl || {})[s.k]) || s.cpl;
@@ -376,7 +378,7 @@ function computePlan(plan) {
   const mixSum = sum(rows, r => r.share);
   const leads = sum(rows, r => r.leads);
   const p = cumConv(conv);
-  const overall = p[6];
+  const overall = p[NS - 1];
   const points = leads * overall;
   const cplBlend = leads > 0 ? budget / leads : null;
   const cac = points > 0 ? budget / points : null;
@@ -390,7 +392,7 @@ function computePlan(plan) {
     let pts = 0, meet = 0, loc = 0;
     for (let j = 0; j <= m; j++) {
       const L = leads * ramp[j];
-      pts += L * overall * wWin[m - j]; meet += L * p[3] * wMeet[m - j]; loc += L * p[4] * wLoc[m - j];
+      pts += L * overall * wWin[m - j]; meet += L * p[3] * wMeet[m - j]; loc += L * p[2] * wLoc[m - j];
     }
     return { leads: leads * ramp[m], meetings: meet, analyses: loc, points: pts, spend: budget };
   });
@@ -405,15 +407,15 @@ function planWindows(plan) {
 function actualsFor(leads, spend, a, b) {
   return {
     leads: leads.filter(l => inRange(l.createdAt, a, b)).length,
-    meetings: leads.filter(l => inRange((l.stageDates || {}).spotkanie, a, b)).length,
-    analyses: leads.filter(l => inRange((l.stageDates || {}).lokalizacja, a, b)).length,
-    points: leads.filter(l => inRange((l.stageDates || {}).umowa, a, b)).length,
+    meetings: leads.filter(l => inRange(stageDatesOf(l).spotkanie, a, b)).length,
+    analyses: leads.filter(l => inRange(stageDatesOf(l).lokalizacja, a, b)).length,
+    points: leads.filter(l => inRange(stageDatesOf(l).umowa, a, b)).length,
     spend: sum(spend.filter(x => inRange(x.date, a, b)), x => x.amount)
   };
 }
 function funnelOf(cohort) {
   const reached = STAGES.map((s, i) => cohort.filter(l => stageIdx(l) >= i).length);
-  const conv = reached.slice(0, 6).map((r, i) => r > 0 ? reached[i + 1] / r : null);
+  const conv = reached.slice(0, NS - 1).map((r, i) => r > 0 ? reached[i + 1] / r : null);
   return { reached, conv };
 }
 function filteredSpend(f = S.f) {
@@ -427,9 +429,9 @@ function forecast(plan, leads, lpm = null) {
   const pipeByStage = STAGES.map(() => ({ n: 0, exp: 0 }));
   leads.filter(isOpen).forEach(l => {
     const i = stageIdx(l);
-    if (i >= 6) return;
+    if (i >= NS - 1) return;
     const pw = winProbFrom(i, c.conv);
-    const progress = c.p[i] > 0 ? i / 6 : 0;
+    const progress = i / (NS - 1);
     const remaining = Math.max(10, c.cycle * (1 - progress * 0.9));
     const w = lagWeights(remaining, 3);
     w.forEach((x, k) => { buckets[k] += pw * x; });

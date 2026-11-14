@@ -14,7 +14,6 @@ const LEAD_FIELDS = [
   { k: 'notes', n: 'Notatki', keys: ['notatki', 'notatka', 'uwagi', 'notes', 'komentarz', 'wiadomość', 'wiadomosc', 'message'] },
   { k: 'createdAt', n: 'Data zgłoszenia', keys: ['data', 'data zgłoszenia', 'data zgloszenia', 'created', 'created_time', 'created_at', 'date'] },
   { k: 'model', n: 'Model (franczyza / Ship Point)', keys: ['model', 'typ', 'typ zapytania', 'rodzaj zapytania', 'rodzaj', 'temat', 'formularz', 'subject', 'model współpracy'] },
-  { k: 'stage', n: 'Etap', keys: ['etap', 'stage'] },
   { k: 'status', n: 'Status', keys: ['status'] }
 ];
 const normKey = s => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -150,13 +149,12 @@ function buildImportRows() {
     Object.entries(IMP.map).forEach(([i, k]) => { if (k) { const v = r[i]; if (v !== '' && v != null) o[k] = o[k] ? o[k] + ' ' + v : v; } });
     const name = [o.name, o.lastName].filter(Boolean).join(' ').trim();
     const ownerId = o.owner ? (team().find(m => normKey(m.name) === normKey(o.owner) || normKey(m.name).startsWith(normKey(o.owner)))?.id || owner) : owner;
-    const stage = o.stage ? (STAGES.find(s => normKey(s.n) === normKey(o.stage) || s.k === normKey(o.stage))?.k || 'nowy') : 'nowy';
     const status = o.status ? (STATUSES.find(s => normKey(s.n) === normKey(o.status) || s.k === normKey(o.status))?.k || 'do_kontaktu') : 'do_kontaktu';
     return {
       name, company: String(o.company || '').trim(), phone: String(o.phone || '').replace(/^p:/, '').trim(), email: String(o.email || '').trim(),
       city: String(o.city || '').trim(), region: matchRegion(o.region) || region, source: matchSource(o.source) || src, ownerId,
       model: /ship\s*-?\s*point|partner|point/i.test(String(o.model || '')) ? 'shippoint' : 'franczyza',
-      capital: String(o.capital || '').replace(/[^\d]/g, ''), notes: String(o.notes || '').trim(), createdAt: parseDateLoose(o.createdAt) || todayISO(), stage, status
+      capital: String(o.capital || '').replace(/[^\d]/g, ''), notes: String(o.notes || '').trim(), createdAt: parseDateLoose(o.createdAt) || todayISO(), status
     };
   }).filter(r => r.name || r.phone || r.email);
 }
@@ -170,8 +168,7 @@ async function runImport(btn) {
     if (skip && (findDuplicate(r, pool) || findDuplicate(r, batchSeen))) return;
     batchSeen.push(r);
     const lead = newLead({ ...r, name: r.name || r.email || r.phone, nextTaskDate: todayISO() });
-    const sd = {}; for (let i = 0; i <= STAGE_IDX[r.stage]; i++) sd[STAGES[i].k] = r.createdAt;
-    lead.stageDates = sd;
+    lead.stageDates = r.status === 'pozyskany' ? { umowa: r.createdAt } : {};
     lead.history = [histEntry('system', 'Import z pliku: ' + (IMP.fileName || 'wklejone dane'))];
     items.push(lead);
   });
@@ -193,7 +190,7 @@ function leadRowsForExport(list) {
     'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',
     'Ostatni kontakt': (lastContact(l) || '').replace('T', ' '), 'Liczba kontaktów': (l.history || []).filter(h => h.type !== 'system').length,
-    'Data dodania': l.createdAt || '', ...Object.fromEntries(STAGES.slice(1).map(s => ['Data: ' + s.short, (l.stageDates || {})[s.k] || ''])), 'Notatki': l.notes || ''
+    'Data dodania': l.createdAt || '', ...(() => { const sd = stageDatesOf(l); return Object.fromEntries(STAGES.slice(3).map(s => ['Data: ' + s.short, sd[s.k] || ''])); })(), 'Notatki': l.notes || ''
   }));
 }
 function toCSV(rows) {
@@ -354,36 +351,37 @@ function buildDemo() {
   const first = ['Anna', 'Piotr', 'Katarzyna', 'Michał', 'Agnieszka', 'Krzysztof', 'Magdalena', 'Łukasz', 'Joanna', 'Marcin', 'Natalia', 'Adam', 'Karolina', 'Jakub', 'Monika', 'Grzegorz'];
   const last = ['Kowalczyk', 'Wiśniewski', 'Lewandowska', 'Dąbrowski', 'Mazur', 'Kaczmarek', 'Zając', 'Pawlak', 'Michalska', 'Sikora', 'Baran', 'Wróbel', 'Górska', 'Jabłoński'];
   const srcW = ['google', 'google', 'google', 'google', 'www', 'www', 'meta', 'portale', 'polecenia', 'inne'];
-  const conv = [0.78, 0.55, 0.52, 0.66, 0.62, 0.55];
+  const conv = [0.78, 0.65, 0.4, 0.4];
   const t = todayISO();
   for (let i = 0; i < 120; i++) {
     const age = Math.floor(Math.pow(rnd(), 0.9) * 75);
     const created = addDays(new Date(), -age);
-    let st = 0; while (st < 6 && rnd() < conv[st] && age > st * 7) st++;
+    let st = 0; while (st < NS - 1 && rnd() < conv[st] && age > st * 9) st++;
     const [city, region] = pick(cities);
     const owner = rnd() < 0.06 ? '' : (Object.values(d.team).find(m => m.regions.includes(region)) || {}).id || pick(memberIds);
-    const lost = st < 6 && age > 20 && rnd() < 0.35;
-    const sd = {}; for (let j = 0; j <= st; j++) sd[STAGES[j].k] = isoDate(addDays(created, Math.min(age, Math.round(j * (4 + rnd() * 6)))));
+    const lost = st < NS - 1 && age > 20 && rnd() < 0.35;
+    const sd = {}; if (st >= 3) sd.spotkanie = isoDate(addDays(created, Math.min(age, 8 + Math.round(rnd() * 10)))); if (st >= 4) sd.umowa = isoDate(addDays(created, Math.min(age, 20 + Math.round(rnd() * 20))));
     const fn = pick(first), ln = pick(last);
     const model = rnd() < 0.72 ? 'franczyza' : 'shippoint';
-    const status = st === 6 ? 'pozyskany' : lost ? 'utracony' : st === 0 ? (age > 2 ? 'proba' : 'do_kontaktu') : st === 3 && rnd() < 0.4 ? 'umowione' : pick(['w_kontakcie', 'czeka', 'w_kontakcie', 'wstrzymany']);
+    const status = st === 4 ? 'pozyskany' : lost ? 'utracony' : st === 0 ? (age > 2 ? 'proba' : 'do_kontaktu') : st === 3 && rnd() < 0.4 ? 'umowione' : pick(['w_kontakcie', 'czeka', 'w_kontakcie', 'wstrzymany']);
     const firstCallAt = st >= 1 ? isoDate(addDays(created, Math.min(age, rnd() < 0.75 ? 0 : 2))) : '';
-    const presentationAt = st >= 2 || (st === 1 && rnd() < 0.5) ? isoDate(addDays(parseD(firstCallAt || isoDate(created)), Math.min(age, 1))) : '';
+    const presentationAt = st >= 2 ? isoDate(addDays(parseD(firstCallAt || isoDate(created)), Math.min(age, 1))) : '';
     const hist = [histEntry('system', 'Zapytanie z formularza: ' + (model === 'shippoint' ? 'Ship Point' : 'franczyza') + ' (dane przykładowe)')];
     hist[0].at = isoDate(created) + 'T09:00';
     if (firstCallAt) hist.push({ id: uid('h'), at: firstCallAt + 'T10:30', type: 'tel', text: 'Pierwsza rozmowa – omówiony pakiet SMART, pytania o lokal.', result: 'Rozmowa przeprowadzona', by: owner });
     if (presentationAt) hist.push({ id: uid('h'), at: presentationAt + 'T11:00', type: 'email', text: 'Wysłano prezentację', result: 'Wysłano materiały', by: owner });
-    for (let j = 3; j <= st; j++) hist.push({ id: uid('h'), at: sd[STAGES[j].k] + 'T1' + (j % 7) + ':15', type: j === 3 ? 'spotkanie' : 'tel', text: ['', '', '', 'Prezentacja online – pytania o konkurencję paczkomatów.', 'Przesłał dane lokalu do analizy.', 'Negocjacje terminu startu.', 'Umowa podpisana.'][j], result: 'Rozmowa przeprowadzona', by: owner });
+    if (sd.spotkanie) hist.push({ id: uid('h'), at: sd.spotkanie + 'T13:15', type: 'spotkanie', text: 'Spotkanie online – pytania o lokal i konkurencję paczkomatów.', result: 'Spotkanie odbyte', by: owner });
+    if (sd.umowa) hist.push({ id: uid('h'), at: sd.umowa + 'T12:00', type: 'notatka', text: 'Umowa podpisana.', result: 'Inne', by: owner });
     const id = 'demo-l' + pad(i);
     const open = !['pozyskany', 'utracony'].includes(status);
     const nt = open && (st > 0 || rnd() < 0.5) && rnd() < 0.9 ? isoDate(addDays(new Date(), Math.floor(rnd() * 11) - 3)) : '';
-    d.leads[id] = { id, name: `${fn} ${ln}`, company: model === 'shippoint' ? `${ln} – sklep` : '', phone: '+48 5' + String(10000000 + Math.floor(rnd() * 89999999)), email: `${fn}.${ln}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l') + '@example.com', city, region, source: pick(srcW), ownerId: owner, stage: STAGES[st].k, status, capital: String(20000 + Math.floor(rnd() * 8) * 10000), model, pkg: model === 'franczyza' && st >= 2 ? pick(['smart', 'flex', '']) : '', hasPremises: pick(['ma', 'szuka', '']), form: 'panstwo',
+    d.leads[id] = { id, name: `${fn} ${ln}`, company: model === 'shippoint' ? `${ln} – sklep` : '', phone: '+48 5' + String(10000000 + Math.floor(rnd() * 89999999)), email: `${fn}.${ln}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l') + '@example.com', city, region, source: pick(srcW), ownerId: owner, status, capital: String(20000 + Math.floor(rnd() * 8) * 10000), model, pkg: model === 'franczyza' && st >= 2 ? pick(['smart', 'flex', '']) : '', hasPremises: pick(['ma', 'szuka', '']), form: 'panstwo',
       nextTask: nt ? (presentationAt ? 'Telefon po prezentacji' : firstCallAt ? 'Umówić spotkanie' : 'Pierwsza rozmowa telefoniczna') : '', nextTaskDate: nt, nextTaskTime: nt && rnd() < 0.4 ? pick(['09:30', '11:00', '13:00', '15:30']) : '', firstCallAt, presentationAt,
       meetingAt: st === 3 && status === 'umowione' ? isoDate(addDays(new Date(), Math.floor(rnd() * 6))) + 'T1' + Math.floor(rnd() * 6) + ':00' : '', meetingType: 'online', meetingPlace: '', notes: '', lostReason: lost ? pick(LOST_REASONS) : '', handoffs: [], history: hist, stageDates: sd, createdAt: isoDate(created), createdTs: created.toISOString(), updatedTs: created.toISOString() };
     if (firstCallAt && rnd() < 0.6 && age < 30) { const sid = uid('sms'); d.sms[sid] = { leadId: id, leadName: `${fn} ${ln}`, phone: d.leads[id].phone, text: smsThanksText(d.leads[id]), ownerId: owner, status: age < 1 ? 'oczekuje' : 'wyslany', createdTs: firstCallAt + 'T10:35:00.000Z', id: sid }; }
   }
   for (let k = 0; k < 75; k++) { const dt = isoDate(addDays(new Date(), -k)); const cost = Math.round(380 + rnd() * 260); const clicks = Math.round(cost / (3.5 + rnd() * 2)); d.ads['demo-' + dt] = { id: 'demo-' + dt, date: dt, campaign: 'Franczyza – Search (przykład)', cost, clicks, impressions: clicks * Math.round(14 + rnd() * 10), conversions: Math.round(rnd() * 3 * 10) / 10 }; }
-  const l0 = Object.values(d.leads).find(l => l.stage === 'lokalizacja' || l.stage === 'oferta') || Object.values(d.leads)[0];
+  const l0 = Object.values(d.leads).find(l => stageIdx(l) === 3) || Object.values(d.leads)[0];
   const loc = { ...clone(LOC_DEFAULTS), id: 'demo-loc1', name: `${l0.city} – ul. Przykładowa 12`, leadId: l0.id, address: 'ul. Przykładowa 12', city: l0.city, region: l0.region, cityPop: 135000, catchment: 15000, traffic: 2600, visibility: 4, parking: 'ograniczony', firms: 55, rent: 2600, createdAt: t,
     competitors: [{ name: 'Paczkomat przy markecie', type: 'automat', dist: 150, strength: 3 }, { name: 'Paczkomat – parking', type: 'automat', dist: 420, strength: 3 }, { name: 'Żabka', type: 'pudo', dist: 260, strength: 2 }, { name: 'Poczta Polska UP 3', type: 'poczta', dist: 900, strength: 3 }, { name: 'Punkt nadań „Paczka Expres”', type: 'multi', dist: 1700, strength: 4 }, { name: 'Orlen – stacja', type: 'pudo', dist: 1100, strength: 2 }] };
   d.locations[loc.id] = loc;

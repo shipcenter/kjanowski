@@ -434,17 +434,17 @@ details.adv[open] summary { margin-bottom: 10px; }
 /* ===== Ship Center – rekrutacja franczyzobiorców: rdzeń (stałe, stan, zapis, obliczenia) ===== */
 'use strict';
 
+/* Etapy ustalane automatycznie z działań: rozmowa, prezentacja, spotkanie, status „Pozyskany”. */
 const STAGES = [
   { k: 'nowy', n: 'Nowy lead', short: 'Nowy' },
-  { k: 'kontakt', n: 'Pierwszy kontakt', short: 'Kontakt' },
-  { k: 'kwalifikacja', n: 'Kwalifikacja', short: 'Kwalif.' },
-  { k: 'spotkanie', n: 'Spotkanie / prezentacja', short: 'Spotkanie' },
-  { k: 'lokalizacja', n: 'Analiza lokalizacji', short: 'Lokalizacja' },
-  { k: 'oferta', n: 'Oferta i negocjacje', short: 'Oferta' },
+  { k: 'kontakt', n: 'Po pierwszej rozmowie', short: 'Po rozmowie' },
+  { k: 'prezentacja', n: 'Prezentacja wysłana', short: 'Prezentacja' },
+  { k: 'spotkanie', n: 'Spotkanie / negocjacje', short: 'Spotkanie' },
   { k: 'umowa', n: 'Umowa podpisana', short: 'Umowa' }
 ];
+const NS = STAGES.length;
 const STAGE_IDX = Object.fromEntries(STAGES.map((s, i) => [s.k, i]));
-const CONV_LABELS = ['Lead → kontakt', 'Kontakt → kwalifikacja', 'Kwalifikacja → spotkanie', 'Spotkanie → analiza lokalizacji', 'Analiza → oferta', 'Oferta → umowa'];
+const CONV_LABELS = ['Lead → pierwsza rozmowa', 'Rozmowa → prezentacja', 'Prezentacja → spotkanie', 'Spotkanie → umowa'];
 
 const STATUSES = [
   { k: 'do_kontaktu', n: 'Do kontaktu', tone: 'acc' },
@@ -454,7 +454,7 @@ const STATUSES = [
   { k: 'umowione', n: 'Spotkanie umówione', tone: 'acc' },
   { k: 'wstrzymany', n: 'Wstrzymany', tone: 'outline' },
   { k: 'utracony', n: 'Utracony', tone: 'bad' },
-  { k: 'pozyskany', n: 'Pozyskany', tone: 'good' }
+  { k: 'pozyskany', n: 'Pozyskany – umowa podpisana', tone: 'good' }
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.k, s]));
 const CLOSED = new Set(['utracony', 'pozyskany']);
@@ -494,7 +494,7 @@ const ROLES = ['Centrala – dyrektor rozwoju', 'Opiekun regionalny', 'Analityk 
 const STREAMS = { mkt: 'Marketing', sprz: 'Sprzedaż', lok: 'Lokalizacje', anl: 'Analityka' };
 const STREAM_COLOR = { mkt: '--s2', sprz: '--s1', lok: '--s3', anl: '--s7' };
 
-const DEFAULT_CONV = [0.65, 0.40, 0.45, 0.60, 0.55, 0.45];
+const DEFAULT_CONV = [0.75, 0.60, 0.35, 0.35];
 const DEFAULT_MIX = { meta: 35, google: 20, portale: 15, linkedin: 5, polecenia: 8, targi: 5, www: 4, webinar: 4, outbound: 4, inne: 0 };
 
 const DEFAULT_OFFER = {
@@ -711,9 +711,20 @@ function initCapabilities() {
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
 
 /* ---------- logika leadów ---------- */
-const stageIdx = l => STAGE_IDX[l.stage] ?? 0;
+function stageDatesOf(l) {
+  const old = l.stageDates || {};
+  const meetHist = (l.history || []).find(h => h.type === 'spotkanie' && h.result !== 'Nie odebrał');
+  return {
+    nowy: l.createdAt || '',
+    kontakt: l.firstCallAt || old.kontakt || '',
+    prezentacja: l.presentationAt || '',
+    spotkanie: old.spotkanie || (meetHist ? String(meetHist.at).slice(0, 10) : ''),
+    umowa: old.umowa || (l.status === 'pozyskany' ? (l.updatedTs || '').slice(0, 10) : '')
+  };
+}
+const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : d.spotkanie ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
 const isOpen = l => !CLOSED.has(l.status);
-const isWon = l => l.stage === 'umowa' || l.status === 'pozyskany';
+const isWon = l => l.status === 'pozyskany' || !!(l.stageDates || {}).umowa;
 const lastContact = l => {
   const h = (l.history || []).filter(x => x.type !== 'system').map(x => x.at).sort();
   return h.length ? h[h.length - 1] : null;
@@ -725,29 +736,20 @@ function newLead(data = {}) {
   const today = todayISO();
   return {
     id: uid('l'), name: '', company: '', phone: '', email: '', city: '', region: '', source: 'meta', ownerId: '',
-    stage: 'nowy', status: 'do_kontaktu', capital: '', model: 'franczyza', pkg: '', hasPremises: '', form: 'panstwo',
+    status: 'do_kontaktu', capital: '', model: 'franczyza', pkg: '', hasPremises: '', form: 'panstwo',
     nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: today, nextTaskTime: '', firstCallAt: '', presentationAt: '',
     meetingAt: '', meetingType: '', meetingPlace: '',
-    notes: '', lostReason: '', handoffs: [], history: [], stageDates: { nowy: today },
+    notes: '', lostReason: '', handoffs: [], history: [], stageDates: {},
     createdAt: today, createdTs: now, updatedTs: now, ...data
   };
 }
 function histEntry(type, text, extra = {}) {
   return { id: uid('h'), at: nowLocal(), type, text, by: extra.by || '', result: extra.result || '' };
 }
-function setStage(lead, k, opts = {}) {
-  const idx = STAGE_IDX[k];
-  const sd = { ...(lead.stageDates || {}) };
-  const today = todayISO();
-  for (let i = 0; i <= idx; i++) if (!sd[STAGES[i].k]) sd[STAGES[i].k] = today;
-  const p = { stage: k, stageDates: sd, updatedTs: new Date().toISOString() };
-  if (k === 'umowa') p.status = 'pozyskany';
-  else if (lead.status === 'pozyskany') p.status = 'w_kontakcie';
-  if (k === 'kontakt' && lead.status === 'do_kontaktu') p.status = 'w_kontakcie';
+function setWon(lead) {
   const hist = (lead.history || []).slice();
-  hist.push(histEntry('system', `Etap: ${STAGES[stageIdx(lead)].n} → ${STAGES[idx].n}`));
-  p.history = hist;
-  return patch('leads', lead.id, p);
+  hist.push(histEntry('system', 'Umowa podpisana – status „Pozyskany”'));
+  return patch('leads', lead.id, { status: 'pozyskany', stageDates: { ...(lead.stageDates || {}), umowa: (lead.stageDates || {}).umowa || todayISO() }, history: hist, updatedTs: new Date().toISOString() });
 }
 
 /* filtry globalne */
@@ -763,7 +765,7 @@ function periodRange(period, plan) {
 function matchStatus(l, st) {
   if (!st) return true;
   if (st === 'aktywne') return isOpen(l);
-  if (st.startsWith('etap:')) return l.stage === st.slice(5);
+  if (st.startsWith('etap:')) return STAGES[stageIdx(l)].k === st.slice(5);
   if (st.startsWith('st:')) return l.status === st.slice(3);
   return true;
 }
@@ -786,8 +788,8 @@ const myMemberId = () => { if (!S.userId) return ''; const m = Object.values(D()
 const goal = () => +(settings().goal ?? 2.5) || 2.5;
 
 /* ---------- model planu ---------- */
-function cumConv(conv) { const p = [1]; for (let i = 0; i < 6; i++) p.push(p[i] * (+conv[i] || 0)); return p; }
-function winProbFrom(idx, conv) { let p = 1; for (let i = idx; i < 6; i++) p *= (+conv[i] || 0); return p; }
+function cumConv(conv) { const p = [1]; for (let i = 0; i < NS - 1; i++) p.push(p[i] * (+conv[i] || 0)); return p; }
+function winProbFrom(idx, conv) { let p = 1; for (let i = idx; i < NS - 1; i++) p *= (+conv[i] || 0); return p; }
 function lagWeights(days, n = 6) {
   days = Math.max(1, +days || 60);
   const sd = Math.max(7, days * 0.45);
@@ -799,7 +801,7 @@ function lagWeights(days, n = 6) {
 }
 function computePlan(plan) {
   const budget = +plan.budget || 0;
-  const conv = (plan.conv && plan.conv.length === 6) ? plan.conv.map(Number) : DEFAULT_CONV;
+  const conv = (plan.conv && plan.conv.length === NS - 1) ? plan.conv.map(Number) : DEFAULT_CONV;
   const rows = SOURCES.map(s => {
     const share = +((plan.mix || {})[s.k]) || 0;
     const cpl = +((plan.cpl || {})[s.k]) || s.cpl;
@@ -809,7 +811,7 @@ function computePlan(plan) {
   const mixSum = sum(rows, r => r.share);
   const leads = sum(rows, r => r.leads);
   const p = cumConv(conv);
-  const overall = p[6];
+  const overall = p[NS - 1];
   const points = leads * overall;
   const cplBlend = leads > 0 ? budget / leads : null;
   const cac = points > 0 ? budget / points : null;
@@ -823,7 +825,7 @@ function computePlan(plan) {
     let pts = 0, meet = 0, loc = 0;
     for (let j = 0; j <= m; j++) {
       const L = leads * ramp[j];
-      pts += L * overall * wWin[m - j]; meet += L * p[3] * wMeet[m - j]; loc += L * p[4] * wLoc[m - j];
+      pts += L * overall * wWin[m - j]; meet += L * p[3] * wMeet[m - j]; loc += L * p[2] * wLoc[m - j];
     }
     return { leads: leads * ramp[m], meetings: meet, analyses: loc, points: pts, spend: budget };
   });
@@ -838,15 +840,15 @@ function planWindows(plan) {
 function actualsFor(leads, spend, a, b) {
   return {
     leads: leads.filter(l => inRange(l.createdAt, a, b)).length,
-    meetings: leads.filter(l => inRange((l.stageDates || {}).spotkanie, a, b)).length,
-    analyses: leads.filter(l => inRange((l.stageDates || {}).lokalizacja, a, b)).length,
-    points: leads.filter(l => inRange((l.stageDates || {}).umowa, a, b)).length,
+    meetings: leads.filter(l => inRange(stageDatesOf(l).spotkanie, a, b)).length,
+    analyses: leads.filter(l => inRange(stageDatesOf(l).lokalizacja, a, b)).length,
+    points: leads.filter(l => inRange(stageDatesOf(l).umowa, a, b)).length,
     spend: sum(spend.filter(x => inRange(x.date, a, b)), x => x.amount)
   };
 }
 function funnelOf(cohort) {
   const reached = STAGES.map((s, i) => cohort.filter(l => stageIdx(l) >= i).length);
-  const conv = reached.slice(0, 6).map((r, i) => r > 0 ? reached[i + 1] / r : null);
+  const conv = reached.slice(0, NS - 1).map((r, i) => r > 0 ? reached[i + 1] / r : null);
   return { reached, conv };
 }
 function filteredSpend(f = S.f) {
@@ -860,9 +862,9 @@ function forecast(plan, leads, lpm = null) {
   const pipeByStage = STAGES.map(() => ({ n: 0, exp: 0 }));
   leads.filter(isOpen).forEach(l => {
     const i = stageIdx(l);
-    if (i >= 6) return;
+    if (i >= NS - 1) return;
     const pw = winProbFrom(i, c.conv);
-    const progress = c.p[i] > 0 ? i / 6 : 0;
+    const progress = i / (NS - 1);
     const remaining = Math.max(10, c.cycle * (1 - progress * 0.9));
     const w = lagWeights(remaining, 3);
     w.forEach((x, k) => { buckets[k] += pw * x; });
@@ -1147,17 +1149,17 @@ function adsRows(a, b) { return Object.values(D().ads || {}).filter(x => inRange
 function viewDashboard() {
   if (isLoading()) return `<div class="skeleton">Wczytywanie danych zespołu…</div>`;
   const plan = activePlan();
-  const conv = (plan.conv && plan.conv.length === 6) ? plan.conv : DEFAULT_CONV;
+  const conv = (plan.conv && plan.conv.length === NS - 1) ? plan.conv : DEFAULT_CONV;
   const all = leadsArr();
   const leads = filterLeads(all);
   const [a, b, plabel] = periodRange(S.f.period, plan);
   const isAll = S.f.period === 'all';
   const days = isAll ? null : Math.max(1, daysBetween(a, b));
   const cohort = leads.filter(l => inRange(l.createdAt, a, b));
-  const won = leads.filter(l => inRange((l.stageDates || {}).umowa, a, b)).length;
+  const won = leads.filter(l => inRange(stageDatesOf(l).umowa, a, b)).length;
   const fr = cohort.filter(l => modelOf(l) === 'franczyza').length, sp = cohort.length - fr;
   const fun = funnelOf(cohort);
-  const overallAct = fun.reached[0] > 0 ? fun.reached[6] / fun.reached[0] : null;
+  const overallAct = fun.reached[0] > 0 ? fun.reached[NS - 1] / fun.reached[0] : null;
   const fastCall = cohort.filter(l => l.firstCallAt && daysBetween(parseD(l.createdAt), parseD(l.firstCallAt)) <= 1).length;
   const called = cohort.filter(l => l.firstCallAt).length;
   const pres = leads.filter(l => inRange(l.presentationAt, a, b)).length;
@@ -1187,10 +1189,10 @@ function viewDashboard() {
       const cv = i > 0 ? fun.conv[i - 1] : null;
       return `<div class="frow" data-tip="${esc(s.n + ': ' + r + ' leadów' + (cv != null ? ' · konwersja z poprzedniego etapu ' + pct(cv) : ''))}">
         <span class="fl">${esc(s.n)}</span>
-        <div class="ftrack"><div class="fbar ${i === 6 ? 'won' : ''}" style="width:${w}%"></div><span class="fnum" style="${w > 82 ? `right:calc(${100 - w}% + 8px);color:#fff` : `left:calc(${w}% + 6px)`}">${fmt(r)}</span></div>
+        <div class="ftrack"><div class="fbar ${i === NS - 1 ? 'won' : ''}" style="width:${w}%"></div><span class="fnum" style="${w > 82 ? `right:calc(${100 - w}% + 8px);color:#fff` : `left:calc(${w}% + 6px)`}">${fmt(r)}</span></div>
         <span class="fconv">${i === 0 ? '<span class="muted">100%</span>' : `<b>${cv == null ? '—' : pct(cv)}</b>`}</span></div>`;
     }).join('')}</div>
-    <p class="note" style="margin-top:8px">Procent to odsetek leadów z poprzedniego etapu, które doszły dalej. Utracone liczą się do etapu, na którym odpadły.</p></div>`;
+    <p class="note" style="margin-top:8px">Etapy ustawiają się same: zapis pierwszej rozmowy, wysłanie prezentacji, odbyte spotkanie i status „Pozyskany”. Procent to odsetek leadów z poprzedniego etapu, które doszły dalej.</p></div>`;
 
   const t = todayISO(), tomorrow = isoDate(addDays(new Date(), 1));
   const open = leads.filter(isOpen);
@@ -1224,12 +1226,12 @@ function viewDashboard() {
     <div class="legend"><span><i style="background:var(--s1)"></i>Z obecnych leadów</span><span><i style="background:var(--s2)"></i>Z nowych leadów</span></div>
     <div class="sep"></div>
     <div class="tablewrap"><table class="t"><thead><tr><th>Etap</th><th class="r">Otwarte leady</th><th class="r">Szansa na umowę</th><th class="r">Oczekiwane punkty</th></tr></thead><tbody>
-    ${STAGES.slice(0, 6).map((s, i) => `<tr><td>${esc(s.n)}</td><td class="r">${fc.pipeByStage[i].n}</td><td class="r muted">${pct(winProbFrom(i, conv), 1)}</td><td class="r">${fmt(fc.pipeByStage[i].exp, 1)}</td></tr>`).join('')}
+    ${STAGES.slice(0, -1).map((s, i) => `<tr><td>${esc(s.n)}</td><td class="r">${fc.pipeByStage[i].n}</td><td class="r muted">${pct(winProbFrom(i, conv), 1)}</td><td class="r">${fmt(fc.pipeByStage[i].exp, 1)}</td></tr>`).join('')}
     </tbody></table></div><p class="note" style="margin-top:6px">Szanse z etapów to założenia (konwersje i cykl ok. ${fmt(plan.cycleDays || 60)} dni) – po zebraniu danych można je zastąpić rzeczywistymi.</p></div>`;
 
   const srcRows = SOURCES.map((s, i) => {
     const inP = leads.filter(l => l.source === s.k && inRange(l.createdAt, a, b));
-    const w = leads.filter(l => l.source === s.k && inRange((l.stageDates || {}).umowa, a, b)).length;
+    const w = leads.filter(l => l.source === s.k && inRange(stageDatesOf(l).umowa, a, b)).length;
     const cost = s.k === 'google' && ads.length ? adsCost : null;
     return { s, i, leads: inP.length, calls: inP.filter(l => l.firstCallAt).length, meet: inP.filter(l => stageIdx(l) >= 3).length, won: w, cost, cpl: cost != null && inP.length ? cost / inP.length : null };
   }).filter(r => r.leads || r.won);
@@ -1243,7 +1245,7 @@ function viewDashboard() {
     const ls = leads.filter(l => (l.ownerId || '') === m.id);
     const op = ls.filter(isOpen);
     return { m, total: ls.length, open: op.length, overdue: op.filter(l => l.nextTaskDate && l.nextTaskDate < t).length, today: op.filter(l => l.nextTaskDate === t).length,
-      pres: ls.filter(l => inRange(l.presentationAt, a, b)).length, won: ls.filter(l => inRange((l.stageDates || {}).umowa, a, b)).length,
+      pres: ls.filter(l => inRange(l.presentationAt, a, b)).length, won: ls.filter(l => inRange(stageDatesOf(l).umowa, a, b)).length,
       stale: op.filter(l => { const lc = lastContact(l) || l.createdAt; return lc && daysBetween(parseD(lc), new Date()) > 7; }).length };
   }).filter(r => r.total);
   const ownersCard = `<div class="card"><div class="cardhead"><h2>Opiekunowie</h2><p>Obciążenie i wyniki</p></div>
@@ -1251,7 +1253,7 @@ function viewDashboard() {
     ${owners.map(r => `<tr class="click" data-act="filter-owner" data-k="${r.m.id || '_none'}"><td>${esc(r.m.name)}</td><td class="r">${r.open}</td><td class="r ${r.today ? 'today' : ''}">${r.today}</td><td class="r ${r.overdue ? 'overdue' : ''}">${r.overdue}</td><td class="r">${r.stale}</td><td class="r">${r.pres}</td><td class="r"><b>${r.won}</b></td></tr>`).join('')}
     </tbody></table></div>` : `<p class="muted">Dodaj osoby w zakładce „Zespół i ustawienia” i przypisz im leady.</p>`}</div>`;
 
-  const regs = REGIONS.map(r => ({ r, n: cohort.filter(l => l.region === r).length, w: leads.filter(l => l.region === r && inRange((l.stageDates || {}).umowa, a, b)).length })).filter(x => x.n || x.w).sort((x, y) => y.n - x.n);
+  const regs = REGIONS.map(r => ({ r, n: cohort.filter(l => l.region === r).length, w: leads.filter(l => l.region === r && inRange(stageDatesOf(l).umowa, a, b)).length })).filter(x => x.n || x.w).sort((x, y) => y.n - x.n);
   const maxReg = Math.max(1, ...regs.map(x => x.n));
   const regionsCard = `<div class="card"><div class="cardhead"><h2>Regiony</h2><p>Leady i umowy</p></div>
     ${regs.length ? `<div class="subbars">${regs.slice(0, 10).map(x => `<div class="subbar" data-tip="${esc(x.r + ': ' + x.n + ' leadów, ' + x.w + ' umów')}"><span class="small">${esc(x.r)}</span><div class="track"><i style="width:${x.n / maxReg * 100}%"></i></div><span class="small num r">${x.n}${x.w ? ` · <b>${x.w}</b>` : ''}</span></div>`).join('')}</div>` : `<p class="muted">Uzupełnij województwa w leadach, aby zobaczyć rozkład.</p>`}</div>`;
@@ -1268,7 +1270,7 @@ function adsCard(a, b, plabel, gLeads, leads = []) {
       <div class="row" style="margin-top:10px"><a class="btn sm" href="#ustawienia">Jak podłączyć</a></div></div>`;
   }
   const cost = sum(rows, x => x.cost), clicks = sum(rows, x => x.clicks), convs = sum(rows, x => x.conversions), impr = sum(rows, x => x.impressions);
-  const won = leads.filter(l => l.source === 'google' && inRange((l.stageDates || {}).umowa, a, b)).length;
+  const won = leads.filter(l => l.source === 'google' && inRange(stageDatesOf(l).umowa, a, b)).length;
   const data = rows.slice(-30).map(x => ({ label: fdateShort(x.date), value: +x.cost || 0, tip: `${fdate(x.date)}: ${zl(x.cost)} · ${x.clicks || 0} kliknięć · ${fmt(x.conversions || 0, 1)} konwersji` }));
   return `<div class="card"><div class="cardhead"><h2>Google Ads – kampania franczyza</h2><p>${esc(plabel)}</p></div>
     <div class="grid2" style="gap:10px">
@@ -1330,7 +1332,6 @@ function viewLeads() {
   const bulk = S.selected.size ? `<div class="filters" style="background:var(--accent-wash);border-color:var(--accent)">
     <b style="align-self:center">${S.selected.size} zaznaczonych</b>
     <label class="field"><span>Przypisz opiekuna</span><select id="bulk-owner">${ownerOpts('', false, '— wybierz —')}</select></label>
-    <label class="field"><span>Zmień etap</span><select id="bulk-stage">${opt('', '— wybierz —', '')}${stageOpts('')}</select></label>
     <label class="field"><span>Zmień status</span><select id="bulk-status">${opt('', '— wybierz —', '')}${statusOpts('')}</select></label>
     <button class="btn primary" data-act="bulk-apply">Zastosuj</button>
     <button class="btn danger" data-act="bulk-delete">${ICONS.trash}Usuń</button>
@@ -1364,15 +1365,14 @@ function tableHTML(list) {
 }
 
 function kanbanHTML(list) {
-  return `<p class="note" style="margin-bottom:8px">Przeciągnij kartę do innej kolumny, aby zmienić etap. Na telefonie użyj przycisku → na karcie.</p><div class="kanban">${STAGES.map((s, i) => {
-    const items = list.filter(l => l.stage === s.k);
-    return `<div class="kcol" data-drop-stage="${s.k}"><h3><span>${esc(s.n)}</span><span class="muted num">${items.length}</span></h3>
-      ${items.map(l => `<div class="kcard" draggable="true" data-drag-lead="${l.id}" data-act="open-lead" data-id="${l.id}">
+  return `<p class="note" style="margin-bottom:8px">Kolumny to etapy ustawiane automatycznie: pierwsza rozmowa, prezentacja, spotkanie, umowa. Kliknij kartę, aby otworzyć leada.</p><div class="kanban">${STAGES.map((s, i) => {
+    const items = list.filter(l => stageIdx(l) === i);
+    return `<div class="kcol"><h3><span>${esc(s.n)}</span><span class="muted num">${items.length}</span></h3>
+      ${items.map(l => `<div class="kcard" data-act="open-lead" data-id="${l.id}" style="cursor:pointer">
         <div class="row between"><b>${esc(l.name || '(bez nazwy)')}</b><span class="code">${leadCode(l.id)}</span></div>
         <span class="tiny muted">${esc([l.city, memberName(l.ownerId)].filter(Boolean).join(' · ') || '—')}</span>
-        <div class="row">${statusPill(l.status)}</div>
-        ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${esc(l.nextTask || 'Zadanie')} · ${fdateShort(l.nextTaskDate)}</span>` : ''}
-        ${i < 6 && isOpen(l) ? `<div class="row between"><span></span><button class="btn sm ghost" data-act="stage-next" data-id="${l.id}" title="Przesuń do: ${esc(STAGES[i + 1].n)}">${esc(STAGES[i + 1].short)} ${ICONS.arrow}</button></div>` : ''}
+        <div class="row">${modelPill(l)}${statusPill(l.status)}</div>
+        ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${esc(l.nextTask || 'Kontakt')} · ${fdateShort(l.nextTaskDate)}</span>` : ''}
       </div>`).join('')}</div>`;
   }).join('')}</div>`;
 }
@@ -1449,13 +1449,13 @@ function viewLead(id) {
     <div class="leadhead"><div class="who"><span class="code">${leadCode(l.id)} · dodano ${fdate(l.createdAt)} · ${esc(SOURCE_MAP[l.source]?.n || '')}</span>
       <h1>${esc(l.name || '(bez nazwy)')}</h1>
       <p class="ink2">${esc([l.company, l.city, l.region].filter(Boolean).join(' · ') || 'Uzupełnij miasto i województwo')}</p>
-      <div class="row" style="margin-top:6px">${modelPill(l)}${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
+      <div class="row" style="margin-top:6px">${modelPill(l)}<span class="pill ${isWon(l) ? 'good' : ''}" title="Etap ustawia się sam na podstawie rozmów, prezentacji i spotkań">Etap: ${esc(STAGES[i].n)}</span>${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
       <div class="stack" style="gap:8px;min-width:240px">
         <label class="field"><span>Opiekun</span><select id="ld-owner" data-lead-field="ownerId">${ownerOpts(l.ownerId)}</select></label>
         <label class="field"><span>Status kontaktu</span><select id="ld-status" data-lead-field="status">${statusOpts(l.status)}</select></label>
         ${l.status === 'utracony' ? `<label class="field"><span>Powód utraty</span><select id="ld-lost" data-lead-field="lostReason">${opt('', '— wybierz —', l.lostReason)}${LOST_REASONS.map(r => opt(r, r, l.lostReason)).join('')}</select></label>` : ''}
       </div></div>
-    <div class="stepper" role="list">${STAGES.map((s, j) => `<button role="listitem" class="${j < i ? 'done' : ''} ${j === i ? 'cur' : ''} ${s.k === 'umowa' ? 'won' : ''}" data-act="set-stage" data-id="${l.id}" data-k="${s.k}" title="Ustaw etap: ${esc(s.n)}"><span class="n">${pad(j + 1)}</span><span class="t">${esc(s.n)}</span><span class="d">${(l.stageDates || {})[s.k] ? fdate(l.stageDates[s.k]) : '—'}</span></button>`).join('')}</div>`;
+`;
 
   const contact = `<div class="card"><div class="cardhead"><h2>Dane kandydata</h2><p>Zmiany zapisują się po opuszczeniu pola</p></div>
     <div id="lead-edit" data-lead="${l.id}">${leadFormFields(l, 'le')}</div>
@@ -1538,11 +1538,9 @@ function suggestedTemplate(l) {
   if (l.status === 'proba') return ['sms_pierwszy', 'email_followup', 'email_ostatni'];
   return [
     ['email_pierwszy', 'skrypt_pierwsza', 'email_prezentacja'],
-    ['skrypt_pierwsza', 'email_zaproszenie', 'skrypt_obiekcje'],
+    ['email_prezentacja', 'email_kalkulator', 'skrypt_obiekcje'],
     ['email_zaproszenie', 'skrypt_prezentacja', 'skrypt_obiekcje'],
-    ['email_podsumowanie', 'email_dane_lokalizacji', 'skrypt_obiekcje'],
-    ['email_raport', 'skrypt_domkniecie'],
-    ['email_oferta', 'skrypt_domkniecie', 'skrypt_obiekcje'],
+    ['email_podsumowanie', 'email_oferta', 'skrypt_domkniecie'],
     ['email_powitanie']
   ][i];
 }
@@ -1558,7 +1556,7 @@ function saveLeadField(el) {
     const hist = (l.history || []).slice();
     hist.push(histEntry('system', `Status: ${STATUS_MAP[l.status]?.n || '—'} → ${STATUS_MAP[v]?.n}`));
     p.history = hist;
-    if (v === 'pozyskany' && l.stage !== 'umowa') { setStage(l, 'umowa'); return; }
+    if (v === 'pozyskany') { setWon(l); return; }
   }
   if (f === 'ownerId' && l.ownerId !== v) {
     const hist = (l.history || []).slice();
@@ -1658,8 +1656,7 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
     const reached = res !== 'Nie odebrał';
     if (t === 'tel' && reached && !cur.firstCallAt) p.firstCallAt = todayISO();
     if ($('#cl-pres').checked && !cur.presentationAt) { p.presentationAt = todayISO(); hist.push(histEntry('email', 'Wysłano prezentację', { by, result: 'Wysłano materiały' })); }
-    if (stageIdx(cur) === 0 && reached && ['tel', 'email', 'sms', 'spotkanie'].includes(t)) { p.stage = 'kontakt'; p.stageDates = { ...(cur.stageDates || {}), kontakt: todayISO() }; }
-    if (stageTo && stageIdx(cur) < STAGE_IDX[stageTo]) { const sd = { ...(p.stageDates || cur.stageDates || {}) }; for (let i = 0; i <= STAGE_IDX[stageTo]; i++) if (!sd[STAGES[i].k]) sd[STAGES[i].k] = todayISO(); p.stage = stageTo; p.stageDates = sd; }
+    if ((t === 'spotkanie' || stageTo === 'spotkanie') && reached && !(cur.stageDates || {}).spotkanie) p.stageDates = { ...(cur.stageDates || {}), spotkanie: todayISO() };
     if (t === 'spotkanie') { p.meetingAt = ''; if (p.status === 'umowione') p.status = 'w_kontakcie'; }
     patch('leads', l.id, p);
     const smsOn = $('#cl-sms') && $('#cl-sms').checked && reached && cur.phone;
@@ -2683,7 +2680,6 @@ const LEAD_FIELDS = [
   { k: 'notes', n: 'Notatki', keys: ['notatki', 'notatka', 'uwagi', 'notes', 'komentarz', 'wiadomość', 'wiadomosc', 'message'] },
   { k: 'createdAt', n: 'Data zgłoszenia', keys: ['data', 'data zgłoszenia', 'data zgloszenia', 'created', 'created_time', 'created_at', 'date'] },
   { k: 'model', n: 'Model (franczyza / Ship Point)', keys: ['model', 'typ', 'typ zapytania', 'rodzaj zapytania', 'rodzaj', 'temat', 'formularz', 'subject', 'model współpracy'] },
-  { k: 'stage', n: 'Etap', keys: ['etap', 'stage'] },
   { k: 'status', n: 'Status', keys: ['status'] }
 ];
 const normKey = s => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -2819,13 +2815,12 @@ function buildImportRows() {
     Object.entries(IMP.map).forEach(([i, k]) => { if (k) { const v = r[i]; if (v !== '' && v != null) o[k] = o[k] ? o[k] + ' ' + v : v; } });
     const name = [o.name, o.lastName].filter(Boolean).join(' ').trim();
     const ownerId = o.owner ? (team().find(m => normKey(m.name) === normKey(o.owner) || normKey(m.name).startsWith(normKey(o.owner)))?.id || owner) : owner;
-    const stage = o.stage ? (STAGES.find(s => normKey(s.n) === normKey(o.stage) || s.k === normKey(o.stage))?.k || 'nowy') : 'nowy';
     const status = o.status ? (STATUSES.find(s => normKey(s.n) === normKey(o.status) || s.k === normKey(o.status))?.k || 'do_kontaktu') : 'do_kontaktu';
     return {
       name, company: String(o.company || '').trim(), phone: String(o.phone || '').replace(/^p:/, '').trim(), email: String(o.email || '').trim(),
       city: String(o.city || '').trim(), region: matchRegion(o.region) || region, source: matchSource(o.source) || src, ownerId,
       model: /ship\s*-?\s*point|partner|point/i.test(String(o.model || '')) ? 'shippoint' : 'franczyza',
-      capital: String(o.capital || '').replace(/[^\d]/g, ''), notes: String(o.notes || '').trim(), createdAt: parseDateLoose(o.createdAt) || todayISO(), stage, status
+      capital: String(o.capital || '').replace(/[^\d]/g, ''), notes: String(o.notes || '').trim(), createdAt: parseDateLoose(o.createdAt) || todayISO(), status
     };
   }).filter(r => r.name || r.phone || r.email);
 }
@@ -2839,8 +2834,7 @@ async function runImport(btn) {
     if (skip && (findDuplicate(r, pool) || findDuplicate(r, batchSeen))) return;
     batchSeen.push(r);
     const lead = newLead({ ...r, name: r.name || r.email || r.phone, nextTaskDate: todayISO() });
-    const sd = {}; for (let i = 0; i <= STAGE_IDX[r.stage]; i++) sd[STAGES[i].k] = r.createdAt;
-    lead.stageDates = sd;
+    lead.stageDates = r.status === 'pozyskany' ? { umowa: r.createdAt } : {};
     lead.history = [histEntry('system', 'Import z pliku: ' + (IMP.fileName || 'wklejone dane'))];
     items.push(lead);
   });
@@ -2862,7 +2856,7 @@ function leadRowsForExport(list) {
     'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',
     'Ostatni kontakt': (lastContact(l) || '').replace('T', ' '), 'Liczba kontaktów': (l.history || []).filter(h => h.type !== 'system').length,
-    'Data dodania': l.createdAt || '', ...Object.fromEntries(STAGES.slice(1).map(s => ['Data: ' + s.short, (l.stageDates || {})[s.k] || ''])), 'Notatki': l.notes || ''
+    'Data dodania': l.createdAt || '', ...(() => { const sd = stageDatesOf(l); return Object.fromEntries(STAGES.slice(3).map(s => ['Data: ' + s.short, sd[s.k] || ''])); })(), 'Notatki': l.notes || ''
   }));
 }
 function toCSV(rows) {
@@ -3023,36 +3017,37 @@ function buildDemo() {
   const first = ['Anna', 'Piotr', 'Katarzyna', 'Michał', 'Agnieszka', 'Krzysztof', 'Magdalena', 'Łukasz', 'Joanna', 'Marcin', 'Natalia', 'Adam', 'Karolina', 'Jakub', 'Monika', 'Grzegorz'];
   const last = ['Kowalczyk', 'Wiśniewski', 'Lewandowska', 'Dąbrowski', 'Mazur', 'Kaczmarek', 'Zając', 'Pawlak', 'Michalska', 'Sikora', 'Baran', 'Wróbel', 'Górska', 'Jabłoński'];
   const srcW = ['google', 'google', 'google', 'google', 'www', 'www', 'meta', 'portale', 'polecenia', 'inne'];
-  const conv = [0.78, 0.55, 0.52, 0.66, 0.62, 0.55];
+  const conv = [0.78, 0.65, 0.4, 0.4];
   const t = todayISO();
   for (let i = 0; i < 120; i++) {
     const age = Math.floor(Math.pow(rnd(), 0.9) * 75);
     const created = addDays(new Date(), -age);
-    let st = 0; while (st < 6 && rnd() < conv[st] && age > st * 7) st++;
+    let st = 0; while (st < NS - 1 && rnd() < conv[st] && age > st * 9) st++;
     const [city, region] = pick(cities);
     const owner = rnd() < 0.06 ? '' : (Object.values(d.team).find(m => m.regions.includes(region)) || {}).id || pick(memberIds);
-    const lost = st < 6 && age > 20 && rnd() < 0.35;
-    const sd = {}; for (let j = 0; j <= st; j++) sd[STAGES[j].k] = isoDate(addDays(created, Math.min(age, Math.round(j * (4 + rnd() * 6)))));
+    const lost = st < NS - 1 && age > 20 && rnd() < 0.35;
+    const sd = {}; if (st >= 3) sd.spotkanie = isoDate(addDays(created, Math.min(age, 8 + Math.round(rnd() * 10)))); if (st >= 4) sd.umowa = isoDate(addDays(created, Math.min(age, 20 + Math.round(rnd() * 20))));
     const fn = pick(first), ln = pick(last);
     const model = rnd() < 0.72 ? 'franczyza' : 'shippoint';
-    const status = st === 6 ? 'pozyskany' : lost ? 'utracony' : st === 0 ? (age > 2 ? 'proba' : 'do_kontaktu') : st === 3 && rnd() < 0.4 ? 'umowione' : pick(['w_kontakcie', 'czeka', 'w_kontakcie', 'wstrzymany']);
+    const status = st === 4 ? 'pozyskany' : lost ? 'utracony' : st === 0 ? (age > 2 ? 'proba' : 'do_kontaktu') : st === 3 && rnd() < 0.4 ? 'umowione' : pick(['w_kontakcie', 'czeka', 'w_kontakcie', 'wstrzymany']);
     const firstCallAt = st >= 1 ? isoDate(addDays(created, Math.min(age, rnd() < 0.75 ? 0 : 2))) : '';
-    const presentationAt = st >= 2 || (st === 1 && rnd() < 0.5) ? isoDate(addDays(parseD(firstCallAt || isoDate(created)), Math.min(age, 1))) : '';
+    const presentationAt = st >= 2 ? isoDate(addDays(parseD(firstCallAt || isoDate(created)), Math.min(age, 1))) : '';
     const hist = [histEntry('system', 'Zapytanie z formularza: ' + (model === 'shippoint' ? 'Ship Point' : 'franczyza') + ' (dane przykładowe)')];
     hist[0].at = isoDate(created) + 'T09:00';
     if (firstCallAt) hist.push({ id: uid('h'), at: firstCallAt + 'T10:30', type: 'tel', text: 'Pierwsza rozmowa – omówiony pakiet SMART, pytania o lokal.', result: 'Rozmowa przeprowadzona', by: owner });
     if (presentationAt) hist.push({ id: uid('h'), at: presentationAt + 'T11:00', type: 'email', text: 'Wysłano prezentację', result: 'Wysłano materiały', by: owner });
-    for (let j = 3; j <= st; j++) hist.push({ id: uid('h'), at: sd[STAGES[j].k] + 'T1' + (j % 7) + ':15', type: j === 3 ? 'spotkanie' : 'tel', text: ['', '', '', 'Prezentacja online – pytania o konkurencję paczkomatów.', 'Przesłał dane lokalu do analizy.', 'Negocjacje terminu startu.', 'Umowa podpisana.'][j], result: 'Rozmowa przeprowadzona', by: owner });
+    if (sd.spotkanie) hist.push({ id: uid('h'), at: sd.spotkanie + 'T13:15', type: 'spotkanie', text: 'Spotkanie online – pytania o lokal i konkurencję paczkomatów.', result: 'Spotkanie odbyte', by: owner });
+    if (sd.umowa) hist.push({ id: uid('h'), at: sd.umowa + 'T12:00', type: 'notatka', text: 'Umowa podpisana.', result: 'Inne', by: owner });
     const id = 'demo-l' + pad(i);
     const open = !['pozyskany', 'utracony'].includes(status);
     const nt = open && (st > 0 || rnd() < 0.5) && rnd() < 0.9 ? isoDate(addDays(new Date(), Math.floor(rnd() * 11) - 3)) : '';
-    d.leads[id] = { id, name: `${fn} ${ln}`, company: model === 'shippoint' ? `${ln} – sklep` : '', phone: '+48 5' + String(10000000 + Math.floor(rnd() * 89999999)), email: `${fn}.${ln}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l') + '@example.com', city, region, source: pick(srcW), ownerId: owner, stage: STAGES[st].k, status, capital: String(20000 + Math.floor(rnd() * 8) * 10000), model, pkg: model === 'franczyza' && st >= 2 ? pick(['smart', 'flex', '']) : '', hasPremises: pick(['ma', 'szuka', '']), form: 'panstwo',
+    d.leads[id] = { id, name: `${fn} ${ln}`, company: model === 'shippoint' ? `${ln} – sklep` : '', phone: '+48 5' + String(10000000 + Math.floor(rnd() * 89999999)), email: `${fn}.${ln}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l') + '@example.com', city, region, source: pick(srcW), ownerId: owner, status, capital: String(20000 + Math.floor(rnd() * 8) * 10000), model, pkg: model === 'franczyza' && st >= 2 ? pick(['smart', 'flex', '']) : '', hasPremises: pick(['ma', 'szuka', '']), form: 'panstwo',
       nextTask: nt ? (presentationAt ? 'Telefon po prezentacji' : firstCallAt ? 'Umówić spotkanie' : 'Pierwsza rozmowa telefoniczna') : '', nextTaskDate: nt, nextTaskTime: nt && rnd() < 0.4 ? pick(['09:30', '11:00', '13:00', '15:30']) : '', firstCallAt, presentationAt,
       meetingAt: st === 3 && status === 'umowione' ? isoDate(addDays(new Date(), Math.floor(rnd() * 6))) + 'T1' + Math.floor(rnd() * 6) + ':00' : '', meetingType: 'online', meetingPlace: '', notes: '', lostReason: lost ? pick(LOST_REASONS) : '', handoffs: [], history: hist, stageDates: sd, createdAt: isoDate(created), createdTs: created.toISOString(), updatedTs: created.toISOString() };
     if (firstCallAt && rnd() < 0.6 && age < 30) { const sid = uid('sms'); d.sms[sid] = { leadId: id, leadName: `${fn} ${ln}`, phone: d.leads[id].phone, text: smsThanksText(d.leads[id]), ownerId: owner, status: age < 1 ? 'oczekuje' : 'wyslany', createdTs: firstCallAt + 'T10:35:00.000Z', id: sid }; }
   }
   for (let k = 0; k < 75; k++) { const dt = isoDate(addDays(new Date(), -k)); const cost = Math.round(380 + rnd() * 260); const clicks = Math.round(cost / (3.5 + rnd() * 2)); d.ads['demo-' + dt] = { id: 'demo-' + dt, date: dt, campaign: 'Franczyza – Search (przykład)', cost, clicks, impressions: clicks * Math.round(14 + rnd() * 10), conversions: Math.round(rnd() * 3 * 10) / 10 }; }
-  const l0 = Object.values(d.leads).find(l => l.stage === 'lokalizacja' || l.stage === 'oferta') || Object.values(d.leads)[0];
+  const l0 = Object.values(d.leads).find(l => stageIdx(l) === 3) || Object.values(d.leads)[0];
   const loc = { ...clone(LOC_DEFAULTS), id: 'demo-loc1', name: `${l0.city} – ul. Przykładowa 12`, leadId: l0.id, address: 'ul. Przykładowa 12', city: l0.city, region: l0.region, cityPop: 135000, catchment: 15000, traffic: 2600, visibility: 4, parking: 'ograniczony', firms: 55, rent: 2600, createdAt: t,
     competitors: [{ name: 'Paczkomat przy markecie', type: 'automat', dist: 150, strength: 3 }, { name: 'Paczkomat – parking', type: 'automat', dist: 420, strength: 3 }, { name: 'Żabka', type: 'pudo', dist: 260, strength: 2 }, { name: 'Poczta Polska UP 3', type: 'poczta', dist: 900, strength: 3 }, { name: 'Punkt nadań „Paczka Expres”', type: 'multi', dist: 1700, strength: 4 }, { name: 'Orlen – stacja', type: 'pudo', dist: 1100, strength: 2 }] };
   d.locations[loc.id] = loc;
@@ -3084,11 +3079,10 @@ function handleAction(act, el, e) {
     case 'sel': if (el.checked) S.selected.add(id); else S.selected.delete(id); scheduleRender(); return;
     case 'bulk-clear': S.selected.clear(); scheduleRender(); return;
     case 'bulk-apply': {
-      const owner = $('#bulk-owner').value, stage = $('#bulk-stage').value, status = $('#bulk-status').value;
-      if (!owner && !stage && !status) { toast('Wybierz, co zmienić.', 'bad'); return; }
+      const owner = $('#bulk-owner').value, status = $('#bulk-status').value;
+      if (!owner && !status) { toast('Wybierz, co zmienić.', 'bad'); return; }
       [...S.selected].forEach(lid => {
         const l = D().leads[lid]; if (!l) return;
-        if (stage) { setStage(l, stage); }
         const p = {}; const hist = (D().leads[lid].history || []).slice();
         if (owner) { p.ownerId = owner; hist.push(histEntry('system', `Opiekun (zbiorczo): ${memberName(l.ownerId) || 'brak'} → ${memberName(owner)}`)); }
         if (status) { p.status = status; hist.push(histEntry('system', `Status (zbiorczo): ${STATUS_MAP[status].n}`)); }
@@ -3098,8 +3092,6 @@ function handleAction(act, el, e) {
     }
     case 'bulk-delete': { const n = S.selected.size; confirmBox('Usunąć leady?', `Usuniesz <b>${n}</b> leadów razem z historią kontaktów. Tej operacji nie można cofnąć.`, `Usuń ${n}`, () => { [...S.selected].forEach(lid => remove('leads', lid)); S.selected.clear(); toast('Usunięto'); }); return; }
     case 'open-lead': if (e.target.closest('[data-stop]')) return; go('lead-' + id); return;
-    case 'stage-next': if (L) { const i = stageIdx(L); if (i < 6) setStage(L, STAGES[i + 1].k); } return;
-    case 'set-stage': if (L && L.stage !== el.dataset.k) setStage(L, el.dataset.k); return;
     case 'task-done': case 'call-log': if (L) openCallModal(L, {}); return;
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
     case 'pres-sent': if (L) markPresentation(L); return;
@@ -3130,7 +3122,8 @@ function handleAction(act, el, e) {
       const p = { history: hist, updatedTs: new Date().toISOString() };
       if (L.status === 'do_kontaktu' && entry.result !== 'Nie odebrał') p.status = 'w_kontakcie';
       if (L.status === 'do_kontaktu' && entry.result === 'Nie odebrał') p.status = 'proba';
-      if (stageIdx(L) === 0 && entry.result !== 'Nie odebrał') { p.stage = 'kontakt'; p.stageDates = { ...(L.stageDates || {}), kontakt: todayISO() }; }
+      if (entry.type === 'tel' && entry.result !== 'Nie odebrał' && !L.firstCallAt) p.firstCallAt = (entry.at || todayISO()).slice(0, 10);
+      if (entry.type === 'spotkanie' && !(L.stageDates || {}).spotkanie) p.stageDates = { ...(L.stageDates || {}), spotkanie: (entry.at || todayISO()).slice(0, 10) };
       patch('leads', id, p); toast('Dodano wpis'); return;
     }
     case 'hist-del': if (L) patch('leads', id, { history: (L.history || []).filter(h => h.id !== el.dataset.h) }); return;
@@ -3217,26 +3210,6 @@ function keepImpDefaults() {
   IMP.dups = ($('#imp-dups') || {}).value || IMP.dups;
 }
 
-/* przeciąganie kart w kanbanie */
-document.addEventListener('dragstart', e => {
-  const c = e.target.closest && e.target.closest('[data-drag-lead]');
-  if (c) { e.dataTransfer.setData('text/plain', c.dataset.dragLead); e.dataTransfer.effectAllowed = 'move'; }
-});
-document.addEventListener('dragover', e => {
-  const col = e.target.closest && e.target.closest('[data-drop-stage]');
-  if (col) { e.preventDefault(); $$('.kcol.drop').forEach(x => x !== col && x.classList.remove('drop')); col.classList.add('drop'); }
-});
-document.addEventListener('dragleave', e => {
-  const col = e.target.closest && e.target.closest('[data-drop-stage]');
-  if (col && !col.contains(e.relatedTarget)) col.classList.remove('drop');
-});
-document.addEventListener('drop', e => {
-  const col = e.target.closest && e.target.closest('[data-drop-stage]');
-  if (!col) return;
-  e.preventDefault(); col.classList.remove('drop');
-  const id = e.dataTransfer.getData('text/plain'); const l = D().leads[id];
-  if (l && l.stage !== col.dataset.dropStage) setStage(l, col.dataset.dropStage);
-});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
 function afterRender() { }

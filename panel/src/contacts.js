@@ -73,8 +73,7 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
     const reached = res !== 'Nie odebrał';
     if (t === 'tel' && reached && !cur.firstCallAt) p.firstCallAt = todayISO();
     if ($('#cl-pres').checked && !cur.presentationAt) { p.presentationAt = todayISO(); hist.push(histEntry('email', 'Wysłano prezentację', { by, result: 'Wysłano materiały' })); }
-    if (stageIdx(cur) === 0 && reached && ['tel', 'email', 'sms', 'spotkanie'].includes(t)) { p.stage = 'kontakt'; p.stageDates = { ...(cur.stageDates || {}), kontakt: todayISO() }; }
-    if (stageTo && stageIdx(cur) < STAGE_IDX[stageTo]) { const sd = { ...(p.stageDates || cur.stageDates || {}) }; for (let i = 0; i <= STAGE_IDX[stageTo]; i++) if (!sd[STAGES[i].k]) sd[STAGES[i].k] = todayISO(); p.stage = stageTo; p.stageDates = sd; }
+    if ((t === 'spotkanie' || stageTo === 'spotkanie') && reached && !(cur.stageDates || {}).spotkanie) p.stageDates = { ...(cur.stageDates || {}), spotkanie: todayISO() };
     if (t === 'spotkanie') { p.meetingAt = ''; if (p.status === 'umowione') p.status = 'w_kontakcie'; }
     patch('leads', l.id, p);
     const smsOn = $('#cl-sms') && $('#cl-sms').checked && reached && cur.phone;

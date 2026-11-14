@@ -39,7 +39,6 @@ function viewLeads() {
   const bulk = S.selected.size ? `<div class="filters" style="background:var(--accent-wash);border-color:var(--accent)">
     <b style="align-self:center">${S.selected.size} zaznaczonych</b>
     <label class="field"><span>Przypisz opiekuna</span><select id="bulk-owner">${ownerOpts('', false, '— wybierz —')}</select></label>
-    <label class="field"><span>Zmień etap</span><select id="bulk-stage">${opt('', '— wybierz —', '')}${stageOpts('')}</select></label>
     <label class="field"><span>Zmień status</span><select id="bulk-status">${opt('', '— wybierz —', '')}${statusOpts('')}</select></label>
     <button class="btn primary" data-act="bulk-apply">Zastosuj</button>
     <button class="btn danger" data-act="bulk-delete">${ICONS.trash}Usuń</button>
@@ -73,15 +72,14 @@ function tableHTML(list) {
 }
 
 function kanbanHTML(list) {
-  return `<p class="note" style="margin-bottom:8px">Przeciągnij kartę do innej kolumny, aby zmienić etap. Na telefonie użyj przycisku → na karcie.</p><div class="kanban">${STAGES.map((s, i) => {
-    const items = list.filter(l => l.stage === s.k);
-    return `<div class="kcol" data-drop-stage="${s.k}"><h3><span>${esc(s.n)}</span><span class="muted num">${items.length}</span></h3>
-      ${items.map(l => `<div class="kcard" draggable="true" data-drag-lead="${l.id}" data-act="open-lead" data-id="${l.id}">
+  return `<p class="note" style="margin-bottom:8px">Kolumny to etapy ustawiane automatycznie: pierwsza rozmowa, prezentacja, spotkanie, umowa. Kliknij kartę, aby otworzyć leada.</p><div class="kanban">${STAGES.map((s, i) => {
+    const items = list.filter(l => stageIdx(l) === i);
+    return `<div class="kcol"><h3><span>${esc(s.n)}</span><span class="muted num">${items.length}</span></h3>
+      ${items.map(l => `<div class="kcard" data-act="open-lead" data-id="${l.id}" style="cursor:pointer">
         <div class="row between"><b>${esc(l.name || '(bez nazwy)')}</b><span class="code">${leadCode(l.id)}</span></div>
         <span class="tiny muted">${esc([l.city, memberName(l.ownerId)].filter(Boolean).join(' · ') || '—')}</span>
-        <div class="row">${statusPill(l.status)}</div>
-        ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${esc(l.nextTask || 'Zadanie')} · ${fdateShort(l.nextTaskDate)}</span>` : ''}
-        ${i < 6 && isOpen(l) ? `<div class="row between"><span></span><button class="btn sm ghost" data-act="stage-next" data-id="${l.id}" title="Przesuń do: ${esc(STAGES[i + 1].n)}">${esc(STAGES[i + 1].short)} ${ICONS.arrow}</button></div>` : ''}
+        <div class="row">${modelPill(l)}${statusPill(l.status)}</div>
+        ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${esc(l.nextTask || 'Kontakt')} · ${fdateShort(l.nextTaskDate)}</span>` : ''}
       </div>`).join('')}</div>`;
   }).join('')}</div>`;
 }
@@ -158,13 +156,13 @@ function viewLead(id) {
     <div class="leadhead"><div class="who"><span class="code">${leadCode(l.id)} · dodano ${fdate(l.createdAt)} · ${esc(SOURCE_MAP[l.source]?.n || '')}</span>
       <h1>${esc(l.name || '(bez nazwy)')}</h1>
       <p class="ink2">${esc([l.company, l.city, l.region].filter(Boolean).join(' · ') || 'Uzupełnij miasto i województwo')}</p>
-      <div class="row" style="margin-top:6px">${modelPill(l)}${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
+      <div class="row" style="margin-top:6px">${modelPill(l)}<span class="pill ${isWon(l) ? 'good' : ''}" title="Etap ustawia się sam na podstawie rozmów, prezentacji i spotkań">Etap: ${esc(STAGES[i].n)}</span>${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
       <div class="stack" style="gap:8px;min-width:240px">
         <label class="field"><span>Opiekun</span><select id="ld-owner" data-lead-field="ownerId">${ownerOpts(l.ownerId)}</select></label>
         <label class="field"><span>Status kontaktu</span><select id="ld-status" data-lead-field="status">${statusOpts(l.status)}</select></label>
         ${l.status === 'utracony' ? `<label class="field"><span>Powód utraty</span><select id="ld-lost" data-lead-field="lostReason">${opt('', '— wybierz —', l.lostReason)}${LOST_REASONS.map(r => opt(r, r, l.lostReason)).join('')}</select></label>` : ''}
       </div></div>
-    <div class="stepper" role="list">${STAGES.map((s, j) => `<button role="listitem" class="${j < i ? 'done' : ''} ${j === i ? 'cur' : ''} ${s.k === 'umowa' ? 'won' : ''}" data-act="set-stage" data-id="${l.id}" data-k="${s.k}" title="Ustaw etap: ${esc(s.n)}"><span class="n">${pad(j + 1)}</span><span class="t">${esc(s.n)}</span><span class="d">${(l.stageDates || {})[s.k] ? fdate(l.stageDates[s.k]) : '—'}</span></button>`).join('')}</div>`;
+`;
 
   const contact = `<div class="card"><div class="cardhead"><h2>Dane kandydata</h2><p>Zmiany zapisują się po opuszczeniu pola</p></div>
     <div id="lead-edit" data-lead="${l.id}">${leadFormFields(l, 'le')}</div>
@@ -247,11 +245,9 @@ function suggestedTemplate(l) {
   if (l.status === 'proba') return ['sms_pierwszy', 'email_followup', 'email_ostatni'];
   return [
     ['email_pierwszy', 'skrypt_pierwsza', 'email_prezentacja'],
-    ['skrypt_pierwsza', 'email_zaproszenie', 'skrypt_obiekcje'],
+    ['email_prezentacja', 'email_kalkulator', 'skrypt_obiekcje'],
     ['email_zaproszenie', 'skrypt_prezentacja', 'skrypt_obiekcje'],
-    ['email_podsumowanie', 'email_dane_lokalizacji', 'skrypt_obiekcje'],
-    ['email_raport', 'skrypt_domkniecie'],
-    ['email_oferta', 'skrypt_domkniecie', 'skrypt_obiekcje'],
+    ['email_podsumowanie', 'email_oferta', 'skrypt_domkniecie'],
     ['email_powitanie']
   ][i];
 }
@@ -267,7 +263,7 @@ function saveLeadField(el) {
     const hist = (l.history || []).slice();
     hist.push(histEntry('system', `Status: ${STATUS_MAP[l.status]?.n || '—'} → ${STATUS_MAP[v]?.n}`));
     p.history = hist;
-    if (v === 'pozyskany' && l.stage !== 'umowa') { setStage(l, 'umowa'); return; }
+    if (v === 'pozyskany') { setWon(l); return; }
   }
   if (f === 'ownerId' && l.ownerId !== v) {
     const hist = (l.history || []).slice();

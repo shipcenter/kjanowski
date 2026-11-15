@@ -91,10 +91,7 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
     ${prefix === 'lf' ? `<div class="field full" id="lf-companybox"></div>` : ''}
-    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
-    <label class="field"><span>Kod pocztowy</span><input type="text" id="${prefix}-pointPostal" data-geo="${prefix}" inputmode="numeric" maxlength="6" value="${esc(l.pointPostal || '')}" placeholder="00-000"></label>
-    <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" data-geo="${prefix}" value="${esc(l.city)}"></label>
-    <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select><span class="hint" id="${prefix}-geo-st"></span></label>
+    ${prefix === 'le' && modelOf(l) === 'shippoint' ? '' : addressFields(l, prefix)}
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
     <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
@@ -167,7 +164,7 @@ function viewLead(id) {
     <div class="leadhead"><div class="who"><span class="code">${leadCode(l.id)} · dodano ${fdate(l.createdAt)} · ${esc(SOURCE_MAP[l.source]?.n || '')}</span>
       <h1>${esc(l.name || '(bez nazwy)')}</h1>
       <p class="ink2">${esc([l.company, l.city, l.region].filter(Boolean).join(' · ') || 'Uzupełnij miasto i województwo')}</p>
-      <div class="row" style="margin-top:6px">${modelPill(l)}<span class="pill ${isWon(l) ? 'good' : ''}" title="Etap ustawia się sam na podstawie rozmów, prezentacji i spotkań">Etap: ${esc(STAGES[i].n)}</span>${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div>${pkgSwitch(l)}</div>
+      <div class="row" style="margin-top:6px">${modelPill(l)}<span class="pill ${isWon(l) ? 'good' : ''}" title="Etap ustawia się sam na podstawie rozmów, prezentacji i spotkań">Etap: ${esc(STAGES[i].n)}</span>${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}${krdPill(l)}</div>${pkgSwitch(l)}</div>
       <div class="stack" style="gap:8px;min-width:240px">
         <label class="field"><span>Opiekun</span><select id="ld-owner" data-lead-field="ownerId">${ownerOpts(l.ownerId)}</select></label>
         <label class="field"><span>Status kontaktu</span><select id="ld-status" data-lead-field="status">${statusOpts(l.status)}</select></label>
@@ -254,7 +251,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}" title="Wymaga hasła administratora">${ICONS.trash}Usuń leada</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}${flex}</div></div>` + danger + `</div>`;
+  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${modelOf(l) === 'shippoint' ? shipPointCard(l) + photosCard(l) : photosCard(l) + locCard + flex}</div></div>` + danger + `</div>`;
 }
 
 function suggestedTemplate(l) {
@@ -320,6 +317,7 @@ function companyBox(l) {
   const wl = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
   const auto = S.mcp ? `<button class="btn sm ${c ? '' : 'primary'}" data-act="reg-lookup" data-id="${l.id}">${ICONS.file}${c ? 'Pobierz ponownie z rejestrów' : 'Pobierz dane z rejestrów'}</button>` : '';
   return `<div class="sep"></div><div class="row between"><h3>Dane firmy z rejestru</h3>${c ? `<span class="tiny muted">pobrano ${fdate(c.at)}</span>` : ''}</div>
+    ${ok ? krdRow(l) : ''}
     ${c ? `<div style="margin-top:8px">${companyKv(c)}</div>` : ''}
     ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP w danych kandydata – dane firmy (CEIDG / KRS / Biała lista VAT) uzupełnią się same.</p>'
       : !ok ? '<p class="note overdue" style="margin-top:6px">NIP ma błędną sumę kontrolną – popraw cyfry.</p>'
@@ -720,4 +718,69 @@ function openPhoto(l, i) {
     if (S.assets && isAdmin()) { try { await S.assets.delete(p.id); } catch (e) { } }
     closeModal(); toast('Usunięto zdjęcie');
   });
+}
+
+function addressFields(l, prefix, sp = false) {
+  return `<label class="field span2"><span>${sp ? 'Adres lokalu partnera' : 'Adres planowanego punktu (opcjonalnie)'}</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" value="${esc(l.pointAddress || '')}" placeholder="${sp ? 'ulica i numer lokalu, w którym działa' : 'ulica i numer, jeśli kandydat ma już lokal na oku'}"></label>
+    <label class="field"><span>Kod pocztowy</span><input type="text" id="${prefix}-pointPostal" data-geo="${prefix}" inputmode="numeric" maxlength="6" value="${esc(l.pointPostal || '')}" placeholder="00-000"></label>
+    <label class="field"><span>${sp ? 'Miejscowość' : 'Miasto planowanego punktu'}</span><input type="text" id="${prefix}-city" data-geo="${prefix}" value="${esc(l.city)}"></label>
+    <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select><span class="hint" id="${prefix}-geo-st"></span></label>`;
+}
+
+/* Ship Point – czym partner zajmuje się obecnie (Ship Point to dodatek do istniejącego lokalu) */
+const SP_BIZ = [['nieruchomosci', 'Biuro nieruchomości'], ['ubezpieczenia', 'Ubezpieczenia / finanse / kredyty'], ['komputery', 'Sklep komputerowy / GSM / serwis'], ['ksero', 'Ksero / drukarnia / poligrafia'], ['rachunkowe', 'Biuro rachunkowe / usługi biurowe'], ['handel', 'Sklep (spożywczy, kiosk, chemia, AGD)'], ['kwiaciarnia', 'Kwiaciarnia / upominki / papiernik'], ['uslugi', 'Usługi (krawiec, szewc, pralnia, foto)'], ['turystyka', 'Biuro podróży / kantor'], ['inne', 'Inna działalność']];
+const SP_PARCELS = [['nie', 'Nie – nie obsługuje paczek'], ['inpost', 'Tak – punkt InPost'], ['dpd', 'Tak – DPD Pickup'], ['orlen', 'Tak – Orlen Paczka'], ['dhl', 'Tak – DHL POP'], ['inne', 'Tak – inny przewoźnik']];
+function shipPointCard(l) {
+  const f = (k, n, ph = '', type = 'text', extra = '') => `<label class="field ${extra}"><span>${n}</span><input type="${type}" data-lead-field="${k}" id="sp-${k}" value="${esc(l[k] || '')}" placeholder="${esc(ph)}" ${type === 'number' ? 'min="0"' : ''}></label>`;
+  const sel = (k, n, opts, extra = '') => `<label class="field ${extra}"><span>${n}</span><select data-lead-field="${k}" id="sp-${k}">${opt('', '— wybierz —', l[k] || '')}${opts.map(([v, t]) => opt(v, t, l[k] || '')).join('')}</select></label>`;
+  return `<div class="card"><div class="cardhead"><h2>Działalność partnera</h2><p>Ship Point jako dodatek do istniejącego lokalu</p></div>
+    <div class="formgrid">
+      ${sel('spBizType', 'Co obecnie prowadzi', SP_BIZ, 'span2')}
+      ${f('spBizName', 'Nazwa lokalu / szyld', 'np. Biuro Nieruchomości Dom', 'text')}
+      ${f('spBizDesc', 'Czym się zajmuje (krótko)', 'np. sprzedaż i wynajem mieszkań, 2 agentów', 'text', 'full')}
+      ${addressFields(l, 'le', true)}
+      ${f('spHours', 'Godziny otwarcia', 'pn–pt 9–17, sob 9–13')}
+      ${f('spSince', 'Działa od (rok)', 'np. 2018', 'number')}
+      ${f('spTraffic', 'Klientów dziennie (ok.)', 'np. 40', 'number')}
+      ${f('spStaff', 'Osób w lokalu', 'np. 2', 'number')}
+      ${sel('spParcels', 'Czy obsługuje już paczki?', SP_PARCELS, 'span2')}
+      <label class="field full"><span>Uwagi o lokalu</span><textarea data-lead-field="spNotes" id="sp-spNotes" rows="2" placeholder="witryna, parking, miejsce na regał z paczkami, kto będzie obsługiwał…">${esc(l.spNotes || '')}</textarea></label>
+    </div></div>`;
+}
+
+/* KRD – sprawdzenie zadłużenia firmy po NIP (na razie ręcznie w panelu KRD + zapis wyniku) */
+const KRD_RESULTS = { czysty: ['brak wpisów', 'good'], dlug: ['są wpisy – zadłużenie', 'bad'], brak: ['podmiot nie znaleziony', ''] };
+function krdPill(l) {
+  const k = l.krd; if (!k || !KRD_RESULTS[k.result]) return '';
+  const [n, cls] = KRD_RESULTS[k.result];
+  return `<span class="pill ${cls}" title="Sprawdzono ${esc(fdate(String(k.at).slice(0, 10)))}${k.note ? ' – ' + esc(k.note) : ''}">KRD: ${esc(n)}${k.result === 'dlug' && +k.amount ? ' ' + esc(fmt(+k.amount)) + ' zł' : ''}</span>`;
+}
+function krdRow(l) {
+  const k = l.krd;
+  return `<div class="row" style="margin-top:8px;align-items:center"><span class="small muted">KRD:</span>${k ? krdPill(l) + `<span class="tiny muted">${esc(fdate(String(k.at).slice(0, 10)))}</span>` : '<span class="small muted">nie sprawdzono</span>'}
+    <button class="btn sm" data-act="krd-check" data-id="${l.id}">${ICONS.spark || ICONS.file}${k ? 'Sprawdź ponownie w KRD' : 'Sprawdź NIP w KRD'}</button></div>`;
+}
+function openKrd(l) {
+  const d = nipDigits(l.nip); const k = l.krd || {};
+  try { navigator.clipboard.writeText(d).catch(() => { }); } catch (e) { }
+  openModal(`<div class="mh"><h2>Sprawdzenie w KRD – ${esc(l.company || (l.companyData || {}).name || l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><ol class="small" style="margin:0 0 12px 18px;line-height:1.7">
+      <li>NIP <b class="mono">${esc(nipFmt(d))}</b> jest skopiowany do schowka <button class="btn sm ghost" data-act="copy" data-text="${d}">${ICONS.copy}Kopiuj jeszcze raz</button></li>
+      <li>Zaloguj się do KRD i wyszukaj firmę po NIP: <a class="btn sm" href="https://www.krd.pl/" target="_blank" rel="noopener">${ICONS.link}Otwórz KRD</a></li>
+      <li>Zapisz wynik poniżej – zobaczysz go w nagłówku leada.</li></ol>
+      <div class="formgrid">
+        <label class="field span2"><span>Wynik</span><select id="krd-res">${Object.entries(KRD_RESULTS).map(([v, [n]]) => opt(v, n, k.result || 'czysty')).join('')}</select></label>
+        <label class="field"><span>Kwota zadłużenia (zł)</span><input type="number" id="krd-amt" min="0" step="1" value="${esc(k.amount || '')}"></label>
+        <label class="field full"><span>Uwagi</span><input type="text" id="krd-note" value="${esc(k.note || '')}" placeholder="np. 2 wpisy, wierzyciel: …"></label>
+      </div>
+      <p class="tiny muted" style="margin-top:8px">Automatyczne sprawdzanie po kliknięciu da się dopiąć przez mostek na serwerze ShipCenter, gdy KRD udostępni dostęp do swojego API.</p></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="krd-save">Zapisz wynik</button></div>`);
+  $('#krd-save').onclick = () => {
+    const cur = D().leads[l.id]; if (!cur) return closeModal();
+    const res = $('#krd-res').value;
+    const krd = { result: res, amount: res === 'dlug' ? (+$('#krd-amt').value || 0) : 0, note: $('#krd-note').value.trim(), at: new Date().toISOString(), by: myMemberId() || '' };
+    const hist = (cur.history || []).slice(); hist.push(histEntry('system', `KRD: ${KRD_RESULTS[res][0]}${krd.amount ? ' (' + fmt(krd.amount) + ' zł)' : ''}${krd.note ? ' – ' + krd.note : ''}`));
+    patch('leads', l.id, { krd, history: hist, updatedTs: krd.at });
+    closeModal(); toast('Zapisano wynik KRD');
+  };
 }

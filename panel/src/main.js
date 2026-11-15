@@ -46,6 +46,7 @@ function handleAction(act, el, e) {
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'krd-check': if (L) openKrd(L); return;
     case 'script-open': if (L) openScript(L); return;
     case 'meet-quick': if (L) openMeetQuick(L); return;
     case 'photo-open': if (L) openPhoto(L, +el.dataset.i); return;

@@ -254,7 +254,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}${isAdmin() ? 'Usuń leada' : 'Poproś o usunięcie'}</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${msgs}${handoff}${locCard}</div></div>` + danger;
+  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {

@@ -15,7 +15,7 @@ mkdir -p dist
   cat src/shell.html
   echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>'
   echo '<script>'
-  for f in core ui dashboard leads contacts messages emailhtml registry location data main; do cat "src/$f.js"; echo; done
+  for f in core ui dashboard leads contacts messages emailhtml registry mailclient location data main; do cat "src/$f.js"; echo; done
   echo '</script>'
 } > "$OUT"
 echo "Zbudowano $OUT ($(wc -c < "$OUT") B)"

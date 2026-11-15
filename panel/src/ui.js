@@ -5,16 +5,18 @@ const VIEWS = {
   leady: { n: 'Leady', render: () => viewLeads() },
   kontakty: { n: 'Kontakty', render: () => viewContacts() },
   wiadomosci: { n: 'Wiadomości i skrypty', render: () => viewMessages() },
+  poczta: { n: 'Poczta', render: () => viewMail(null) },
   lokalizacje: { n: 'Lokalizacje', render: () => viewLocations() },
   ustawienia: { n: 'Zespół i ustawienia', render: () => viewSettings() }
 };
-const NAV_ORDER = ['centrala', 'kontakty', 'leady', 'wiadomosci', 'lokalizacje', 'ustawienia'];
+const NAV_ORDER = ['centrala', 'kontakty', 'leady', 'poczta', 'wiadomosci', 'lokalizacje', 'ustawienia'];
 
 function parseRoute() {
   const h = (location.hash || '').replace(/^#/, '');
   if (h.startsWith('lead-')) return { view: 'lead', id: h.slice(5) };
   if (h.startsWith('lok-')) return { view: 'lok', id: h.slice(4) };
   if (h.startsWith('raport-')) return { view: 'raport', id: h.slice(7) };
+  if (h.startsWith('poczta-')) return { view: 'poczta', id: h.slice(7) };
   if (h === 'zadania') return { view: 'kontakty', id: null };
   if (VIEWS[h]) return { view: h, id: null };
   return { view: 'centrala', id: null };
@@ -44,6 +46,7 @@ function render() {
     if (r.view === 'lead') html = viewLead(r.id);
     else if (r.view === 'lok') html = viewLocationEditor(r.id);
     else if (r.view === 'raport') html = viewReport(r.id);
+    else if (r.view === 'poczta') html = viewMail(r.id);
     else html = VIEWS[r.view].render();
   } catch (e) {
     console.error(e);

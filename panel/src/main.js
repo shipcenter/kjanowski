@@ -46,6 +46,14 @@ function handleAction(act, el, e) {
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'mail-compose': if (L) openCompose({ leadId: L.id }); else openCompose({}); return;
+    case 'mail-open': if (e.target.closest('a')) return; openMailReader(el.dataset.folder, el.dataset.uid); return;
+    case 'mail-att': downloadMailAttachment(el.dataset.folder, el.dataset.uid, el.dataset.i); return;
+    case 'mail-refresh': mailRefresh(el.dataset.key); return;
+    case 'mail-sync': syncInquiries(true); return;
+    case 'mail-filter': MAIL.filter = el.dataset.k; scheduleRender(); return;
+    case 'flex-mail': if (L) openCompose({ leadId: L.id, subject: 'Konfiguracja pakietu FLEX – ShipCenter', body: flexEmailBody(L) }); return;
+    case 'flex-clear': if (L) patch('leads', L.id, { flexItems: [], updatedTs: new Date().toISOString() }); return;
     case 'contract-pdf': downloadContract(el.dataset.file); return;
     case 'meet-use': if (L) { const link = meetLinkFor(L); if (link) { patch('leads', id, { meetingPlace: link, updatedTs: new Date().toISOString() }); setTimeout(() => syncReminders(id, 'spotkanie'), 300); } } return;
     case 'meet-confirm': if (L) openMailModal(L, 'email_potwierdzenie'); return;
@@ -146,6 +154,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
+  if (el.dataset.flex) { toggleFlex(S.route.id, el.dataset.flex, el.checked); return; }
   if (el.dataset.train) { const l = D().leads[el.dataset.train]; if (l) setTraining(l, el.value); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }
   if (el.closest && el.closest('#lead-edit')) { saveLeadEdit(); return; }

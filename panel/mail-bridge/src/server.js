@@ -1,0 +1,133 @@
+/* Serwer MCP „ShipCenter Poczta” – konektor dla panelu franczyzy w claude.ai
+   Adres konektora: https://<twoja-domena>/mcp/<MCP_SECRET>  (Streamable HTTP, bez sesji) */
+import express from 'express';
+import { timingSafeEqual } from 'node:crypto';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { z } from 'zod';
+import { cfg, assertConfig } from './config.js';
+import { fetchInquiries, listMessages, getMessage, getAttachment, sendMail, status } from './mail.js';
+
+const json = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
+const fail = e => ({ isError: true, content: [{ type: 'text', text: String((e && e.message) || e) }] });
+const wrap = fn => async args => { try { return json(await fn(args || {})); } catch (e) { console.error(new Date().toISOString(), 'tool error:', e.message); return fail(e); } };
+const RO = { readOnlyHint: true, openWorldHint: false };
+
+export function buildServer() {
+  const s = new McpServer({ name: 'shipcenter-poczta', version: '1.0.0' });
+
+  s.registerTool('mail_status', {
+    title: 'Stan połączenia z pocztą',
+    description: 'Sprawdza logowanie do IMAP i SMTP skrzynki franczyza@shipcenter.pl.',
+    inputSchema: {},
+    annotations: RO
+  }, wrap(() => status()));
+
+  s.registerTool('inquiries_fetch', {
+    title: 'Nowe zgłoszenia z formularzy',
+    description: 'Zwraca zgłoszenia „ZAPYTANIE FRANCZYZOWE” i „zapytanie ShipPoint” ze skrzynki odbiorczej, nowsze niż since_uid (imię, telefon, e-mail, model).',
+    inputSchema: {
+      since_uid: z.number().int().min(0).optional().describe('UID ostatniego przetworzonego zgłoszenia (0 = od początku okresu)'),
+      days: z.number().int().min(1).max(365).optional().describe('Ile dni wstecz szukać (domyślnie 30)'),
+      limit: z.number().int().min(1).max(200).optional()
+    },
+    annotations: RO
+  }, wrap(a => fetchInquiries({ sinceUid: a.since_uid || 0, days: a.days || 30, limit: a.limit || 100 })));
+
+  s.registerTool('mail_list', {
+    title: 'Lista wiadomości',
+    description: 'Lista wiadomości z Odebranych i/lub Wysłanych; z address – tylko korespondencja z tym adresem.',
+    inputSchema: {
+      address: z.string().max(200).optional().describe('Adres e-mail kandydata (opcjonalnie)'),
+      folder: z.enum(['all', 'INBOX', 'Sent']).optional(),
+      limit: z.number().int().min(1).max(100).optional()
+    },
+    annotations: RO
+  }, wrap(a => listMessages({ address: a.address || '', folder: a.folder || 'all', limit: a.limit || 30 })));
+
+  s.registerTool('mail_get', {
+    title: 'Treść wiadomości',
+    description: 'Pełna treść jednej wiadomości (tekst, HTML, lista załączników). Oznacza odebraną jako przeczytaną.',
+    inputSchema: {
+      folder: z.enum(['INBOX', 'Sent']),
+      uid: z.number().int().min(1),
+      mark_seen: z.boolean().optional()
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, wrap(a => getMessage({ folder: a.folder, uid: a.uid, markSeen: a.mark_seen !== false })));
+
+  s.registerTool('mail_attachment', {
+    title: 'Pobierz załącznik',
+    description: 'Zwraca załącznik wiadomości jako base64 (max 8 MB).',
+    inputSchema: {
+      folder: z.enum(['INBOX', 'Sent']),
+      uid: z.number().int().min(1),
+      index: z.number().int().min(0)
+    },
+    annotations: RO
+  }, wrap(a => getAttachment(a)));
+
+  s.registerTool('mail_send', {
+    title: 'Wyślij e-mail',
+    description: 'Wysyła e-mail z franczyza@shipcenter.pl (HTML z firmową stopką przygotowuje panel) i zapisuje kopię w folderze Wysłane.',
+    inputSchema: {
+      to: z.union([z.string(), z.array(z.string())]),
+      cc: z.union([z.string(), z.array(z.string())]).optional(),
+      bcc: z.union([z.string(), z.array(z.string())]).optional(),
+      subject: z.string().min(1).max(300),
+      html: z.string().max(2000000).optional(),
+      text: z.string().max(500000).optional(),
+      in_reply_to: z.string().max(500).optional(),
+      references: z.array(z.string().max(500)).max(50).optional(),
+      attachments: z.array(z.object({
+        filename: z.string().max(200),
+        content_base64: z.string(),
+        content_type: z.string().max(100).optional()
+      })).max(10).optional()
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
+  }, wrap(a => sendMail(a)));
+
+  return s;
+}
+
+function secretOk(given) {
+  const a = Buffer.from(String(given || '')), b = Buffer.from(cfg.secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function buildApp() {
+  const app = express();
+  app.disable('x-powered-by');
+  app.set('trust proxy', 'loopback');
+  app.use(express.json({ limit: '16mb' }));
+
+  app.get('/health', (req, res) => res.json({ ok: true }));
+
+  app.post('/mcp/:secret', async (req, res) => {
+    if (!secretOk(req.params.secret)) return res.status(404).end();
+    const server = buildServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    res.on('close', () => { transport.close(); server.close(); });
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (e) {
+      console.error(new Date().toISOString(), 'mcp error:', e.message);
+      if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Błąd serwera' }, id: null });
+    }
+  });
+  const notAllowed = (req, res) => {
+    if (!secretOk(req.params.secret)) return res.status(404).end();
+    res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null });
+  };
+  app.get('/mcp/:secret', notAllowed);
+  app.delete('/mcp/:secret', notAllowed);
+  app.use((req, res) => res.status(404).end());
+  return app;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  assertConfig();
+  buildApp().listen(cfg.port, cfg.host, () => console.log(`ShipCenter Poczta MCP: http://${cfg.host}:${cfg.port}/mcp/<MCP_SECRET> (skrzynka ${cfg.from})`));
+}

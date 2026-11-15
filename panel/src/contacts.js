@@ -288,7 +288,7 @@ function openMailModal(l, tplKey) {
       ${emailPreviewBlock('ml-prev')}
       <p class="note">„Kopiuj e-mail z formatowaniem” kopiuje treść z klikalnymi linkami i firmową stopką – w Thunderbirdzie utwórz nową wiadomość, wpisz temat i wklej (Ctrl+V). Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)}, dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF – przyciski wyżej), jeśli w treści nie ma linku do niej,' : isConf ? 'ewentualnie zaproszenie z kalendarza,' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
     </div>
-    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn ${mailOn() ? '' : 'primary'}" id="ml-save">${mailOn() ? 'Wysłane ręcznie – zapisz' : 'Zapisz jako wysłany'}</button>${mailOn() ? `<button class="btn primary" id="ml-send">${ICONS.email}Wyślij teraz</button>` : ''}</div>`, { wide: true });
   const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
   const refreshPrev = () => { const pv = $('#ml-prev'); if (pv) pv.innerHTML = emailHtml($('#ml-body').value, l, true); };
   refreshLink(); refreshPrev();
@@ -297,7 +297,7 @@ function openMailModal(l, tplKey) {
   $('#ml-copy-to').onclick = () => copyText($('#ml-to').value);
   $('#ml-copy-subj').onclick = () => copyText($('#ml-subj').value);
   $('#ml-copy-body').onclick = () => copyText($('#ml-body').value);
-  $('#ml-save').onclick = () => {
+  const doSave = () => {
     const cur = D().leads[l.id]; if (!cur) return closeModal();
     const by = myMemberId() || cur.ownerId || '';
     const hist = (cur.history || []).slice();
@@ -314,5 +314,20 @@ function openMailModal(l, tplKey) {
     patch('leads', l.id, p);
     closeModal();
     toast('Zapisano wysłanie maila' + (p.nextTaskDate ? ' · kolejny kontakt ' + fdate(p.nextTaskDate) : ''));
+  };
+  $('#ml-save').onclick = doSave;
+  const sendBtn = $('#ml-send');
+  if (sendBtn) sendBtn.onclick = async () => {
+    const to = $('#ml-to').value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) { toast('Wpisz poprawny adres odbiorcy.', 'bad'); return; }
+    sendBtn.disabled = true; sendBtn.textContent = 'Wysyłam…';
+    try {
+      const atts = [];
+      if (tplKey === 'email_umowa_wglad') { const hasLink = modelOf(l) === 'shippoint' ? offer().linkUmowaPartner : offer().linkUmowaFranczyza; if (!hasLink) for (const f of contractFilesFor(l)) { const a = await contractAttachment(f.id); if (a) atts.push(a); } }
+      const r = await mailCall('mail_send', { to, subject: $('#ml-subj').value, html: emailHtml($('#ml-body').value, l, false), text: $('#ml-body').value, attachments: atts });
+      if (r && r.rejected && r.rejected.length) throw { code: 'local', message: 'Serwer odrzucił adres: ' + r.rejected.join(', ') };
+      mailRefresh(); doSave();
+      toast('Wysłano e-mail do ' + to + (atts.length ? ' (z załącznikami: ' + atts.map(a => a.filename).join(', ') + ')' : ''));
+    } catch (e) { toast(e && e.code === 'local' ? e.message : mailErr(e), 'bad'); sendBtn.disabled = false; sendBtn.textContent = 'Wyślij teraz'; }
   };
 }

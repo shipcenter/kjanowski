@@ -5,10 +5,9 @@ const LEAD_COLS = [
   { k: 'name', n: 'Kandydat', get: l => (l.name || '').toLowerCase() },
   { k: 'city', n: 'Miasto / region', get: l => (l.city || '').toLowerCase() },
   { k: 'model', n: 'Model', get: l => modelOf(l) },
-  { k: 'source', n: 'Źródło', get: l => l.source },
-  { k: 'owner', n: 'Opiekun', get: l => memberName(l.ownerId).toLowerCase() },
   { k: 'stage', n: 'Etap', get: l => stageIdx(l) },
   { k: 'status', n: 'Status', get: l => l.status },
+  { k: 'mail', n: 'Korespondencja', nosort: true },
   { k: 'nextTaskDate', n: 'Następne zadanie', get: l => l.nextTaskDate || '9999' },
   { k: 'meetingAt', n: 'Spotkanie', get: l => l.meetingAt || '9999' },
   { k: 'last', n: 'Ostatni kontakt', get: l => lastContact(l) || '' },
@@ -50,7 +49,7 @@ function viewLeads() {
 function tableHTML(list) {
   if (!list.length) return `<div class="card"><div class="empty"><h3>Brak leadów dla wybranych filtrów</h3><button class="btn" data-act="filters-clear">Wyczyść filtry</button></div></div>`;
   const allSel = list.length && list.every(l => S.selected.has(l.id));
-  const th = c => `<th class="sortable" data-act="sort" data-k="${c.k}">${c.n}${S.sort.key === c.k ? (S.sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}</th>`;
+  const th = c => c.nosort ? `<th>${c.n}</th>` : `<th class="sortable" data-act="sort" data-k="${c.k}">${c.n}${S.sort.key === c.k ? (S.sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}</th>`;
   return `<div class="tablewrap"><table class="t"><thead><tr><th><input type="checkbox" id="sel-all" data-act="sel-all" ${allSel ? 'checked' : ''} aria-label="Zaznacz wszystkie"></th>${LEAD_COLS.map(th).join('')}</tr></thead><tbody>
   ${list.map(l => {
     const lc = lastContact(l);
@@ -60,10 +59,9 @@ function tableHTML(list) {
       <td><div class="cellname"><b>${esc(l.name || '(bez nazwy)')}</b><span class="tiny muted">${esc(l.company || l.phone || l.email || '')}</span></div></td>
       <td>${esc(l.city || '—')}<div class="tiny muted">${esc(l.region || '')}</div></td>
       <td>${modelPill(l)}</td>
-      <td>${sourcePill(l.source)}</td>
-      <td>${esc(memberName(l.ownerId) || '—')}</td>
       <td>${stageBar(l)}<div class="tiny muted">${esc(STAGES[stageIdx(l)].short)}</div></td>
       <td>${statusPill(l.status)}</td>
+      <td data-stop="1"><a class="btn sm ghost" href="#poczta-${l.id}" title="${esc(l.email || 'brak e-maila')}">${ICONS.email}Koresponduj</a></td>
       <td style="min-width:170px"><span class="small">${esc(l.nextTask || '—')}</span><div class="tiny ${dueCls(l.nextTaskDate)}">${l.nextTaskDate ? fdate(l.nextTaskDate) + (l.nextTaskTime ? ' ' + esc(l.nextTaskTime) : '') : ''}</div></td>
       <td class="small ${dueCls(l.meetingAt)}">${l.meetingAt ? fdt(l.meetingAt) : '—'}</td>
       <td class="small">${lc ? fdateShort(lc) : '<span class="muted">brak</span>'}</td>
@@ -200,7 +198,7 @@ function viewLead(id) {
 `}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail do klienta</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
@@ -247,7 +245,8 @@ function viewLead(id) {
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="loc-new" data-lead="${l.id}">${ICONS.pin}Nowa analiza dla leada</button></div></div>`;
 
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}Usuń leada</button></div>`;
-  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
+  const flex = l.pkg === 'flex' && modelOf(l) === 'franczyza' ? flexCard(l) : '';
+  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {
@@ -413,4 +412,49 @@ function contractCard(l) {
         ${l.contractSentAt ? '' : `<button class="btn sm primary" data-act="contract-sent" data-id="${l.id}">Wysłano do podpisu (dziś)</button>`}`, l.contractPreviewAt ? 'due' : '')}
       ${step('3 · Podpisana', won ? ((l.stageDates || {}).umowa || l.contractSignedAt) : '', won ? '<span class="small ink2">Status: Pozyskany – umowa podpisana.</span>' : `<span class="small ink2">Gdy wszystkie strony podpiszą umowę w Autenti.</span><button class="btn sm ${l.contractSentAt ? 'primary' : ''}" data-act="contract-signed" data-id="${l.id}">Umowa podpisana</button>`, l.contractSentAt ? 'due' : '')}
     </div></div>`;
+}
+
+/* konfiguracja pakietu FLEX – co kandydat chce zamówić */
+function flexCard(l) {
+  const sel = new Set(l.flexItems || []);
+  const c = flexCalc(l.flexItems || []);
+  const zl = v => fmt(v, v % 1 ? 2 : 0) + ' zł';
+  return `<div class="card"><div class="cardhead"><h2>Konfiguracja FLEX</h2><p>${c.n ? c.n + ' ' + (c.n === 1 ? 'produkt' : c.n < 5 ? 'produkty' : 'produktów') : 'bez sprzętu'}</p></div>
+    <div class="flexwrap"><div class="stack" style="gap:14px">
+    ${FLEX_GROUPS.map(g => `<div><div class="row between" style="margin-bottom:6px"><span class="eyebrow">${esc(g.n)}</span>${g.one ? '<span class="tiny muted">jeden wariant</span>' : ''}</div>
+      <div class="flexitems">${g.items.map(it => `<label class="flexitem ${sel.has(it.id) ? 'on' : ''}"><input type="checkbox" data-flex="${it.id}" ${sel.has(it.id) ? 'checked' : ''}><span style="min-width:0"><b class="small">${esc(it.n)}</b><span class="tiny muted" style="display:block">${esc(it.d)}</span></span><span class="small mono" style="white-space:nowrap">${zl(it.p)}</span></label>`).join('')}</div></div>`).join('')}
+    </div>
+    <div class="flexsum">
+      <dl class="kv"><dt>Pakiet SMART</dt><dd class="mono">${zl(c.smart)}</dd><dt>Sprzęt przed rabatem</dt><dd class="mono">${zl(c.gross)}</dd><dt>Rabat FLEX ${c.pct}%</dt><dd class="mono">${c.disc ? '−' + zl(c.disc) : zl(0)}</dd><dt>Sprzęt po rabacie</dt><dd class="mono">${zl(c.after)}</dd></dl>
+      <div class="flextotal"><span class="tiny muted">Razem netto</span><b>${zl(c.net)}</b><span class="tiny muted">brutto (23% VAT): ${zl(c.brutto)}</span></div>
+      <div class="flextiers">${FLEX_TIERS.map(t => `<span class="${c.n >= t.min ? 'on' : ''}">${t.min}${t.max < 99 ? '–' + t.max : '+'} · ${t.pct}%</span>`).join('')}</div>
+      <p class="tiny muted">${c.next ? `Dodaj jeszcze ${c.next.need} ${c.next.need === 1 ? 'produkt' : 'produkty'}, aby uzyskać rabat ${c.next.pct}%.` : c.n ? 'Maksymalny rabat FLEX.' : 'Rabat liczony od liczby różnych produktów.'}</p>
+      <div class="row"><button class="btn sm primary" data-act="flex-mail" data-id="${l.id}" ${c.n ? '' : 'disabled'}>${ICONS.email}Wyślij konfigurację klientowi</button>${c.n ? `<button class="btn sm ghost" data-act="flex-clear" data-id="${l.id}">Wyczyść</button>` : ''}</div>
+    </div></div></div>`;
+}
+function toggleFlex(id, item, on) {
+  const l = D().leads[id]; if (!l) return;
+  let sel = new Set(l.flexItems || []);
+  const it = FLEX_ITEMS.find(x => x.id === item); if (!it) return;
+  if (on) { const g = FLEX_GROUPS.find(x => x.k === it.g); if (g.one) g.items.forEach(x => sel.delete(x.id)); sel.add(item); } else sel.delete(item);
+  patch('leads', id, { flexItems: [...sel], updatedTs: new Date().toISOString() });
+}
+function flexEmailBody(l) {
+  const c = flexCalc(l.flexItems || []); const ctx = msgContext(l, l.form);
+  const zl = v => fmt(v, v % 1 ? 2 : 0) + ' zł';
+  return `${powitanie(ctx)}
+
+zgodnie z rozmową przesyłam podsumowanie konfiguracji pakietu FLEX:
+
+${c.items.map(it => `• ${it.n} – ${zl(it.p)} netto`).join('\n')}
+
+Pakiet SMART: ${zl(c.smart)} netto
+Sprzęt przed rabatem: ${zl(c.gross)} netto
+Rabat FLEX ${c.pct}%: ${c.disc ? '−' + zl(c.disc) : '0 zł'}
+Razem: ${zl(c.net)} netto (${zl(c.brutto)} brutto)
+
+Konfigurację można w każdej chwili zmienić – wystarczy odpisać na tę wiadomość. Pełny kalkulator: ${offer().linkKalkulator || 'https://shipcenter.pl/franczyza/kalkulator'}
+
+Pozdrawiam
+`;
 }

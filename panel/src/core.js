@@ -277,7 +277,7 @@ function initCapabilities() {
   }).catch(() => { S.mode = 'local'; scheduleRender(); });
   c.use('downloads').then(x => { S.downloads = x; scheduleRender(); }).catch(() => { });
   c.use('sample').then(x => { S.sample = x; scheduleRender(); }).catch(() => { });
-  c.use('mcp').then(x => { S.mcp = x; scheduleRender(); }).catch(() => { });
+  c.use('mcp').then(x => { S.mcp = x; scheduleRender(); if (x) setTimeout(mailInit, 600); }).catch(() => { });
   c.use('user').then(async u => { S.user = u; if (u) { try { S.userId = await u.id(); } catch (e) { } scheduleRender(); } }).catch(() => { });
 }
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
@@ -294,9 +294,9 @@ function stageDatesOf(l) {
     umowa: old.umowa || (l.status === 'pozyskany' ? (l.updatedTs || '').slice(0, 10) : '')
   };
 }
-const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : (d.spotkanie || l.status === 'czeka_umowa' || l.contractSentAt) ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
+const stageIdx = l => { const d = stageDatesOf(l); return ((d.umowa && l.status !== 'czeka_umowa') || l.status === 'pozyskany') ? 4 : (d.spotkanie || l.status === 'czeka_umowa' || l.contractSentAt) ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
 const isOpen = l => !CLOSED.has(l.status);
-const isWon = l => l.status === 'pozyskany' || !!(l.stageDates || {}).umowa;
+const isWon = l => l.status === 'pozyskany' || (!!(l.stageDates || {}).umowa && l.status !== 'czeka_umowa');
 const lastContact = l => {
   const h = (l.history || []).filter(x => x.type !== 'system').map(x => x.at).sort();
   return h.length ? h[h.length - 1] : null;
@@ -486,4 +486,35 @@ async function downloadContract(id) {
 function meetLinkFor(l) {
   const m = (l && l.ownerId && D().team[l.ownerId]) || (myMemberId() && D().team[myMemberId()]) || null;
   return (m && m.meetLink) || offer().linkMeet || '';
+}
+
+/* pakiet FLEX – sprzęt jak w kalkulatorze shipcenter.pl/franczyza/kalkulator */
+const FLEX_GROUPS = [
+  { k: 'meble', n: 'Meble', one: true, items: [
+    { id: 'meble1', n: 'Meble – 1 stanowisko', d: 'Biurko, regał niski, regał wysoki, krzesła wg standardu', p: 1990 },
+    { id: 'meble2', n: 'Meble – 2 stanowiska', d: '2 biurka, regał niski, regał wysoki, krzesła wg standardu', p: 2690 }] },
+  { k: 'komputer', n: 'Komputer', one: true, items: [
+    { id: 'pc_aio', n: 'Komputer AllInOne', d: 'Ekran 23–24", 8 GB RAM, SSD 512 GB, Windows 11', p: 2790 },
+    { id: 'pc_lease', n: 'Komputer – zestaw poleasingowy', d: 'Sprawdzony zestaw zgodny ze standardem ShipCenter', p: 1990 }] },
+  { k: 'urzadzenia', n: 'Urządzenia', items: [
+    { id: 'laser', n: 'Drukarka laserowa A4', d: 'Laserowa, czarno-biała', p: 690 },
+    { id: 'thermal', n: 'Drukarka termiczna', d: 'Etykiety 100 × 150 mm, min. 203 dpi', p: 690 },
+    { id: 'scanner', n: 'Skaner do kodów kreskowych', d: 'Kody 1D i 2D, również z ekranów telefonów', p: 249 },
+    { id: 'stamps', n: 'Maszynka do pieczątek', d: 'Dodatkowe źródło przychodu w punkcie', p: 3990 }] },
+  { k: 'marketing', n: 'Marketing i widoczność', items: [
+    { id: 'flag', n: 'Flaga reklamowa', d: 'Widoczność punktu z ulicy', p: 349 },
+    { id: 'ads', n: 'Kampania reklamowa FB + Google Ads', d: 'Start z promocją prowadzoną przez centralę', p: 2990 }] }
+];
+const FLEX_ITEMS = FLEX_GROUPS.flatMap(g => g.items.map(it => ({ ...it, g: g.k })));
+const FLEX_TIERS = [{ min: 1, max: 2, pct: 0 }, { min: 3, max: 4, pct: 5 }, { min: 5, max: 6, pct: 10 }, { min: 7, max: 99, pct: 15 }];
+function flexCalc(ids) {
+  const items = FLEX_ITEMS.filter(it => (ids || []).includes(it.id));
+  const n = items.length;
+  const tier = FLEX_TIERS.find(t => n >= t.min && n <= t.max) || { pct: 0 };
+  const gross = items.reduce((s, it) => s + it.p, 0);
+  const disc = Math.round(gross * tier.pct) / 100;
+  const smart = +offer().licencja || 0;
+  const next = FLEX_TIERS.find(t => t.min > n && t.pct > tier.pct);
+  const net = smart + gross - disc;
+  return { items, n, pct: tier.pct, gross, disc, after: gross - disc, smart, net, brutto: Math.round(net * 123) / 100, next: next ? { need: next.min - n, pct: next.pct } : null };
 }

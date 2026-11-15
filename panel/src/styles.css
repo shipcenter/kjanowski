@@ -449,3 +449,6 @@ details.adv[open] summary { margin-bottom: 10px; }
 /* poczta */
 .mailrow.unread b { font-weight: 800; }
 .mailrow:hover { background: color-mix(in srgb, var(--brand, #ea580c) 5%, transparent); }
+
+.flexkv dd { white-space: nowrap; text-align: right; }
+.flexkv { grid-template-columns: 1fr auto; }

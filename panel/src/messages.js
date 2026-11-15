@@ -7,7 +7,7 @@ const fdtLong = s => { const d = parseD(s); if (!d) return ''; const base = d.to
 const PH = t => `[uzupełnij: ${t}]`;
 
 function msgContext(l, form) {
-  const o = offer();
+  const o = l && +l.smartPrice > 0 ? { ...offer(), licencja: +l.smartPrice } : offer();
   const m = (myMemberId() && D().team[myMemberId()]) || (l && l.ownerId ? D().team[l.ownerId] : null);
   form = form || (l && l.form) || 'panstwo';
   const g = (pan, pani, panstwo, ty) => ({ pan, pani, panstwo, ty })[form] ?? panstwo;

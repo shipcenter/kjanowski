@@ -454,6 +454,9 @@ details.adv[open] summary { margin-bottom: 10px; }
 /* poczta */
 .mailrow.unread b { font-weight: 800; }
 .mailrow:hover { background: color-mix(in srgb, var(--brand, #ea580c) 5%, transparent); }
+
+.flexkv dd { white-space: nowrap; text-align: right; }
+.flexkv { grid-template-columns: 1fr auto; }
 </style>
 <header class="appbar">
   <div class="wrap">
@@ -983,13 +986,14 @@ const FLEX_GROUPS = [
 ];
 const FLEX_ITEMS = FLEX_GROUPS.flatMap(g => g.items.map(it => ({ ...it, g: g.k })));
 const FLEX_TIERS = [{ min: 1, max: 2, pct: 0 }, { min: 3, max: 4, pct: 5 }, { min: 5, max: 6, pct: 10 }, { min: 7, max: 99, pct: 15 }];
-function flexCalc(ids) {
+const smartPriceOf = l => (l && +l.smartPrice > 0) ? +l.smartPrice : (+offer().licencja || 0);
+function flexCalc(ids, smartOverride) {
   const items = FLEX_ITEMS.filter(it => (ids || []).includes(it.id));
   const n = items.length;
   const tier = FLEX_TIERS.find(t => n >= t.min && n <= t.max) || { pct: 0 };
   const gross = items.reduce((s, it) => s + it.p, 0);
   const disc = Math.round(gross * tier.pct) / 100;
-  const smart = +offer().licencja || 0;
+  const smart = +smartOverride > 0 ? +smartOverride : (+offer().licencja || 0);
   const next = FLEX_TIERS.find(t => t.min > n && t.pct > tier.pct);
   const net = smart + gross - disc;
   return { items, n, pct: tier.pct, gross, disc, after: gross - disc, smart, net, brutto: Math.round(net * 123) / 100, next: next ? { need: next.min - n, pct: next.pct } : null };
@@ -1834,15 +1838,18 @@ function contractCard(l) {
 /* konfiguracja pakietu FLEX – co kandydat chce zamówić */
 function flexCard(l) {
   const sel = new Set(l.flexItems || []);
-  const c = flexCalc(l.flexItems || []);
-  const zl = v => fmt(v, v % 1 ? 2 : 0) + ' zł';
+  const c = flexCalc(l.flexItems || [], l.smartPrice);
+  const zl = v => Number(v).toLocaleString('pl-PL', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2, useGrouping: 'always' }) + '\u00a0zł';
+  const list = +offer().licencja || 0;
+  const custom = +l.smartPrice > 0 && +l.smartPrice !== list;
   return `<div class="card"><div class="cardhead"><h2>Konfiguracja FLEX</h2><p>${c.n ? c.n + ' ' + (c.n === 1 ? 'produkt' : c.n < 5 ? 'produkty' : 'produktów') : 'bez sprzętu'}</p></div>
     <div class="flexwrap"><div class="stack" style="gap:14px">
     ${FLEX_GROUPS.map(g => `<div><div class="row between" style="margin-bottom:6px"><span class="eyebrow">${esc(g.n)}</span>${g.one ? '<span class="tiny muted">jeden wariant</span>' : ''}</div>
       <div class="flexitems">${g.items.map(it => `<label class="flexitem ${sel.has(it.id) ? 'on' : ''}"><input type="checkbox" data-flex="${it.id}" ${sel.has(it.id) ? 'checked' : ''}><span style="min-width:0"><b class="small">${esc(it.n)}</b><span class="tiny muted" style="display:block">${esc(it.d)}</span></span><span class="small mono" style="white-space:nowrap">${zl(it.p)}</span></label>`).join('')}</div></div>`).join('')}
     </div>
     <div class="flexsum">
-      <dl class="kv"><dt>Pakiet SMART</dt><dd class="mono">${zl(c.smart)}</dd><dt>Sprzęt przed rabatem</dt><dd class="mono">${zl(c.gross)}</dd><dt>Rabat FLEX ${c.pct}%</dt><dd class="mono">${c.disc ? '−' + zl(c.disc) : zl(0)}</dd><dt>Sprzęt po rabacie</dt><dd class="mono">${zl(c.after)}</dd></dl>
+      <label class="field"><span>Cena pakietu SMART (licencja)${custom ? ' · <b>indywidualna</b>' : ''}</span><input type="number" id="ld-smart" data-lead-field="smartPrice" min="0" step="1" value="${esc(l.smartPrice || '')}" placeholder="${list}"><span class="hint">${custom ? `Cennik: ${zl(list)} · <button type="button" class="btn sm ghost" style="padding:0 4px;min-height:0" data-act="smart-reset" data-id="${l.id}">przywróć cenę z cennika</button>` : 'Puste = cena z cennika. Wpisz kwotę, jeśli ustaliliście z kandydatem inną.'}</span></label>
+      <dl class="kv flexkv"><dt>Pakiet SMART</dt><dd class="mono">${zl(c.smart)}</dd><dt>Sprzęt przed rabatem</dt><dd class="mono">${zl(c.gross)}</dd><dt>Rabat FLEX ${c.pct}%</dt><dd class="mono">${c.disc ? '−' + zl(c.disc) : zl(0)}</dd><dt>Sprzęt po rabacie</dt><dd class="mono">${zl(c.after)}</dd></dl>
       <div class="flextotal"><span class="tiny muted">Razem netto</span><b>${zl(c.net)}</b><span class="tiny muted">brutto (23% VAT): ${zl(c.brutto)}</span></div>
       <div class="flextiers">${FLEX_TIERS.map(t => `<span class="${c.n >= t.min ? 'on' : ''}">${t.min}${t.max < 99 ? '–' + t.max : '+'} · ${t.pct}%</span>`).join('')}</div>
       <p class="tiny muted">${c.next ? `Dodaj jeszcze ${c.next.need} ${c.next.need === 1 ? 'produkt' : 'produkty'}, aby uzyskać rabat ${c.next.pct}%.` : c.n ? 'Maksymalny rabat FLEX.' : 'Rabat liczony od liczby różnych produktów.'}</p>
@@ -1857,8 +1864,8 @@ function toggleFlex(id, item, on) {
   patch('leads', id, { flexItems: [...sel], updatedTs: new Date().toISOString() });
 }
 function flexEmailBody(l) {
-  const c = flexCalc(l.flexItems || []); const ctx = msgContext(l, l.form);
-  const zl = v => fmt(v, v % 1 ? 2 : 0) + ' zł';
+  const c = flexCalc(l.flexItems || [], l.smartPrice); const ctx = msgContext(l, l.form);
+  const zl = v => Number(v).toLocaleString('pl-PL', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2, useGrouping: 'always' }) + ' zł';
   return `${powitanie(ctx)}
 
 zgodnie z rozmową przesyłam podsumowanie konfiguracji pakietu FLEX:
@@ -2219,7 +2226,7 @@ const fdtLong = s => { const d = parseD(s); if (!d) return ''; const base = d.to
 const PH = t => `[uzupełnij: ${t}]`;
 
 function msgContext(l, form) {
-  const o = offer();
+  const o = l && +l.smartPrice > 0 ? { ...offer(), licencja: +l.smartPrice } : offer();
   const m = (myMemberId() && D().team[myMemberId()]) || (l && l.ownerId ? D().team[l.ownerId] : null);
   form = form || (l && l.form) || 'panstwo';
   const g = (pan, pani, panstwo, ty) => ({ pan, pani, panstwo, ty })[form] ?? panstwo;
@@ -4123,7 +4130,7 @@ function leadRowsForExport(list) {
     'Kod': leadCode(l.id), 'Imię i nazwisko': l.name || '', 'Firma': l.company || '', 'Telefon': l.phone || '', 'E-mail': l.email || '',
     'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
     'Etap': STAGES[stageIdx(l)].n, 'Status kontaktu': STATUS_MAP[l.status]?.n || '', 'Powód utraty': l.lostReason || '',
-    'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Sprzęt FLEX': (l.flexItems || []).map(id => (FLEX_ITEMS.find(x => x.id === id) || {}).n).filter(Boolean).join(', '), 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
+    'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Cena SMART': +l.smartPrice > 0 ? +l.smartPrice : '', 'Sprzęt FLEX': (l.flexItems || []).map(id => (FLEX_ITEMS.find(x => x.id === id) || {}).n).filter(Boolean).join(', '), 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',
     'Ostatni kontakt': (lastContact(l) || '').replace('T', ' '), 'Liczba kontaktów': (l.history || []).filter(h => h.type !== 'system').length,
     'Data dodania': l.createdAt || '', ...(() => { const sd = stageDatesOf(l); return Object.fromEntries(STAGES.slice(3).map(s => ['Data: ' + s.short, sd[s.k] || ''])); })(), 'Notatki': l.notes || ''
@@ -4382,6 +4389,7 @@ function handleAction(act, el, e) {
     case 'mail-sync': syncInquiries(true); return;
     case 'mail-filter': MAIL.filter = el.dataset.k; scheduleRender(); return;
     case 'flex-mail': if (L) openCompose({ leadId: L.id, subject: 'Konfiguracja pakietu FLEX – ShipCenter', body: flexEmailBody(L) }); return;
+    case 'smart-reset': if (L) { patch('leads', L.id, { smartPrice: '', updatedTs: new Date().toISOString() }); } return;
     case 'flex-clear': if (L) patch('leads', L.id, { flexItems: [], updatedTs: new Date().toISOString() }); return;
     case 'contract-pdf': downloadContract(el.dataset.file); return;
     case 'meet-use': if (L) { const link = meetLinkFor(L); if (link) { patch('leads', id, { meetingPlace: link, updatedTs: new Date().toISOString() }); setTimeout(() => syncReminders(id, 'spotkanie'), 300); } } return;

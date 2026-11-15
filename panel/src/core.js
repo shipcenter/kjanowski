@@ -507,13 +507,14 @@ const FLEX_GROUPS = [
 ];
 const FLEX_ITEMS = FLEX_GROUPS.flatMap(g => g.items.map(it => ({ ...it, g: g.k })));
 const FLEX_TIERS = [{ min: 1, max: 2, pct: 0 }, { min: 3, max: 4, pct: 5 }, { min: 5, max: 6, pct: 10 }, { min: 7, max: 99, pct: 15 }];
-function flexCalc(ids) {
+const smartPriceOf = l => (l && +l.smartPrice > 0) ? +l.smartPrice : (+offer().licencja || 0);
+function flexCalc(ids, smartOverride) {
   const items = FLEX_ITEMS.filter(it => (ids || []).includes(it.id));
   const n = items.length;
   const tier = FLEX_TIERS.find(t => n >= t.min && n <= t.max) || { pct: 0 };
   const gross = items.reduce((s, it) => s + it.p, 0);
   const disc = Math.round(gross * tier.pct) / 100;
-  const smart = +offer().licencja || 0;
+  const smart = +smartOverride > 0 ? +smartOverride : (+offer().licencja || 0);
   const next = FLEX_TIERS.find(t => t.min > n && t.pct > tier.pct);
   const net = smart + gross - disc;
   return { items, n, pct: tier.pct, gross, disc, after: gross - disc, smart, net, brutto: Math.round(net * 123) / 100, next: next ? { need: next.min - n, pct: next.pct } : null };

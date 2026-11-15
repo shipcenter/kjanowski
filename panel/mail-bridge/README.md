@@ -41,7 +41,7 @@ Jeśli certyfikat serwera poczty nie pasuje do nazwy `shipcenter.pl` (np. jest w
 
 ### Podpowiedzi adresów (Google Places)
 
-W `.env` wpisz `GOOGLE_MAPS_API_KEY` – klucz Google Cloud z włączonym **Places API (New)** (ten sam, którego używacie do map). Panel podpowiada wtedy ulice z numerami i sam uzupełnia kod pocztowy oraz województwo.
+W `.env` wpisz `GOOGLE_MAPS_API_KEY` – klucz Google Cloud z włączonym **Places API (New)**, najlepiej osobny dla serwera, ograniczony do Places API (New) i adresu IP serwera. Panel podpowiada wtedy ulice z numerami i sam uzupełnia kod pocztowy oraz województwo. `npm run check` sprawdza też ten klucz (linia „Google Places: OK”).
 
 ### Akceptacja NDA kodem SMS
 

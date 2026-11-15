@@ -4,7 +4,8 @@ Mały serwer (Node.js), przez który panel franczyzy w claude.ai:
 
 - **pobiera zgłoszenia** ze skrzynki `franczyza@shipcenter.pl` („[shipcenter.pl] - ZAPYTANIE FRANCZYZOWE” i „[shipcenter.pl] - zapytanie ShipPoint”) i zakłada z nich leady,
 - **pokazuje korespondencję** z kandydatem (Odebrane + Wysłane, wyszukiwanie po adresie e-mail),
-- **wysyła maile** z `franczyza@shipcenter.pl` – z firmową stopką HTML (stopkę składa panel) i załącznikami; kopia trafia do folderu „Wysłane”, więc jest widoczna też w Thunderbirdzie.
+- **wysyła maile** z `franczyza@shipcenter.pl` – z firmową stopką HTML (stopkę składa panel) i załącznikami; kopia trafia do folderu „Wysłane”, więc jest widoczna też w Thunderbirdzie,
+- **wysyła SMS-y przez SMSAPI** – od razu (np. „Wyślij SMS do klienta”, podziękowanie po rozmowie) albo zaplanowane na konkretną godzinę (przypomnienia o spotkaniu i szkoleniu); przy zmianie terminu panel anuluje stary SMS w SMSAPI i planuje nowy.
 
 Działa jako **serwer MCP** (Streamable HTTP). Panel łączy się z nim przez *własny konektor* w claude.ai, więc dane logowania do poczty zostają wyłącznie na tym serwerze.
 
@@ -28,7 +29,8 @@ npm ci --omit=dev        # albo: npm install --omit=dev
 cp .env.example .env
 chmod 600 .env
 openssl rand -hex 32     # wynik wpisz jako MCP_SECRET w .env
-nano .env                # hasło skrzynki franczyza@ do IMAP_PASS i SMTP_PASS, sprawdź port SMTP
+nano .env                # hasło skrzynki franczyza@ do IMAP_PASS i SMTP_PASS, sprawdź port SMTP;
+                         # opcjonalnie SMSAPI_TOKEN i SMSAPI_FROM (SMS-y)
 npm run check            # test logowania IMAP i SMTP (nic nie wysyła)
 ```
 
@@ -36,6 +38,12 @@ npm run check            # test logowania IMAP i SMTP (nic nie wysyła)
 Jeśli certyfikat serwera poczty nie pasuje do nazwy `shipcenter.pl` (np. jest wystawiony na `da23090.serwervps.pl`), wpisz tę nazwę w `IMAP_HOST` / `SMTP_HOST` albo – w ostateczności – `TLS_REJECT_UNAUTHORIZED=false`.
 
 > **Repozytorium jest publiczne.** Plik `.env` z hasłami trzymaj tylko na serwerze – nigdy go nie commituj.
+
+### SMS (SMSAPI)
+
+1. Panel SMSAPI → **Ustawienia API → Tokeny API (OAuth) → Wygeneruj token** z uprawnieniem **SMS** (osobny token dla serwera, nie ten używany gdzie indziej).
+2. W `.env`: `SMSAPI_TOKEN=…` oraz `SMSAPI_FROM=` – nazwa nadawcy, która jest **aktywna** w panelu SMSAPI (np. `ShipCenter`); puste = domyślny nadawca konta.
+3. `npm run check` pokaże `SMS: skonfigurowane`. Bez tokenu mostek działa, a panel kolejkuje SMS-y do ręcznej wysyłki.
 
 ## Uruchomienie na stałe (systemd)
 
@@ -100,12 +108,14 @@ Moduły: `a2enmod proxy proxy_http ssl`. Sprawdzenie z zewnątrz: `curl https://
 | `mail_get` | treść wiadomości + lista załączników |
 | `mail_attachment` | pobranie załącznika (base64) |
 | `mail_send` | wysyłka z `franczyza@shipcenter.pl` + kopia w „Wysłanych” |
+| `sms_send` | SMS przez SMSAPI – od razu albo o podanej godzinie (`date`) |
+| `sms_cancel` | anulowanie zaplanowanego SMS-a |
 
-Zabezpieczenia: tajny klucz w adresie (min. 32 znaki, porównanie w stałym czasie, zły klucz = 404), nasłuch tylko na `127.0.0.1`, limit `MAX_SEND_PER_HOUR`, walidacja adresów, max 10 MB załączników. Mostek wysyła wyłącznie z adresu z `MAIL_FROM`.
+Zabezpieczenia: tajny klucz w adresie (min. 32 znaki, porównanie w stałym czasie, zły klucz = 404), nasłuch tylko na `127.0.0.1`, limit `MAX_SEND_PER_HOUR`, walidacja adresów, max 10 MB załączników. Mostek wysyła wyłącznie z adresu z `MAIL_FROM`; SMS-y – limit `MAX_SMS_PER_HOUR`, walidacja numerów.
 
 ## Testy
 
 ```bash
 npm install          # z devDependencies
-npm test             # parser zgłoszeń + wysyłka przez lokalny serwer SMTP (bez prawdziwej poczty)
+npm test             # parser zgłoszeń, wysyłka przez lokalny serwer SMTP i atrapę SMSAPI (bez prawdziwej poczty i SMS-ów)
 ```

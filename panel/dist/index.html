@@ -459,6 +459,10 @@ details.adv[open] summary { margin-bottom: 10px; }
 .flexkv { grid-template-columns: 1fr auto; }
 
 .pkgswitch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card, #fff); width: fit-content; max-width: 100%; }
+
+.phonechip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card, #fff); color: var(--ink, #111827); font-weight: 600; font-size: .9rem; text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.phonechip svg { width: 15px; height: 15px; color: var(--brand, #ea580c); }
+.phonechip:hover { border-color: var(--brand, #ea580c); }
 </style>
 <header class="appbar">
   <div class="wrap">
@@ -1008,6 +1012,24 @@ async function passHash(p) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/* numer telefonu zawsze w formacie +48 600 100 200 */
+function fmtPhone(p) {
+  const raw = String(p || '').trim(); if (!raw) return '';
+  let d = raw.replace(/[^\d+]/g, '');
+  if (d.startsWith('00')) d = '+' + d.slice(2);
+  if (/^\d{9}$/.test(d)) d = '+48' + d;
+  if (/^48\d{9}$/.test(d)) d = '+' + d;
+  const m = d.match(/^\+48(\d{3})(\d{3})(\d{3})$/);
+  if (m) return `+48 ${m[1]} ${m[2]} ${m[3]}`;
+  return raw;
+}
+const telHref = p => 'tel:' + fmtPhone(p).replace(/\s/g, '');
+function phoneChip(l, { copy = true } = {}) {
+  if (!l.phone) return '';
+  const f = fmtPhone(l.phone);
+  return `<a class="phonechip" href="${esc(telHref(l.phone))}" title="Zadzwoń">${ICONS.tel}<span>${esc(f)}</span></a>${copy ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(f)}" title="Kopiuj numer">${ICONS.copy}Kopiuj</button>` : ''}`;
+}
+
 /* ===== Powłoka aplikacji: routing, renderowanie, modale, wykresy ===== */
 
 const VIEWS = {
@@ -1521,9 +1543,10 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
     ${prefix === 'lf' ? `<div class="field full" id="lf-companybox"></div>` : ''}
-    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
-    <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" value="${esc(l.city)}"></label>
-    <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select></label>
+    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
+    <label class="field"><span>Kod pocztowy</span><input type="text" id="${prefix}-pointPostal" data-geo="${prefix}" inputmode="numeric" maxlength="6" value="${esc(l.pointPostal || '')}" placeholder="00-000"></label>
+    <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" data-geo="${prefix}" value="${esc(l.city)}"></label>
+    <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select><span class="hint" id="${prefix}-geo-st"></span></label>
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
     <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
@@ -1540,7 +1563,7 @@ function readLeadForm(prefix = 'lf') {
   return out;
 }
 function readLeadFormAll(prefix, v) {
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: fmtPhone(v('phone')), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), pointPostal: v('pointPostal').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
   const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
@@ -1606,7 +1629,7 @@ function viewLead(id) {
 
   const contact = `<div class="card"><div class="cardhead"><h2>Dane kandydata</h2><p>Zmiany zapisują się po opuszczeniu pola</p></div>
     <div id="lead-edit" data-lead="${l.id}">${leadFormFields(l, 'le')}</div>
-    <div class="row" style="margin-top:10px">${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj telefon</button>` : ''}${l.email ? `<span class="pill outline mono">${esc(l.email)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.email)}">${ICONS.copy}Kopiuj e-mail</button>` : ''}</div>
+    <div class="row" style="margin-top:10px">${phoneChip(l)}${l.email ? `<span class="pill outline mono">${esc(l.email)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.email)}">${ICONS.copy}Kopiuj e-mail</button>` : ''}</div>
     ${companyBox(l)}
     <div class="sep"></div>
     <label class="field"><span>Notatki</span><textarea id="ld-notes" data-lead-field="notes" rows="5" placeholder="Motywacja, sytuacja finansowa, lokal, obawy, ustalenia…">${esc(l.notes)}</textarea></label></div>`;
@@ -1633,7 +1656,7 @@ function viewLead(id) {
 `}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail do klienta</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail do klienta</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button>${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
@@ -1981,6 +2004,46 @@ function openAdminPassModal() {
   const cl = $('#ap-clear'); if (cl) cl.onclick = () => { saveSettings({ adminPassHash: '' }); closeModal(); toast('Wyłączono hasło – pracownicy mogą tylko wysyłać prośby'); };
 }
 
+/* województwo i kod pocztowy – uzupełniane same po wpisaniu miejscowości / adresu / kodu */
+const POSTAL_REGION = [[0, 9, 'mazowieckie'], [10, 14, 'warmińsko-mazurskie'], [15, 18, 'podlaskie'], [19, 19, 'warmińsko-mazurskie'], [20, 24, 'lubelskie'], [25, 29, 'świętokrzyskie'], [30, 34, 'małopolskie'], [35, 39, 'podkarpackie'], [40, 44, 'śląskie'], [45, 49, 'opolskie'], [50, 59, 'dolnośląskie'], [60, 64, 'wielkopolskie'], [65, 69, 'lubuskie'], [70, 78, 'zachodniopomorskie'], [80, 84, 'pomorskie'], [85, 89, 'kujawsko-pomorskie'], [90, 99, 'łódzkie']];
+function regionFromPostal(pc) {
+  const m = String(pc || '').match(/^(\d{2})-?\d{3}$/); if (!m) return '';
+  const n = +m[1]; const r = POSTAL_REGION.find(([a, b]) => n >= a && n <= b); return r ? r[2] : '';
+}
+const GEO = { seq: {} };
+async function autoGeo(prefix) {
+  const g = id => $('#' + prefix + '-' + id);
+  const city = (g('city') || {}).value || '', addr = (g('pointAddress') || {}).value || '';
+  const pcEl = g('pointPostal'), regEl = g('region'); if (!regEl) return;
+  let pc = (pcEl && pcEl.value || '').trim();
+  if (/^\d{5}$/.test(pc)) { pc = pc.slice(0, 2) + '-' + pc.slice(2); pcEl.value = pc; }
+  const say = (t, cls = '') => { const el = g('geo-st'); if (el) { el.className = 'hint ' + cls; el.textContent = t; } };
+  const manual = regEl.value && (prefix === 'le' ? !!(D().leads[S.route.id] || {}).regionManual : (regEl.dataset.auto !== '1' && regEl.dataset.touched === '1'));
+  if (manual || (!city.trim() && !/^\d{2}-\d{3}$/.test(pc))) return;
+  const set = (reg, newPc, note) => {
+    let changed = false;
+    if (reg && REGIONS.includes(reg) && regEl.value !== reg) { regEl.value = reg; regEl.dataset.auto = '1'; changed = true; }
+    if (newPc && pcEl && !pcEl.value.trim()) { pcEl.value = newPc; changed = true; }
+    say(note, 'good');
+    if (changed && prefix === 'le') saveLeadEdit();
+  };
+  const seq = (GEO.seq[prefix] || 0) + 1; GEO.seq[prefix] = seq;
+  if (S.sample && city.trim()) {
+    say('Ustalam województwo…');
+    try {
+      const r = await S.sample.json(`Polski adres: ${[addr.trim(), [pc, city.trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')}. Zwróć wyłącznie JSON: {"region": "województwo małymi literami, np. śląskie", "postalCode": "kod pocztowy 00-000 dla tej ulicy i numeru w tej miejscowości (najbardziej prawdopodobny, gdy nie masz pewności)", "city": "poprawna nazwa miejscowości"}. Uwzględnij podany kod pocztowy, jeśli jest.`, { modelTier: 'quick' });
+      if (GEO.seq[prefix] !== seq) return;
+      const reg = String((r && r.region) || '').toLowerCase().replace('województwo', '').trim();
+      const rpc = (String((r && r.postalCode) || '').match(/\d{2}-\d{3}/) || [])[0] || '';
+      if (REGIONS.includes(reg)) { set(reg, rpc, `Uzupełniono automatycznie: ${reg}${rpc && !pc ? ', kod ' + rpc + ' (sprawdź)' : ''}`); return; }
+    } catch (e) { /* brak zgody / limit – zostaje szacunek z kodu */ }
+  }
+  if (GEO.seq[prefix] !== seq) return;
+  const guess = regionFromPostal(pc);
+  if (guess) set(guess, '', `Z kodu pocztowego: ${guess}`);
+  else if (city.trim()) say('Wybierz województwo ręcznie (lub wpisz kod pocztowy).');
+}
+
 /* ===== Kontakty: przypomnienia o kolejnych kontaktach, rozmowy, SMS po rozmowie ===== */
 
 const PL_MAP = { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z', Ą: 'A', Ć: 'C', Ę: 'E', Ł: 'L', Ń: 'N', Ó: 'O', Ś: 'S', Ź: 'Z', Ż: 'Z' };
@@ -2000,7 +2063,27 @@ function smsThanksText(l) {
   const topic = modelOf(l) === 'shippoint' ? 'o Ship Point' : 'o franczyzie ShipCenter';
   return stripPL(`Dzień dobry, dziękuję za rozmowę ${topic}. W razie pytań proszę dzwonić: ${who}, tel. ${tel}. Pozdrawiam, ${o.smsPodpis || 'ShipCenter'}`);
 }
-const smsGatewayOn = () => !!((settings().integrations || {}).sms);
+const smsGatewayOn = () => typeof mailOn === 'function' && mailOn() && MAIL.sms === true;
+/* wysyłka przez mostek (SMSAPI): od razu albo planowo o sendAt */
+async function deliverSms(id) {
+  const x = D().sms[id]; if (!x || !smsGatewayOn()) return false;
+  const future = !!(x.sendAt && x.sendAt > nowLocal());
+  try {
+    const r = await mailCall('sms_send', { to: x.phone, message: x.text, ...(future ? { date: new Date(x.sendAt).toISOString() } : {}) });
+    patch('sms', id, { status: future ? 'zaplanowany' : 'wyslany', gateway: 'smsapi', gatewayId: (r && r.id) || '', sentTs: future ? '' : new Date().toISOString(), error: '' });
+    return true;
+  } catch (e) { patch('sms', id, { status: 'blad', error: mailErr(e) }); return false; }
+}
+async function regateway(id) {
+  const x = D().sms[id]; if (!x || !smsGatewayOn()) return;
+  if (x.gatewayId) { try { await mailCall('sms_cancel', { id: x.gatewayId }); } catch (e) { } patch('sms', id, { gatewayId: '' }); }
+  if (x.status === 'zaplanowany') await deliverSms(id);
+}
+async function cancelSms(id) {
+  const x = D().sms[id]; if (!x) return;
+  if (x.gatewayId && x.status === 'zaplanowany' && smsGatewayOn()) { try { await mailCall('sms_cancel', { id: x.gatewayId }); } catch (e) { toast('Nie udało się anulować w SMSAPI: ' + mailErr(e), 'bad'); return; } }
+  patch('sms', id, { status: 'anulowany' });
+}
 
 /* przypomnienia SMS: o spotkaniu i o szkoleniu (można ustawić kilka) */
 const REMIND_TOPICS = {
@@ -2077,11 +2160,13 @@ function openSmsReminderModal(l, topic = 'spotkanie', smsId = '') {
     if (!sendAt) { toast('Wybierz termin wysyłki.', 'bad'); return; }
     if (!text) { toast('Wpisz treść SMS-a.', 'bad'); return; }
     const custom = text !== smsReminderText(l, topic);
+    let smsId = ex ? ex.id : uid('sms');
     if (ex) patch('sms', ex.id, { when, text, sendAt, eventAt: at, phone: l.phone, custom });
-    else put('sms', uid('sms'), { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic, when, sendAt, eventAt: at, custom, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+    else put('sms', smsId, { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic, when, sendAt, eventAt: at, custom, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
     const cur = D().leads[l.id];
     if (cur) { const hist = (cur.history || []).slice(); hist.push(histEntry('system', `Przypomnienie SMS o ${T.n}: ${fdt(sendAt)}`)); patch('leads', l.id, { history: hist, updatedTs: new Date().toISOString() }); }
-    closeModal(); toast('Przypomnienie SMS: ' + fdt(sendAt));
+    closeModal(); toast('Przypomnienie SMS: ' + fdt(sendAt) + (smsGatewayOn() ? ' – zaplanowane w SMSAPI' : ''));
+    if (smsGatewayOn()) { if (ex) regateway(smsId); else deliverSms(smsId); }
   };
 }
 /* po zmianie terminu / miejsca – przesunięcie zaplanowanych SMS-ów */
@@ -2089,13 +2174,13 @@ function syncReminders(leadId, topic) {
   const l = D().leads[leadId]; if (!l) return;
   const list = remindersFor(leadId, topic); if (!list.length) return;
   const at = eventAt(l, topic);
-  if (!at) { list.forEach(x => patch('sms', x.id, { status: 'anulowany' })); toast('Usunięto termin – anulowano przypomnienia SMS'); return; }
+  if (!at) { list.forEach(x => cancelSms(x.id)); toast('Usunięto termin – anulowano przypomnienia SMS'); return; }
   let n = 0;
   list.forEach(x => {
     const p = { eventAt: at, phone: l.phone || x.phone };
     if (x.when !== 'wlasny') p.sendAt = reminderSendAt(at, x.when);
     if (!x.custom) p.text = smsReminderText(l, topic);
-    if ((p.sendAt && p.sendAt !== x.sendAt) || (p.text && p.text !== x.text) || p.eventAt !== x.eventAt) { patch('sms', x.id, p); n++; }
+    if ((p.sendAt && p.sendAt !== x.sendAt) || (p.text && p.text !== x.text) || p.eventAt !== x.eventAt) { patch('sms', x.id, p); n++; if (x.gatewayId) regateway(x.id); }
   });
   if (n) toast(`Zaktualizowano przypomnienia SMS (${n})`);
 }
@@ -2104,6 +2189,7 @@ function queueSms(l, text) {
   const id = uid('sms');
   const doc = { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'po_rozmowie', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' };
   put('sms', id, doc);
+  if (smsGatewayOn()) deliverSms(id);
   return id;
 }
 const SMS_STATUS = { zaplanowany: ['Zaplanowany', ''], oczekuje: ['Czeka na wysłanie', 'warn'], wyslany: ['Wysłany', 'good'], blad: ['Błąd wysyłki', 'bad'], anulowany: ['Anulowany', ''] };
@@ -2121,6 +2207,10 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
       <label class="field"><span>Status kontaktu</span><select id="cl-status">${statusOpts(l.status === 'do_kontaktu' ? 'w_kontakcie' : l.status)}</select></label>
       <label class="field full"><span>Notatka z rozmowy</span><textarea id="cl-text" rows="3" placeholder="Co ustaliliście, czego oczekuje, obawy, kapitał, lokal…">${esc(text)}</textarea></label>
       <label class="chk full"><input type="checkbox" id="cl-pres" ${l.presentationAt ? 'disabled' : ''}> ${l.presentationAt ? 'Prezentacja wysłana ' + fdate(l.presentationAt) : 'Wysłałem prezentację (zapisz datę dzisiejszą)'}</label>
+      <div class="field full"><span>Po zapisaniu przygotuj e-mail do kandydata</span><div class="row">
+        <label class="chk"><input type="checkbox" id="cl-mail-pres"> ${ICONS.email}${l.presentationAt ? 'Wyślij ponownie prezentację' : 'Wyślij prezentację'}</label>
+        ${modelOf(l) === 'franczyza' ? `<label class="chk"><input type="checkbox" id="cl-mail-calc"> ${ICONS.email}Wyślij kalkulator FLEX (link do kalkulatora)</label>` : ''}
+      </div></div>
     </div>
     <div class="smsbox" id="cl-trainbox" ${l.status === 'pozyskany' ? '' : 'hidden'}>
       <b>Umowa podpisana – zaplanuj szkolenie wstępne (3 dni w centrali)</b>
@@ -2181,8 +2271,10 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
       const h2 = (D().leads[l.id].history || []).slice(); h2.push(histEntry('sms', 'SMS z podziękowaniem: ' + text, { by, result: smsGatewayOn() ? 'Wysłano materiały' : 'Inne' }));
       patch('leads', l.id, { history: h2 });
     }
+    const chain = [($('#cl-mail-pres') || {}).checked ? 'email_prezentacja' : '', ($('#cl-mail-calc') || {}).checked ? 'email_kalkulator' : ''].filter(Boolean);
     closeModal();
-    toast(smsOn ? (smsGatewayOn() ? 'Zapisano. SMS zostanie wysłany w ciągu minuty.' : 'Zapisano. SMS czeka w kolejce na podłączenie bramki.') : 'Zapisano rozmowę');
+    toast(smsOn ? (smsGatewayOn() ? 'Zapisano. SMS wysłany przez SMSAPI.' : 'Zapisano. SMS czeka w kolejce – wyślij go z „Kontaktów”.') : 'Zapisano rozmowę');
+    if (chain.length) setTimeout(() => { const c2 = D().leads[l.id]; if (c2) openMailModal(c2, chain[0], { chain: chain.slice(1) }); }, 250);
   };
   $('#cl-save').onclick = save;
   $('#call-form').onsubmit = e => { e.preventDefault(); save(); };
@@ -2218,7 +2310,7 @@ function viewContacts() {
   const noNext = open.filter(l => !l.nextTaskDate && l.firstCallAt);
   const meetings = open.filter(l => l.meetingAt && l.meetingAt.slice(0, 10) >= t && l.meetingAt.slice(0, 10) <= wk).sort((a, b) => a.meetingAt.localeCompare(b.meetingAt));
   const nowL = nowLocal();
-  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje' || (x.status === 'zaplanowany' && (x.sendAt || '') <= nowL));
+  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje' || (x.status === 'zaplanowany' && !x.gatewayId && (x.sendAt || '') <= nowL));
   const ownerLabel = owner ? (owner === '_none' ? 'leady bez opiekuna' : memberName(owner)) : 'cały zespół';
   const head = `<div class="viewhead"><div class="grow"><span class="eyebrow">Przypomnienia</span><h1>Kontakty</h1>
     <p>Kogo i kiedy trzeba złapać – ${esc(ownerLabel)}. Na dziś i zaległe: <b>${groups[0][2].length + groups[1][2].length}</b>.</p></div>
@@ -2229,7 +2321,7 @@ function viewContacts() {
     const time = l.nextTaskTime ? l.nextTaskTime : (l.nextTaskDate === t ? 'dziś' : fdateShort(l.nextTaskDate));
     return `<div class="contact-row"><span class="when ${dueCls(l.nextTaskDate)}">${esc(time)}</span>
       <div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name || '(bez nazwy)')}</b></a> ${modelPill(l)}<div class="small ink2">${esc(l.nextTask || 'Kontakt')}${l.nextTaskDate < t ? ` · <span class="overdue">od ${fdate(l.nextTaskDate)}</span>` : ''}</div>
-      <div class="tiny muted">${esc([l.phone, l.city, STAGES[stageIdx(l)].short, owner ? '' : memberName(l.ownerId)].filter(Boolean).join(' · '))}${l.presentationAt ? ' · prezentacja ' + fdateShort(l.presentationAt) : ''}</div></div>
+      <div class="tiny muted">${esc([fmtPhone(l.phone), l.city, STAGES[stageIdx(l)].short, owner ? '' : memberName(l.ownerId)].filter(Boolean).join(' · '))}${l.presentationAt ? ' · prezentacja ' + fdateShort(l.presentationAt) : ''}</div></div>
       <div class="ctl">${l.phone ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Telefon</button>` : ''}<button class="btn sm" data-act="snooze" data-id="${l.id}" data-d="1">+1 dzień</button><button class="btn sm primary" data-act="call-log" data-id="${l.id}">Zapisz kontakt</button></div></div>`;
   };
   S.ui.cExpand = S.ui.cExpand || {};
@@ -2252,7 +2344,7 @@ function viewContacts() {
 }
 
 /* mail z prezentacją / kalkulatorem: gotowa wiadomość + zapis wysłania */
-function openMailModal(l, tplKey) {
+function openMailModal(l, tplKey, opts = {}) {
   const t = TEMPLATES[tplKey]; if (!t) return;
   const out = t.f(msgContext(l, l.form));
   const isPres = tplKey === 'email_prezentacja';
@@ -2299,6 +2391,7 @@ function openMailModal(l, tplKey) {
     patch('leads', l.id, p);
     closeModal();
     toast('Zapisano wysłanie maila' + (p.nextTaskDate ? ' · kolejny kontakt ' + fdate(p.nextTaskDate) : ''));
+    if (opts.chain && opts.chain.length) setTimeout(() => { const c2 = D().leads[l.id]; if (c2) openMailModal(c2, opts.chain[0], { chain: opts.chain.slice(1) }); }, 250);
   };
   $('#ml-save').onclick = doSave;
   const sendBtn = $('#ml-send');
@@ -2314,6 +2407,39 @@ function openMailModal(l, tplKey) {
       mailRefresh(); doSave();
       toast('Wysłano e-mail do ' + to + (atts.length ? ' (z załącznikami: ' + atts.map(a => a.filename).join(', ') + ')' : ''));
     } catch (e) { toast(e && e.code === 'local' ? e.message : mailErr(e), 'bad'); sendBtn.disabled = false; sendBtn.textContent = 'Wyślij teraz'; }
+  };
+}
+
+/* „Wyślij SMS do klienta” */
+function openSmsCompose(l) {
+  if (!l.phone) { toast('Brak numeru telefonu kandydata.', 'bad'); return; }
+  const tpls = Object.entries(TEMPLATES).filter(([k, t]) => t.kind === 'SMS');
+  const gw = smsGatewayOn();
+  openModal(`<div class="mh"><h2>SMS do: ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <div class="field"><span>Numer</span><b class="mono">${esc(fmtPhone(l.phone))}</b></div>
+      <label class="field span2"><span>Szablon</span><select id="sc-tpl"><option value="">— własna treść —</option>${tpls.map(([k, t]) => `<option value="${k}">${esc(t.grp + ': ' + t.n)}</option>`).join('')}</select></label>
+      <label class="field full"><span>Treść</span><textarea id="sc-text" rows="5" placeholder="Dzień dobry, …"></textarea><span class="hint" id="sc-info"></span></label>
+      <label class="chk small full"><input type="checkbox" id="sc-strip" checked> bez polskich znaków (160 znaków w jednym SMS-ie zamiast 70)</label>
+    </div>
+    <p class="note">${gw ? 'SMS wyjdzie od razu przez SMSAPI.' : 'Bramka SMS (SMSAPI przez mostek) nie jest jeszcze podłączona – SMS trafi do kolejki w „Kontaktach”, skąd skopiujesz treść i wyślesz z telefonu.'}</p></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn" id="sc-copy">${ICONS.copy}Kopiuj treść</button><button class="btn primary" id="sc-send">${ICONS.sms}${gw ? 'Wyślij SMS' : 'Dodaj do kolejki'}</button></div>`);
+  const final = () => { const t = $('#sc-text').value.trim(); return $('#sc-strip').checked ? stripPL(t) : t; };
+  const upd = () => { const i = smsInfo(final()); $('#sc-info').textContent = `${i.len} znaków · ${i.parts} SMS${i.gsm ? '' : ' · znaki spoza GSM'}`; };
+  $('#sc-tpl').onchange = () => { const k = $('#sc-tpl').value; if (k) { $('#sc-text').value = TEMPLATES[k].f(msgContext(l, l.form)).body; upd(); } };
+  $('#sc-text').oninput = upd; $('#sc-strip').onchange = upd; upd();
+  $('#sc-copy').onclick = () => copyText(final());
+  $('#sc-send').onclick = async () => {
+    const text = final(); if (!text) { toast('Wpisz treść SMS-a.', 'bad'); return; }
+    const btn = $('#sc-send'); btn.disabled = true;
+    const id = uid('sms');
+    put('sms', id, { leadId: l.id, leadName: l.name || '', phone: fmtPhone(l.phone), text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'reczny', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+    const cur = D().leads[l.id];
+    if (cur) { const hist = (cur.history || []).slice(); hist.push(histEntry('sms', 'SMS: ' + text, { by: myMemberId() || cur.ownerId || '' })); patch('leads', l.id, { history: hist, updatedTs: new Date().toISOString() }); }
+    let ok = false;
+    if (gw) ok = await deliverSms(id);
+    closeModal();
+    toast(gw ? (ok ? 'Wysłano SMS do ' + fmtPhone(l.phone) : 'Nie udało się wysłać SMS-a – szczegóły w karcie leada') : 'SMS dodany do kolejki – wyślij go z „Kontaktów”');
   };
 }
 
@@ -3191,6 +3317,7 @@ async function mailInit() {
   } catch (e) { MAIL.avail = false; MAIL.err = (e && e.code) || ''; }
   MAIL.checking = false; scheduleRender();
   if (MAIL.avail) {
+    mailCall('mail_status', {}).then(st => { MAIL.status = st; MAIL.sms = !!(st && st.sms && st.sms.configured); scheduleRender(); }).catch(() => { });
     setTimeout(() => syncInquiries(false), 1500);
     MAIL.timer = setInterval(() => { if (!document.hidden) syncInquiries(false); }, 5 * 60000);
   }
@@ -3436,7 +3563,7 @@ async function syncInquiries(manual) {
         continue;
       }
       const day = (it.date || now).slice(0, 10);
-      const lead = newLead({ name: it.name || it.email || 'Zgłoszenie z formularza', phone: it.phone || '', email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
+      const lead = newLead({ name: it.name || it.email || 'Zgłoszenie z formularza', phone: fmtPhone(it.phone || ''), email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
       Object.assign(lead, { id, createdAt: day, createdTs: it.date || now, sourceMsgId: it.messageId || '', inquiryIds: [id], autoPresentationAt: it.autoPresentation ? day : '' });
       lead.history = [histEntry('system', `Zgłoszenie z formularza shipcenter.pl (${modelName(it.kind)}) – pobrane automatycznie z poczty${it.autoPresentation ? '; formularz wysłał kandydatowi prezentację' : ''}`)];
       put('leads', id, lead);
@@ -3587,7 +3714,7 @@ function viewLocations() {
 function newLocation(leadId = '') {
   const l = leadId ? D().leads[leadId] : null;
   const x = clone(LOC_DEFAULTS);
-  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', address: l ? (l.pointAddress || '') : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
+  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', address: l ? (l.pointAddress || '') : '', postalCode: l ? (l.pointPostal || '') : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
   put('locations', x.id, x);
   go('lok-' + x.id);
 }
@@ -4194,7 +4321,7 @@ function buildImportRows() {
     const ownerId = o.owner ? (team().find(m => normKey(m.name) === normKey(o.owner) || normKey(m.name).startsWith(normKey(o.owner)))?.id || owner) : owner;
     const status = o.status ? (STATUSES.find(s => normKey(s.n) === normKey(o.status) || s.k === normKey(o.status))?.k || 'do_kontaktu') : 'do_kontaktu';
     return {
-      name, company: String(o.company || '').trim(), phone: String(o.phone || '').replace(/^p:/, '').trim(), email: String(o.email || '').trim(),
+      name, company: String(o.company || '').trim(), phone: fmtPhone(String(o.phone || '').replace(/^p:/, '').trim()), email: String(o.email || '').trim(),
       city: String(o.city || '').trim(), region: matchRegion(o.region) || region, source: matchSource(o.source) || src, ownerId,
       model: /ship\s*-?\s*point|partner|point/i.test(String(o.model || '')) ? 'shippoint' : 'franczyza',
       capital: String(o.capital || '').replace(/[^\d]/g, ''), notes: String(o.notes || '').trim(), createdAt: parseDateLoose(o.createdAt) || todayISO(), status
@@ -4228,7 +4355,7 @@ async function runImport(btn) {
 function leadRowsForExport(list) {
   return list.map(l => ({
     'Kod': leadCode(l.id), 'Imię i nazwisko': l.name || '', 'Firma': l.company || '', 'Telefon': l.phone || '', 'E-mail': l.email || '',
-    'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
+    'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Kod pocztowy': l.pointPostal || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
     'Etap': STAGES[stageIdx(l)].n, 'Status kontaktu': STATUS_MAP[l.status]?.n || '', 'Powód utraty': l.lostReason || '',
     'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Cena SMART': +l.smartPrice > 0 ? +l.smartPrice : '', 'Sprzęt FLEX': (l.flexItems || []).map(id => (FLEX_ITEMS.find(x => x.id === id) || {}).n).filter(Boolean).join(', '), 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',
@@ -4485,6 +4612,7 @@ function handleAction(act, el, e) {
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'sms-compose': if (L) openSmsCompose(L); return;
     case 'mail-compose': if (L) openCompose({ leadId: L.id }); else openCompose({}); return;
     case 'mail-open': if (e.target.closest('a')) return; openMailReader(el.dataset.folder, el.dataset.uid); return;
     case 'mail-att': downloadMailAttachment(el.dataset.folder, el.dataset.uid, el.dataset.i); return;
@@ -4504,7 +4632,7 @@ function handleAction(act, el, e) {
     case 'meet-confirm': if (L) openMailModal(L, 'email_potwierdzenie'); return;
     case 'sms-remind': if (L) openSmsReminderModal(L, el.dataset.topic || 'spotkanie', el.dataset.sms || ''); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
-    case 'sms-cancel': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'anulowany' }); return; }
+    case 'sms-cancel': { if (D().sms[id]) cancelSms(id); return; }
     case 'me-bind': { if (!S.userId) { toast('Nie udało się ustalić Twojego konta – otwórz panel w claude.ai po zalogowaniu.', 'bad'); return; } Object.values(D().team).filter(m => m.userId === S.userId && m.id !== id).forEach(m => patch('team', m.id, { userId: '' })); patch('team', id, { userId: S.userId }); S.ui.cOwner = null; toast('Zapamiętano: to Ty'); return; }
     case 'me-unbind': patch('team', id, { userId: '' }); S.ui.cOwner = null; return;
     case 'task-shift': if (L) { const base = L.nextTaskDate && L.nextTaskDate > todayISO() ? parseD(L.nextTaskDate) : new Date(); patch('leads', id, { nextTaskDate: isoDate(addDays(base, +el.dataset.d)) }); } return;
@@ -4591,6 +4719,7 @@ document.addEventListener('input', e => {
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
   if (el.dataset.rev) { onRevInput(el, false); return; }
+  if (el.dataset.geo === 'lf') { debounce('geo-lf', () => autoGeo('lf'), 1200); return; }
   if (el.dataset.nipAuto === 'lf') { debounce('nip-lf', () => autoNip('lf'), 500); return; }
   if (el.dataset.locComment) { const id = el.dataset.locComment; const v = el.value; debounce('loc-comment', () => patch('locations', id, { aiComment: v }), 900); return; }
 });
@@ -4599,6 +4728,8 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
+  if (el.dataset.geo) { const pf = el.dataset.geo; if (pf === 'le') saveLeadEdit(); debounce('geo-' + pf, () => autoGeo(pf), 250); return; }
+  if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
   if (el.dataset.flex) { toggleFlex(S.route.id, el.dataset.flex, el.checked); return; }
   if (el.dataset.train) { const l = D().leads[el.dataset.train]; if (l) setTraining(l, el.value); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }

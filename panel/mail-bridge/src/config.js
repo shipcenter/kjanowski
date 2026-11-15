@@ -26,7 +26,13 @@ export const cfg = {
   fromName: env('MAIL_FROM_NAME', 'ShipCenter – Franczyza'),
   sentFolder: env('SENT_FOLDER'),
   tlsRejectUnauthorized: bool('TLS_REJECT_UNAUTHORIZED', true),
-  maxSendPerHour: int('MAX_SEND_PER_HOUR', 80)
+  maxSendPerHour: int('MAX_SEND_PER_HOUR', 80),
+  smsapi: {
+    token: env('SMSAPI_TOKEN'),
+    from: env('SMSAPI_FROM'),
+    url: env('SMSAPI_URL', 'https://api.smsapi.pl').replace(/\/+$/, ''),
+    maxPerHour: int('MAX_SMS_PER_HOUR', 60)
+  }
 };
 
 export function assertConfig({ needSecret = true } = {}) {

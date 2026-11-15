@@ -34,7 +34,7 @@ test('mail_send przez MCP: HTML ze stopką, załącznik, nadawca franczyza@', as
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(url)));
   const tools = (await client.listTools()).tools.map(t => t.name).sort();
-  assert.deepEqual(tools, ['inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status']);
+  assert.deepEqual(tools, ['inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'sms_cancel', 'sms_send']);
   const res = await client.callTool({ name: 'mail_send', arguments: { to: 'kandydat@example.com', subject: 'Test – prezentacja', html: '<p>Dzień dobry</p><table><tr><td>Stopka ShipCenter</td></tr></table>', text: 'Dzień dobry', attachments: [{ filename: 'Umowa.pdf', content_base64: Buffer.from('%PDF-1.4 test').toString('base64'), content_type: 'application/pdf' }] } });
   assert.ok(!res.isError, JSON.stringify(res.content));
   const out = JSON.parse(res.content[0].text);
@@ -51,4 +51,27 @@ test('mail_send przez MCP: HTML ze stopką, załącznik, nadawca franczyza@', as
   assert.match(p.html, /Stopka ShipCenter/);
   assert.equal(p.attachments[0].filename, 'Umowa.pdf');
   assert.equal(p.subject, 'Test – prezentacja');
+});
+
+test('sms_send i sms_cancel przez SMSAPI (atrapa serwera)', async () => {
+  const { createServer } = await import('node:http');
+  const calls = [];
+  const api = createServer((req, res) => { let b = ''; req.on('data', c => b += c); req.on('end', () => { const p = Object.fromEntries(new URLSearchParams(b)); calls.push({ auth: req.headers.authorization, p }); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(p.sch_del ? { count: 1, list: [{ id: p.sch_del }] } : { count: 1, list: [{ id: 'SMS123', points: 0.16, status: p.date ? 'QUEUE' : 'SENT', parts: 1 }] })); }); });
+  api.listen(0, '127.0.0.1'); await once(api, 'listening');
+  process.env.SMSAPI_TOKEN = 'tok-test'; process.env.SMSAPI_FROM = 'ShipCenter'; process.env.SMSAPI_URL = `http://127.0.0.1:${api.address().port}`;
+  const { smsSend, smsCancel, normPhone } = await import('../src/sms.js?' + Date.now());
+  const { cfg } = await import('../src/config.js');
+  Object.assign(cfg.smsapi, { token: 'tok-test', from: 'ShipCenter', url: process.env.SMSAPI_URL });
+  assert.equal(normPhone('+48 600 100 200'), '48600100200');
+  const now = await smsSend({ to: '600 100 200', message: 'Dzien dobry, test' });
+  assert.equal(now.id, 'SMS123'); assert.equal(now.scheduled, false);
+  const later = await smsSend({ to: '+48600100200', message: 'Przypomnienie', date: new Date(Date.now() + 86400000).toISOString() });
+  assert.equal(later.scheduled, true);
+  await smsCancel({ id: 'SMS123' });
+  api.close();
+  assert.equal(calls[0].auth, 'Bearer tok-test');
+  assert.equal(calls[0].p.to, '48600100200'); assert.equal(calls[0].p.from, 'ShipCenter'); assert.ok(!calls[0].p.date);
+  assert.ok(+calls[1].p.date > Date.now() / 1000);
+  assert.equal(calls[2].p.sch_del, 'SMS123');
+  await assert.rejects(() => smsSend({ to: '123', message: 'x' }), /Nieprawidłowy numer/);
 });

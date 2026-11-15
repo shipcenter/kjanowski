@@ -454,3 +454,7 @@ details.adv[open] summary { margin-bottom: 10px; }
 .flexkv { grid-template-columns: 1fr auto; }
 
 .pkgswitch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card, #fff); width: fit-content; max-width: 100%; }
+
+.phonechip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card, #fff); color: var(--ink, #111827); font-weight: 600; font-size: .9rem; text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.phonechip svg { width: 15px; height: 15px; color: var(--brand, #ea580c); }
+.phonechip:hover { border-color: var(--brand, #ea580c); }

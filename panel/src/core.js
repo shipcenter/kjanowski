@@ -526,3 +526,21 @@ async function passHash(p) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('shipcenter-panel:' + p));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+/* numer telefonu zawsze w formacie +48 600 100 200 */
+function fmtPhone(p) {
+  const raw = String(p || '').trim(); if (!raw) return '';
+  let d = raw.replace(/[^\d+]/g, '');
+  if (d.startsWith('00')) d = '+' + d.slice(2);
+  if (/^\d{9}$/.test(d)) d = '+48' + d;
+  if (/^48\d{9}$/.test(d)) d = '+' + d;
+  const m = d.match(/^\+48(\d{3})(\d{3})(\d{3})$/);
+  if (m) return `+48 ${m[1]} ${m[2]} ${m[3]}`;
+  return raw;
+}
+const telHref = p => 'tel:' + fmtPhone(p).replace(/\s/g, '');
+function phoneChip(l, { copy = true } = {}) {
+  if (!l.phone) return '';
+  const f = fmtPhone(l.phone);
+  return `<a class="phonechip" href="${esc(telHref(l.phone))}" title="Zadzwoń">${ICONS.tel}<span>${esc(f)}</span></a>${copy ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(f)}" title="Kopiuj numer">${ICONS.copy}Kopiuj</button>` : ''}`;
+}

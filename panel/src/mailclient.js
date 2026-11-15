@@ -15,6 +15,7 @@ async function mailInit() {
   } catch (e) { MAIL.avail = false; MAIL.err = (e && e.code) || ''; }
   MAIL.checking = false; scheduleRender();
   if (MAIL.avail) {
+    mailCall('mail_status', {}).then(st => { MAIL.status = st; MAIL.sms = !!(st && st.sms && st.sms.configured); scheduleRender(); }).catch(() => { });
     setTimeout(() => syncInquiries(false), 1500);
     MAIL.timer = setInterval(() => { if (!document.hidden) syncInquiries(false); }, 5 * 60000);
   }
@@ -260,7 +261,7 @@ async function syncInquiries(manual) {
         continue;
       }
       const day = (it.date || now).slice(0, 10);
-      const lead = newLead({ name: it.name || it.email || 'Zgłoszenie z formularza', phone: it.phone || '', email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
+      const lead = newLead({ name: it.name || it.email || 'Zgłoszenie z formularza', phone: fmtPhone(it.phone || ''), email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
       Object.assign(lead, { id, createdAt: day, createdTs: it.date || now, sourceMsgId: it.messageId || '', inquiryIds: [id], autoPresentationAt: it.autoPresentation ? day : '' });
       lead.history = [histEntry('system', `Zgłoszenie z formularza shipcenter.pl (${modelName(it.kind)}) – pobrane automatycznie z poczty${it.autoPresentation ? '; formularz wysłał kandydatowi prezentację' : ''}`)];
       put('leads', id, lead);

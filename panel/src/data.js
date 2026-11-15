@@ -153,7 +153,7 @@ function buildImportRows() {
     const ownerId = o.owner ? (team().find(m => normKey(m.name) === normKey(o.owner) || normKey(m.name).startsWith(normKey(o.owner)))?.id || owner) : owner;
     const status = o.status ? (STATUSES.find(s => normKey(s.n) === normKey(o.status) || s.k === normKey(o.status))?.k || 'do_kontaktu') : 'do_kontaktu';
     return {
-      name, company: String(o.company || '').trim(), phone: String(o.phone || '').replace(/^p:/, '').trim(), email: String(o.email || '').trim(),
+      name, company: String(o.company || '').trim(), phone: fmtPhone(String(o.phone || '').replace(/^p:/, '').trim()), email: String(o.email || '').trim(),
       city: String(o.city || '').trim(), region: matchRegion(o.region) || region, source: matchSource(o.source) || src, ownerId,
       model: /ship\s*-?\s*point|partner|point/i.test(String(o.model || '')) ? 'shippoint' : 'franczyza',
       capital: String(o.capital || '').replace(/[^\d]/g, ''), notes: String(o.notes || '').trim(), createdAt: parseDateLoose(o.createdAt) || todayISO(), status
@@ -187,7 +187,7 @@ async function runImport(btn) {
 function leadRowsForExport(list) {
   return list.map(l => ({
     'Kod': leadCode(l.id), 'Imię i nazwisko': l.name || '', 'Firma': l.company || '', 'Telefon': l.phone || '', 'E-mail': l.email || '',
-    'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
+    'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Kod pocztowy': l.pointPostal || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
     'Etap': STAGES[stageIdx(l)].n, 'Status kontaktu': STATUS_MAP[l.status]?.n || '', 'Powód utraty': l.lostReason || '',
     'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Cena SMART': +l.smartPrice > 0 ? +l.smartPrice : '', 'Sprzęt FLEX': (l.flexItems || []).map(id => (FLEX_ITEMS.find(x => x.id === id) || {}).n).filter(Boolean).join(', '), 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',

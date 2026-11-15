@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { cfg, assertConfig } from './config.js';
 import { fetchInquiries, listMessages, getMessage, getAttachment, sendMail, status } from './mail.js';
+import { smsSend, smsCancel, smsConfigured } from './sms.js';
 
 const json = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 const fail = e => ({ isError: true, content: [{ type: 'text', text: String((e && e.message) || e) }] });
@@ -21,7 +22,7 @@ export function buildServer() {
     description: 'Sprawdza logowanie do IMAP i SMTP skrzynki franczyza@shipcenter.pl.',
     inputSchema: {},
     annotations: RO
-  }, wrap(() => status()));
+  }, wrap(async () => ({ ...(await status()), sms: smsConfigured() })));
 
   s.registerTool('inquiries_fetch', {
     title: 'Nowe zgłoszenia z formularzy',
@@ -87,6 +88,24 @@ export function buildServer() {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }, wrap(a => sendMail(a)));
+
+  s.registerTool('sms_send', {
+    title: 'Wyślij SMS',
+    description: 'Wysyła SMS przez SMSAPI (od razu albo o podanej godzinie – parametr date w ISO 8601). Zwraca id SMS-a (do anulowania planowanego).',
+    inputSchema: {
+      to: z.string().min(9).max(20),
+      message: z.string().min(1).max(918),
+      date: z.string().max(40).optional().describe('Planowana wysyłka, np. 2026-11-20T17:00:00.000Z')
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
+  }, wrap(a => smsSend(a)));
+
+  s.registerTool('sms_cancel', {
+    title: 'Anuluj zaplanowany SMS',
+    description: 'Anuluje SMS zaplanowany w SMSAPI (po id zwróconym przez sms_send).',
+    inputSchema: { id: z.string().min(1).max(64) },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }
+  }, wrap(a => smsCancel(a)));
 
   return s;
 }

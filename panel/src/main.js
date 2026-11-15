@@ -46,6 +46,7 @@ function handleAction(act, el, e) {
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'sms-compose': if (L) openSmsCompose(L); return;
     case 'mail-compose': if (L) openCompose({ leadId: L.id }); else openCompose({}); return;
     case 'mail-open': if (e.target.closest('a')) return; openMailReader(el.dataset.folder, el.dataset.uid); return;
     case 'mail-att': downloadMailAttachment(el.dataset.folder, el.dataset.uid, el.dataset.i); return;
@@ -65,7 +66,7 @@ function handleAction(act, el, e) {
     case 'meet-confirm': if (L) openMailModal(L, 'email_potwierdzenie'); return;
     case 'sms-remind': if (L) openSmsReminderModal(L, el.dataset.topic || 'spotkanie', el.dataset.sms || ''); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
-    case 'sms-cancel': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'anulowany' }); return; }
+    case 'sms-cancel': { if (D().sms[id]) cancelSms(id); return; }
     case 'me-bind': { if (!S.userId) { toast('Nie udało się ustalić Twojego konta – otwórz panel w claude.ai po zalogowaniu.', 'bad'); return; } Object.values(D().team).filter(m => m.userId === S.userId && m.id !== id).forEach(m => patch('team', m.id, { userId: '' })); patch('team', id, { userId: S.userId }); S.ui.cOwner = null; toast('Zapamiętano: to Ty'); return; }
     case 'me-unbind': patch('team', id, { userId: '' }); S.ui.cOwner = null; return;
     case 'task-shift': if (L) { const base = L.nextTaskDate && L.nextTaskDate > todayISO() ? parseD(L.nextTaskDate) : new Date(); patch('leads', id, { nextTaskDate: isoDate(addDays(base, +el.dataset.d)) }); } return;
@@ -152,6 +153,7 @@ document.addEventListener('input', e => {
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
   if (el.dataset.rev) { onRevInput(el, false); return; }
+  if (el.dataset.geo === 'lf') { debounce('geo-lf', () => autoGeo('lf'), 1200); return; }
   if (el.dataset.nipAuto === 'lf') { debounce('nip-lf', () => autoNip('lf'), 500); return; }
   if (el.dataset.locComment) { const id = el.dataset.locComment; const v = el.value; debounce('loc-comment', () => patch('locations', id, { aiComment: v }), 900); return; }
 });
@@ -160,6 +162,8 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
+  if (el.dataset.geo) { const pf = el.dataset.geo; if (pf === 'le') saveLeadEdit(); debounce('geo-' + pf, () => autoGeo(pf), 250); return; }
+  if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
   if (el.dataset.flex) { toggleFlex(S.route.id, el.dataset.flex, el.checked); return; }
   if (el.dataset.train) { const l = D().leads[el.dataset.train]; if (l) setTraining(l, el.value); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }

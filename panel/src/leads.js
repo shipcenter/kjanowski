@@ -91,9 +91,10 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
     ${prefix === 'lf' ? `<div class="field full" id="lf-companybox"></div>` : ''}
-    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
-    <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" value="${esc(l.city)}"></label>
-    <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select></label>
+    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
+    <label class="field"><span>Kod pocztowy</span><input type="text" id="${prefix}-pointPostal" data-geo="${prefix}" inputmode="numeric" maxlength="6" value="${esc(l.pointPostal || '')}" placeholder="00-000"></label>
+    <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" data-geo="${prefix}" value="${esc(l.city)}"></label>
+    <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select><span class="hint" id="${prefix}-geo-st"></span></label>
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
     <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
@@ -110,7 +111,7 @@ function readLeadForm(prefix = 'lf') {
   return out;
 }
 function readLeadFormAll(prefix, v) {
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: fmtPhone(v('phone')), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), pointPostal: v('pointPostal').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
   const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
@@ -176,7 +177,7 @@ function viewLead(id) {
 
   const contact = `<div class="card"><div class="cardhead"><h2>Dane kandydata</h2><p>Zmiany zapisują się po opuszczeniu pola</p></div>
     <div id="lead-edit" data-lead="${l.id}">${leadFormFields(l, 'le')}</div>
-    <div class="row" style="margin-top:10px">${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj telefon</button>` : ''}${l.email ? `<span class="pill outline mono">${esc(l.email)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.email)}">${ICONS.copy}Kopiuj e-mail</button>` : ''}</div>
+    <div class="row" style="margin-top:10px">${phoneChip(l)}${l.email ? `<span class="pill outline mono">${esc(l.email)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.email)}">${ICONS.copy}Kopiuj e-mail</button>` : ''}</div>
     ${companyBox(l)}
     <div class="sep"></div>
     <label class="field"><span>Notatki</span><textarea id="ld-notes" data-lead-field="notes" rows="5" placeholder="Motywacja, sytuacja finansowa, lokal, obawy, ustalenia…">${esc(l.notes)}</textarea></label></div>`;
@@ -203,7 +204,7 @@ function viewLead(id) {
 `}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail do klienta</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail do klienta</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button>${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
@@ -549,4 +550,44 @@ function openAdminPassModal() {
     await saveSettings({ adminPassHash: await passHash(a) }); closeModal(); toast('Zapisano hasło administratora');
   };
   const cl = $('#ap-clear'); if (cl) cl.onclick = () => { saveSettings({ adminPassHash: '' }); closeModal(); toast('Wyłączono hasło – pracownicy mogą tylko wysyłać prośby'); };
+}
+
+/* województwo i kod pocztowy – uzupełniane same po wpisaniu miejscowości / adresu / kodu */
+const POSTAL_REGION = [[0, 9, 'mazowieckie'], [10, 14, 'warmińsko-mazurskie'], [15, 18, 'podlaskie'], [19, 19, 'warmińsko-mazurskie'], [20, 24, 'lubelskie'], [25, 29, 'świętokrzyskie'], [30, 34, 'małopolskie'], [35, 39, 'podkarpackie'], [40, 44, 'śląskie'], [45, 49, 'opolskie'], [50, 59, 'dolnośląskie'], [60, 64, 'wielkopolskie'], [65, 69, 'lubuskie'], [70, 78, 'zachodniopomorskie'], [80, 84, 'pomorskie'], [85, 89, 'kujawsko-pomorskie'], [90, 99, 'łódzkie']];
+function regionFromPostal(pc) {
+  const m = String(pc || '').match(/^(\d{2})-?\d{3}$/); if (!m) return '';
+  const n = +m[1]; const r = POSTAL_REGION.find(([a, b]) => n >= a && n <= b); return r ? r[2] : '';
+}
+const GEO = { seq: {} };
+async function autoGeo(prefix) {
+  const g = id => $('#' + prefix + '-' + id);
+  const city = (g('city') || {}).value || '', addr = (g('pointAddress') || {}).value || '';
+  const pcEl = g('pointPostal'), regEl = g('region'); if (!regEl) return;
+  let pc = (pcEl && pcEl.value || '').trim();
+  if (/^\d{5}$/.test(pc)) { pc = pc.slice(0, 2) + '-' + pc.slice(2); pcEl.value = pc; }
+  const say = (t, cls = '') => { const el = g('geo-st'); if (el) { el.className = 'hint ' + cls; el.textContent = t; } };
+  const manual = regEl.value && (prefix === 'le' ? !!(D().leads[S.route.id] || {}).regionManual : (regEl.dataset.auto !== '1' && regEl.dataset.touched === '1'));
+  if (manual || (!city.trim() && !/^\d{2}-\d{3}$/.test(pc))) return;
+  const set = (reg, newPc, note) => {
+    let changed = false;
+    if (reg && REGIONS.includes(reg) && regEl.value !== reg) { regEl.value = reg; regEl.dataset.auto = '1'; changed = true; }
+    if (newPc && pcEl && !pcEl.value.trim()) { pcEl.value = newPc; changed = true; }
+    say(note, 'good');
+    if (changed && prefix === 'le') saveLeadEdit();
+  };
+  const seq = (GEO.seq[prefix] || 0) + 1; GEO.seq[prefix] = seq;
+  if (S.sample && city.trim()) {
+    say('Ustalam województwo…');
+    try {
+      const r = await S.sample.json(`Polski adres: ${[addr.trim(), [pc, city.trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')}. Zwróć wyłącznie JSON: {"region": "województwo małymi literami, np. śląskie", "postalCode": "kod pocztowy 00-000 dla tej ulicy i numeru w tej miejscowości (najbardziej prawdopodobny, gdy nie masz pewności)", "city": "poprawna nazwa miejscowości"}. Uwzględnij podany kod pocztowy, jeśli jest.`, { modelTier: 'quick' });
+      if (GEO.seq[prefix] !== seq) return;
+      const reg = String((r && r.region) || '').toLowerCase().replace('województwo', '').trim();
+      const rpc = (String((r && r.postalCode) || '').match(/\d{2}-\d{3}/) || [])[0] || '';
+      if (REGIONS.includes(reg)) { set(reg, rpc, `Uzupełniono automatycznie: ${reg}${rpc && !pc ? ', kod ' + rpc + ' (sprawdź)' : ''}`); return; }
+    } catch (e) { /* brak zgody / limit – zostaje szacunek z kodu */ }
+  }
+  if (GEO.seq[prefix] !== seq) return;
+  const guess = regionFromPostal(pc);
+  if (guess) set(guess, '', `Z kodu pocztowego: ${guess}`);
+  else if (city.trim()) say('Wybierz województwo ręcznie (lub wpisz kod pocztowy).');
 }

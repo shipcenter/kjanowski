@@ -17,7 +17,27 @@ function smsThanksText(l) {
   const topic = modelOf(l) === 'shippoint' ? 'o Ship Point' : 'o franczyzie ShipCenter';
   return stripPL(`Dzień dobry, dziękuję za rozmowę ${topic}. W razie pytań proszę dzwonić: ${who}, tel. ${tel}. Pozdrawiam, ${o.smsPodpis || 'ShipCenter'}`);
 }
-const smsGatewayOn = () => !!((settings().integrations || {}).sms);
+const smsGatewayOn = () => typeof mailOn === 'function' && mailOn() && MAIL.sms === true;
+/* wysyłka przez mostek (SMSAPI): od razu albo planowo o sendAt */
+async function deliverSms(id) {
+  const x = D().sms[id]; if (!x || !smsGatewayOn()) return false;
+  const future = !!(x.sendAt && x.sendAt > nowLocal());
+  try {
+    const r = await mailCall('sms_send', { to: x.phone, message: x.text, ...(future ? { date: new Date(x.sendAt).toISOString() } : {}) });
+    patch('sms', id, { status: future ? 'zaplanowany' : 'wyslany', gateway: 'smsapi', gatewayId: (r && r.id) || '', sentTs: future ? '' : new Date().toISOString(), error: '' });
+    return true;
+  } catch (e) { patch('sms', id, { status: 'blad', error: mailErr(e) }); return false; }
+}
+async function regateway(id) {
+  const x = D().sms[id]; if (!x || !smsGatewayOn()) return;
+  if (x.gatewayId) { try { await mailCall('sms_cancel', { id: x.gatewayId }); } catch (e) { } patch('sms', id, { gatewayId: '' }); }
+  if (x.status === 'zaplanowany') await deliverSms(id);
+}
+async function cancelSms(id) {
+  const x = D().sms[id]; if (!x) return;
+  if (x.gatewayId && x.status === 'zaplanowany' && smsGatewayOn()) { try { await mailCall('sms_cancel', { id: x.gatewayId }); } catch (e) { toast('Nie udało się anulować w SMSAPI: ' + mailErr(e), 'bad'); return; } }
+  patch('sms', id, { status: 'anulowany' });
+}
 
 /* przypomnienia SMS: o spotkaniu i o szkoleniu (można ustawić kilka) */
 const REMIND_TOPICS = {
@@ -94,11 +114,13 @@ function openSmsReminderModal(l, topic = 'spotkanie', smsId = '') {
     if (!sendAt) { toast('Wybierz termin wysyłki.', 'bad'); return; }
     if (!text) { toast('Wpisz treść SMS-a.', 'bad'); return; }
     const custom = text !== smsReminderText(l, topic);
+    let smsId = ex ? ex.id : uid('sms');
     if (ex) patch('sms', ex.id, { when, text, sendAt, eventAt: at, phone: l.phone, custom });
-    else put('sms', uid('sms'), { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic, when, sendAt, eventAt: at, custom, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+    else put('sms', smsId, { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic, when, sendAt, eventAt: at, custom, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
     const cur = D().leads[l.id];
     if (cur) { const hist = (cur.history || []).slice(); hist.push(histEntry('system', `Przypomnienie SMS o ${T.n}: ${fdt(sendAt)}`)); patch('leads', l.id, { history: hist, updatedTs: new Date().toISOString() }); }
-    closeModal(); toast('Przypomnienie SMS: ' + fdt(sendAt));
+    closeModal(); toast('Przypomnienie SMS: ' + fdt(sendAt) + (smsGatewayOn() ? ' – zaplanowane w SMSAPI' : ''));
+    if (smsGatewayOn()) { if (ex) regateway(smsId); else deliverSms(smsId); }
   };
 }
 /* po zmianie terminu / miejsca – przesunięcie zaplanowanych SMS-ów */
@@ -106,13 +128,13 @@ function syncReminders(leadId, topic) {
   const l = D().leads[leadId]; if (!l) return;
   const list = remindersFor(leadId, topic); if (!list.length) return;
   const at = eventAt(l, topic);
-  if (!at) { list.forEach(x => patch('sms', x.id, { status: 'anulowany' })); toast('Usunięto termin – anulowano przypomnienia SMS'); return; }
+  if (!at) { list.forEach(x => cancelSms(x.id)); toast('Usunięto termin – anulowano przypomnienia SMS'); return; }
   let n = 0;
   list.forEach(x => {
     const p = { eventAt: at, phone: l.phone || x.phone };
     if (x.when !== 'wlasny') p.sendAt = reminderSendAt(at, x.when);
     if (!x.custom) p.text = smsReminderText(l, topic);
-    if ((p.sendAt && p.sendAt !== x.sendAt) || (p.text && p.text !== x.text) || p.eventAt !== x.eventAt) { patch('sms', x.id, p); n++; }
+    if ((p.sendAt && p.sendAt !== x.sendAt) || (p.text && p.text !== x.text) || p.eventAt !== x.eventAt) { patch('sms', x.id, p); n++; if (x.gatewayId) regateway(x.id); }
   });
   if (n) toast(`Zaktualizowano przypomnienia SMS (${n})`);
 }
@@ -121,6 +143,7 @@ function queueSms(l, text) {
   const id = uid('sms');
   const doc = { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'po_rozmowie', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' };
   put('sms', id, doc);
+  if (smsGatewayOn()) deliverSms(id);
   return id;
 }
 const SMS_STATUS = { zaplanowany: ['Zaplanowany', ''], oczekuje: ['Czeka na wysłanie', 'warn'], wyslany: ['Wysłany', 'good'], blad: ['Błąd wysyłki', 'bad'], anulowany: ['Anulowany', ''] };
@@ -138,6 +161,10 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
       <label class="field"><span>Status kontaktu</span><select id="cl-status">${statusOpts(l.status === 'do_kontaktu' ? 'w_kontakcie' : l.status)}</select></label>
       <label class="field full"><span>Notatka z rozmowy</span><textarea id="cl-text" rows="3" placeholder="Co ustaliliście, czego oczekuje, obawy, kapitał, lokal…">${esc(text)}</textarea></label>
       <label class="chk full"><input type="checkbox" id="cl-pres" ${l.presentationAt ? 'disabled' : ''}> ${l.presentationAt ? 'Prezentacja wysłana ' + fdate(l.presentationAt) : 'Wysłałem prezentację (zapisz datę dzisiejszą)'}</label>
+      <div class="field full"><span>Po zapisaniu przygotuj e-mail do kandydata</span><div class="row">
+        <label class="chk"><input type="checkbox" id="cl-mail-pres"> ${ICONS.email}${l.presentationAt ? 'Wyślij ponownie prezentację' : 'Wyślij prezentację'}</label>
+        ${modelOf(l) === 'franczyza' ? `<label class="chk"><input type="checkbox" id="cl-mail-calc"> ${ICONS.email}Wyślij kalkulator FLEX (link do kalkulatora)</label>` : ''}
+      </div></div>
     </div>
     <div class="smsbox" id="cl-trainbox" ${l.status === 'pozyskany' ? '' : 'hidden'}>
       <b>Umowa podpisana – zaplanuj szkolenie wstępne (3 dni w centrali)</b>
@@ -198,8 +225,10 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
       const h2 = (D().leads[l.id].history || []).slice(); h2.push(histEntry('sms', 'SMS z podziękowaniem: ' + text, { by, result: smsGatewayOn() ? 'Wysłano materiały' : 'Inne' }));
       patch('leads', l.id, { history: h2 });
     }
+    const chain = [($('#cl-mail-pres') || {}).checked ? 'email_prezentacja' : '', ($('#cl-mail-calc') || {}).checked ? 'email_kalkulator' : ''].filter(Boolean);
     closeModal();
-    toast(smsOn ? (smsGatewayOn() ? 'Zapisano. SMS zostanie wysłany w ciągu minuty.' : 'Zapisano. SMS czeka w kolejce na podłączenie bramki.') : 'Zapisano rozmowę');
+    toast(smsOn ? (smsGatewayOn() ? 'Zapisano. SMS wysłany przez SMSAPI.' : 'Zapisano. SMS czeka w kolejce – wyślij go z „Kontaktów”.') : 'Zapisano rozmowę');
+    if (chain.length) setTimeout(() => { const c2 = D().leads[l.id]; if (c2) openMailModal(c2, chain[0], { chain: chain.slice(1) }); }, 250);
   };
   $('#cl-save').onclick = save;
   $('#call-form').onsubmit = e => { e.preventDefault(); save(); };
@@ -235,7 +264,7 @@ function viewContacts() {
   const noNext = open.filter(l => !l.nextTaskDate && l.firstCallAt);
   const meetings = open.filter(l => l.meetingAt && l.meetingAt.slice(0, 10) >= t && l.meetingAt.slice(0, 10) <= wk).sort((a, b) => a.meetingAt.localeCompare(b.meetingAt));
   const nowL = nowLocal();
-  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje' || (x.status === 'zaplanowany' && (x.sendAt || '') <= nowL));
+  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje' || (x.status === 'zaplanowany' && !x.gatewayId && (x.sendAt || '') <= nowL));
   const ownerLabel = owner ? (owner === '_none' ? 'leady bez opiekuna' : memberName(owner)) : 'cały zespół';
   const head = `<div class="viewhead"><div class="grow"><span class="eyebrow">Przypomnienia</span><h1>Kontakty</h1>
     <p>Kogo i kiedy trzeba złapać – ${esc(ownerLabel)}. Na dziś i zaległe: <b>${groups[0][2].length + groups[1][2].length}</b>.</p></div>
@@ -246,7 +275,7 @@ function viewContacts() {
     const time = l.nextTaskTime ? l.nextTaskTime : (l.nextTaskDate === t ? 'dziś' : fdateShort(l.nextTaskDate));
     return `<div class="contact-row"><span class="when ${dueCls(l.nextTaskDate)}">${esc(time)}</span>
       <div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name || '(bez nazwy)')}</b></a> ${modelPill(l)}<div class="small ink2">${esc(l.nextTask || 'Kontakt')}${l.nextTaskDate < t ? ` · <span class="overdue">od ${fdate(l.nextTaskDate)}</span>` : ''}</div>
-      <div class="tiny muted">${esc([l.phone, l.city, STAGES[stageIdx(l)].short, owner ? '' : memberName(l.ownerId)].filter(Boolean).join(' · '))}${l.presentationAt ? ' · prezentacja ' + fdateShort(l.presentationAt) : ''}</div></div>
+      <div class="tiny muted">${esc([fmtPhone(l.phone), l.city, STAGES[stageIdx(l)].short, owner ? '' : memberName(l.ownerId)].filter(Boolean).join(' · '))}${l.presentationAt ? ' · prezentacja ' + fdateShort(l.presentationAt) : ''}</div></div>
       <div class="ctl">${l.phone ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Telefon</button>` : ''}<button class="btn sm" data-act="snooze" data-id="${l.id}" data-d="1">+1 dzień</button><button class="btn sm primary" data-act="call-log" data-id="${l.id}">Zapisz kontakt</button></div></div>`;
   };
   S.ui.cExpand = S.ui.cExpand || {};
@@ -269,7 +298,7 @@ function viewContacts() {
 }
 
 /* mail z prezentacją / kalkulatorem: gotowa wiadomość + zapis wysłania */
-function openMailModal(l, tplKey) {
+function openMailModal(l, tplKey, opts = {}) {
   const t = TEMPLATES[tplKey]; if (!t) return;
   const out = t.f(msgContext(l, l.form));
   const isPres = tplKey === 'email_prezentacja';
@@ -316,6 +345,7 @@ function openMailModal(l, tplKey) {
     patch('leads', l.id, p);
     closeModal();
     toast('Zapisano wysłanie maila' + (p.nextTaskDate ? ' · kolejny kontakt ' + fdate(p.nextTaskDate) : ''));
+    if (opts.chain && opts.chain.length) setTimeout(() => { const c2 = D().leads[l.id]; if (c2) openMailModal(c2, opts.chain[0], { chain: opts.chain.slice(1) }); }, 250);
   };
   $('#ml-save').onclick = doSave;
   const sendBtn = $('#ml-send');
@@ -331,5 +361,38 @@ function openMailModal(l, tplKey) {
       mailRefresh(); doSave();
       toast('Wysłano e-mail do ' + to + (atts.length ? ' (z załącznikami: ' + atts.map(a => a.filename).join(', ') + ')' : ''));
     } catch (e) { toast(e && e.code === 'local' ? e.message : mailErr(e), 'bad'); sendBtn.disabled = false; sendBtn.textContent = 'Wyślij teraz'; }
+  };
+}
+
+/* „Wyślij SMS do klienta” */
+function openSmsCompose(l) {
+  if (!l.phone) { toast('Brak numeru telefonu kandydata.', 'bad'); return; }
+  const tpls = Object.entries(TEMPLATES).filter(([k, t]) => t.kind === 'SMS');
+  const gw = smsGatewayOn();
+  openModal(`<div class="mh"><h2>SMS do: ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <div class="field"><span>Numer</span><b class="mono">${esc(fmtPhone(l.phone))}</b></div>
+      <label class="field span2"><span>Szablon</span><select id="sc-tpl"><option value="">— własna treść —</option>${tpls.map(([k, t]) => `<option value="${k}">${esc(t.grp + ': ' + t.n)}</option>`).join('')}</select></label>
+      <label class="field full"><span>Treść</span><textarea id="sc-text" rows="5" placeholder="Dzień dobry, …"></textarea><span class="hint" id="sc-info"></span></label>
+      <label class="chk small full"><input type="checkbox" id="sc-strip" checked> bez polskich znaków (160 znaków w jednym SMS-ie zamiast 70)</label>
+    </div>
+    <p class="note">${gw ? 'SMS wyjdzie od razu przez SMSAPI.' : 'Bramka SMS (SMSAPI przez mostek) nie jest jeszcze podłączona – SMS trafi do kolejki w „Kontaktach”, skąd skopiujesz treść i wyślesz z telefonu.'}</p></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn" id="sc-copy">${ICONS.copy}Kopiuj treść</button><button class="btn primary" id="sc-send">${ICONS.sms}${gw ? 'Wyślij SMS' : 'Dodaj do kolejki'}</button></div>`);
+  const final = () => { const t = $('#sc-text').value.trim(); return $('#sc-strip').checked ? stripPL(t) : t; };
+  const upd = () => { const i = smsInfo(final()); $('#sc-info').textContent = `${i.len} znaków · ${i.parts} SMS${i.gsm ? '' : ' · znaki spoza GSM'}`; };
+  $('#sc-tpl').onchange = () => { const k = $('#sc-tpl').value; if (k) { $('#sc-text').value = TEMPLATES[k].f(msgContext(l, l.form)).body; upd(); } };
+  $('#sc-text').oninput = upd; $('#sc-strip').onchange = upd; upd();
+  $('#sc-copy').onclick = () => copyText(final());
+  $('#sc-send').onclick = async () => {
+    const text = final(); if (!text) { toast('Wpisz treść SMS-a.', 'bad'); return; }
+    const btn = $('#sc-send'); btn.disabled = true;
+    const id = uid('sms');
+    put('sms', id, { leadId: l.id, leadName: l.name || '', phone: fmtPhone(l.phone), text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'reczny', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+    const cur = D().leads[l.id];
+    if (cur) { const hist = (cur.history || []).slice(); hist.push(histEntry('sms', 'SMS: ' + text, { by: myMemberId() || cur.ownerId || '' })); patch('leads', l.id, { history: hist, updatedTs: new Date().toISOString() }); }
+    let ok = false;
+    if (gw) ok = await deliverSms(id);
+    closeModal();
+    toast(gw ? (ok ? 'Wysłano SMS do ' + fmtPhone(l.phone) : 'Nie udało się wysłać SMS-a – szczegóły w karcie leada') : 'SMS dodany do kolejki – wyślij go z „Kontaktów”');
   };
 }

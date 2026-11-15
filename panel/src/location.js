@@ -132,7 +132,7 @@ function viewLocations() {
 function newLocation(leadId = '') {
   const l = leadId ? D().leads[leadId] : null;
   const x = clone(LOC_DEFAULTS);
-  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', address: l ? (l.pointAddress || '') : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
+  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', address: l ? (l.pointAddress || '') : '', postalCode: l ? (l.pointPostal || '') : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
   put('locations', x.id, x);
   go('lok-' + x.id);
 }

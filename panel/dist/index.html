@@ -467,6 +467,10 @@ details.adv[open] summary { margin-bottom: 10px; }
 .photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
 .photo { padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3; background: var(--card, #fff); cursor: zoom-in; }
 .photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* konfiguracja FLEX w prawej kolumnie: sprzęt nad podsumowaniem */
+.flexcard .flexwrap { grid-template-columns: 1fr; }
+.flexcard .flexsum { position: static; }
 </style>
 <header class="appbar">
   <div class="wrap">
@@ -1713,7 +1717,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}${isAdmin() ? 'Usuń leada' : 'Poproś o usunięcie'}</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}</div></div>` + danger;
+  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}${flex}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {
@@ -1886,7 +1890,7 @@ function flexCard(l) {
   const sel = new Set(l.flexItems || []);
   const c = flexCalc(l.flexItems || [], l.smartPrice);
   const zl = v => Number(v).toLocaleString('pl-PL', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2, useGrouping: 'always' }) + '\u00a0zł';
-  return `<div class="card"><div class="cardhead"><h2>Konfiguracja FLEX</h2><p>${c.n ? c.n + ' ' + (c.n === 1 ? 'produkt' : c.n < 5 ? 'produkty' : 'produktów') : 'bez sprzętu'}</p></div>
+  return `<div class="card flexcard"><div class="cardhead"><h2>Konfiguracja FLEX</h2><p>${c.n ? c.n + ' ' + (c.n === 1 ? 'produkt' : c.n < 5 ? 'produkty' : 'produktów') : 'bez sprzętu'}</p></div>
     <div class="flexwrap"><div class="stack" style="gap:14px">
     ${FLEX_GROUPS.map(g => `<div><div class="row between" style="margin-bottom:6px"><span class="eyebrow">${esc(g.n)}</span>${g.one ? '<span class="tiny muted">jeden wariant</span>' : ''}</div>
       <div class="flexitems">${g.items.map(it => `<label class="flexitem ${sel.has(it.id) ? 'on' : ''}"><input type="checkbox" data-flex="${it.id}" ${sel.has(it.id) ? 'checked' : ''}><span style="min-width:0"><b class="small">${esc(it.n)}</b><span class="tiny muted" style="display:block">${esc(it.d)}</span></span><span class="small mono" style="white-space:nowrap">${zl(it.p)}</span></label>`).join('')}</div></div>`).join('')}
@@ -1938,7 +1942,7 @@ function smartPriceField(l) {
 function smartCard(l) {
   const o = offer(); const smart = smartPriceOf(l); const zl = zlFmt;
   return `<div class="card"><div class="cardhead"><h2>Pakiet SMART</h2><p>własne wyposażenie, bez zakupu sprzętu</p></div>
-    <div class="flexsum" style="position:static;max-width:520px">
+    <div class="flexsum" style="position:static">
       ${smartPriceField(l)}
       <dl class="kv flexkv"><dt>Pakiet SMART (licencja)</dt><dd class="mono">${zl(smart)}</dd><dt>Sprzęt</dt><dd class="mono">${zl(0)}</dd></dl>
       <div class="flextotal"><span class="tiny muted">Razem netto – jednorazowo</span><b>${zl(smart)}</b><span class="tiny muted">brutto (23% VAT): ${zl(Math.round(smart * 123) / 100)}</span></div>

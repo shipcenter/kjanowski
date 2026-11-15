@@ -462,3 +462,7 @@ details.adv[open] summary { margin-bottom: 10px; }
 .photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
 .photo { padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3; background: var(--card, #fff); cursor: zoom-in; }
 .photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* konfiguracja FLEX w prawej kolumnie: sprzęt nad podsumowaniem */
+.flexcard .flexwrap { grid-template-columns: 1fr; }
+.flexcard .flexsum { position: static; }

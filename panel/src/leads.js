@@ -89,9 +89,11 @@ function leadFormFields(l, prefix = 'lf') {
   return `<div class="formgrid">
     <label class="field span2"><span>Imię i nazwisko *</span><input type="text" id="${prefix}-name" value="${esc(l.name)}" required></label>
     <label class="field"><span>Firma (opcjonalnie)</span><input type="text" id="${prefix}-company" value="${esc(l.company)}"></label>
-    <label class="field"><span>NIP</span><input type="text" id="${prefix}-nip" inputmode="numeric" value="${esc(l.nip ? nipFmt(l.nip) : '')}" placeholder="np. 634-286-76-10">${l.nip ? `<span class="hint ${nipValid(l.nip) ? '' : 'overdue'}">${nipValid(l.nip) ? 'NIP poprawny' : 'Błędny NIP – sprawdź cyfry'}</span>` : ''}</label>
+    <label class="field"><span>NIP</span><input type="text" id="${prefix}-nip" data-nip-auto="${prefix}" inputmode="numeric" value="${esc(l.nip ? nipFmt(l.nip) : '')}" placeholder="np. 634-286-76-10"><span class="hint ${l.nip && !nipValid(l.nip) ? 'overdue' : ''}" id="${prefix}-nip-st">${l.nip ? (nipValid(l.nip) ? 'NIP poprawny' + (l.companyData ? ' · dane firmy pobrane' : '') : 'Błędny NIP – sprawdź cyfry') : (prefix === 'lf' ? 'Po wpisaniu NIP-u dane firmy uzupełnią się same' : '')}</span></label>
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
+    ${prefix === 'lf' ? `<div class="field full" id="lf-companybox"></div>` : ''}
+    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
     <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" value="${esc(l.city)}"></label>
     <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select></label>
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
@@ -105,10 +107,11 @@ function leadFormFields(l, prefix = 'lf') {
 }
 function readLeadForm(prefix = 'lf') {
   const v = id => ($('#' + prefix + '-' + id) || {}).value || '';
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
   const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
+  REG.pending.lf = null;
   openModal(`<div class="mh"><h2>Nowy lead</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <form class="mb" id="lead-form">${leadFormFields(l)}
       <div class="formgrid">
@@ -123,6 +126,9 @@ function openLeadModal() {
     if (!d.name) { toast('Wpisz imię i nazwisko kandydata.', 'bad'); $('#lf-name').focus(); return; }
     const dup = findDuplicate(d);
     const lead = newLead({ ...d, nextTask: $('#lf-task').value.trim(), nextTaskDate: $('#lf-taskdate').value, notes: $('#lf-notes').value.trim() });
+    const pc = REG.pending.lf;
+    if (pc && d.nip && nipDigits(pc.nip) === d.nip) lead.companyData = pc;
+    REG.pending.lf = null;
     lead.history = [histEntry('system', 'Lead dodany ręcznie' + (d.ownerId ? ' · opiekun: ' + memberName(d.ownerId) : ''))];
     put('leads', lead.id, lead);
     toast(dup ? `Zapisano. Uwaga: podobny lead już istnieje (${dup.name}).` : 'Lead zapisany');
@@ -202,9 +208,11 @@ function viewLead(id) {
   const meeting = `<div class="card"><div class="cardhead"><h2>Spotkanie</h2>${l.meetingAt ? `<p class="${dueCls(l.meetingAt)}">${fdt(l.meetingAt)}</p>` : ''}</div>
     <div class="formgrid"><label class="field"><span>Termin</span><input type="datetime-local" id="ld-meet" data-lead-field="meetingAt" value="${esc(l.meetingAt)}"></label>
     <label class="field"><span>Forma</span><select id="ld-meettype" data-lead-field="meetingType">${opt('', '—', l.meetingType)}${opt('online', 'Online (wideo)', l.meetingType)}${opt('telefon', 'Telefon', l.meetingType)}${opt('centrala', 'Centrala – Katowice', l.meetingType)}${opt('lokal', 'W planowanym lokalu', l.meetingType)}${opt('punkt', 'W działającym punkcie', l.meetingType)}</select></label>
-    <label class="field full"><span>Miejsce / link</span><input type="text" id="ld-meetplace" data-lead-field="meetingPlace" value="${esc(l.meetingPlace)}" placeholder="Adres lub link do spotkania"></label></div>
+    <label class="field full"><span>${l.meetingType === 'online' ? 'Link do spotkania (Google Meet)' : 'Miejsce / link'}</span><input type="text" id="ld-meetplace" data-lead-field="meetingPlace" value="${esc(l.meetingPlace)}" placeholder="${l.meetingType === 'online' ? 'https://meet.google.com/…' : 'Adres lub link do spotkania'}"></label></div>
+    ${l.meetingType === 'online' ? meetHelper(l) : ''}
     <div class="row" style="margin-top:10px"><button class="btn sm" data-act="meeting-log" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>Spotkanie odbyte – zapisz</button>
-    <button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_potwierdzenie">Potwierdzenie spotkania</button></div></div>`;
+    <button class="btn sm ${l.meetingType === 'online' && l.meetingPlace ? 'primary' : 'ghost'}" data-act="meet-confirm" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>${ICONS.email}${l.meetingType === 'online' ? 'Wyślij klientowi link i potwierdzenie' : 'Potwierdzenie spotkania'}</button></div>
+    ${l.meetingAt ? remindersBlock(l, 'spotkanie') : ''}</div>`;
 
   const handoffs = (l.handoffs || []).slice().reverse();
   const handoff = `<div class="card"><div class="cardhead"><h2>Przekazanie leada</h2><p>Zmienia opiekuna i zapisuje notatkę dla nowej osoby</p></div>
@@ -268,14 +276,17 @@ function saveLeadField(el) {
     hist.push(histEntry('system', `Status: ${STATUS_MAP[l.status]?.n || '—'} → ${STATUS_MAP[v]?.n}`));
     p.history = hist;
     if (v === 'pozyskany') { setWon(l); return; }
+    if (l.status === 'pozyskany' || (l.stageDates || {}).umowa) { const sd = { ...(l.stageDates || {}) }; delete sd.umowa; p.stageDates = sd; p.contractSignedAt = ''; }
   }
+  if (f === 'meetingType' && v === 'online' && !l.meetingPlace && meetLinkFor(l)) p.meetingPlace = meetLinkFor(l);
   if (f === 'ownerId' && l.ownerId !== v) {
     const hist = (l.history || []).slice();
     hist.push(histEntry('system', `Opiekun: ${memberName(l.ownerId) || 'brak'} → ${memberName(v) || 'brak'}`));
     p.history = hist;
   }
-  if (f === 'meetingAt' && v && l.status !== 'pozyskany') p.status = 'umowione';
+  if (f === 'meetingAt' && v && l.status !== 'pozyskany' && l.status !== 'czeka_umowa') p.status = 'umowione';
   patch('leads', id, p);
+  if (['meetingAt', 'meetingPlace', 'meetingType', 'phone'].includes(f)) setTimeout(() => syncReminders(id, 'spotkanie'), 300);
 }
 function saveLeadEdit() {
   const id = S.route.id; const l = D().leads[id]; if (!l) return;
@@ -290,40 +301,83 @@ function saveLeadEdit() {
     p.history = hist;
   }
   patch('leads', id, p);
+  if (changed.includes('nip') && nipValid(d.nip)) setTimeout(() => autoNip('le', id), 50);
 }
 
 /* dane firmy z Białej listy VAT (Ministerstwo Finansów) */
 function companyBox(l) {
   const d = nipDigits(l.nip);
   const ok = nipValid(d);
-  const url = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
   const c = l.companyData;
+  const krs = (c && c.krs) || '';
+  const wl = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
+  const auto = S.mcp ? `<button class="btn sm ${c ? '' : 'primary'}" data-act="reg-lookup" data-id="${l.id}">${ICONS.file}${c ? 'Pobierz ponownie z rejestrów' : 'Pobierz dane z rejestrów'}</button>` : '';
   return `<div class="sep"></div><div class="row between"><h3>Dane firmy z rejestru</h3>${c ? `<span class="tiny muted">pobrano ${fdate(c.at)}</span>` : ''}</div>
-    ${c ? `<dl class="kv" style="margin-top:8px"><dt>Nazwa</dt><dd>${esc(c.name || '—')}</dd><dt>Adres</dt><dd>${esc(c.address || '—')}</dd><dt>NIP</dt><dd>${esc(nipFmt(c.nip || d))}</dd><dt>REGON</dt><dd>${esc(c.regon || '—')}</dd>${c.krs ? `<dt>KRS</dt><dd>${esc(c.krs)}</dd>` : ''}<dt>Status VAT</dt><dd>${c.statusVat ? `<span class="pill ${c.statusVat === 'Czynny' ? 'good' : 'warn'}">${esc(c.statusVat)}</span>` : '—'}</dd>${c.registrationLegalDate ? `<dt>Rejestracja</dt><dd>${esc(c.registrationLegalDate)}</dd>` : ''}</dl>` : ''}
-    ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP powyżej, aby pobrać nazwę, adres, REGON i status VAT firmy.</p>'
+    ${c ? `<div style="margin-top:8px">${companyKv(c)}</div>` : ''}
+    ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP w danych kandydata – dane firmy (CEIDG / KRS / Biała lista VAT) uzupełnią się same.</p>'
       : !ok ? '<p class="note overdue" style="margin-top:6px">NIP ma błędną sumę kontrolną – popraw cyfry.</p>'
-      : `<div class="stack" style="gap:8px;margin-top:8px"><div class="row"><a class="btn sm" href="${url}" target="_blank" rel="noopener">${ICONS.file}1. Otwórz dane z Białej listy VAT</a><span class="note">Otworzy się oficjalna strona Ministerstwa Finansów z danymi tej firmy. Zaznacz wszystko (Ctrl+A), skopiuj (Ctrl+C)…</span></div>
-        <label class="field"><span>2. …i wklej tutaj (Ctrl+V) – panel sam uzupełni dane</span><textarea id="nip-paste" data-nip-paste="${l.id}" rows="2" placeholder="Wklej wynik z Białej listy VAT"></textarea></label></div>`}`;
+      : `<div class="stack" style="gap:8px;margin-top:8px">
+        ${auto ? `<div class="row">${auto}</div>` : `<p class="note">Automatyczne pobieranie działa, gdy panel jest otwarty w aplikacji Claude na komputerze. Tutaj możesz skorzystać z wklejania poniżej.</p>`}
+        <details class="adv" ${c || S.mcp ? '' : 'open'}><summary>Ręcznie: otwórz rejestr i wklej stronę</summary>
+        <div class="stack" style="gap:8px;margin-top:8px">
+        <div class="row">
+          <a class="btn sm" href="${wl}" target="_blank" rel="noopener">${ICONS.file}Biała lista VAT</a>
+          <a class="btn sm" href="https://www.biznes.gov.pl/pl/wyszukiwarka-firm/?searchType=advanced&nip=${d}" target="_blank" rel="noopener">${ICONS.file}CEIDG / KRS – wyszukiwarka firm</a>
+          ${krs ? `<a class="btn sm" href="https://api-krs.ms.gov.pl/api/krs/OdpisAktualny/${esc(krs)}?rejestr=P&format=json" target="_blank" rel="noopener">${ICONS.file}Odpis KRS</a>` : ''}
+          <button class="btn sm ghost" data-act="copy" data-text="${d}">${ICONS.copy}Kopiuj NIP</button>
+        </div>
+        <label class="field"><span>Wklej tutaj (Ctrl+V) skopiowaną stronę – panel sam rozpozna dane</span><textarea id="nip-paste" data-nip-paste="${l.id}" rows="2" placeholder="Ctrl+A, Ctrl+C na stronie rejestru, potem Ctrl+V tutaj"></textarea></label></div></details></div>`}`;
 }
 function parseWhiteList(text) {
   let j;
   try { j = JSON.parse(text); } catch (e) { const m = String(text).match(/\{[\s\S]*\}/); if (!m) return null; try { j = JSON.parse(m[0]); } catch (e2) { return null; } }
   const sub = j && j.result && (j.result.subject || (j.result.subjects || [])[0]);
-  if (!sub) return null;
-  return { name: sub.name || '', address: sub.workingAddress || sub.residenceAddress || '', nip: sub.nip || '', regon: sub.regon || '', krs: sub.krs || '', statusVat: sub.statusVat || '', registrationLegalDate: sub.registrationLegalDate || '', at: todayISO(), source: 'Biała lista VAT (MF)' };
+  if (sub) return { name: sub.name || '', address: sub.workingAddress || sub.residenceAddress || '', nip: sub.nip || '', regon: sub.regon || '', krs: sub.krs || '', statusVat: sub.statusVat || '', registrationLegalDate: sub.registrationLegalDate || '', at: todayISO(), source: 'Biała lista VAT' };
+  const od = j && j.odpis;
+  if (od && od.dane) {
+    const d1 = od.dane.dzial1 || {}, dp = d1.danePodmiotu || {}, ad = (d1.siedzibaIAdres || {}).adres || {};
+    const addr = [[ad.ulica, ad.nrDomu].filter(Boolean).join(' ') + (ad.nrLokalu ? '/' + ad.nrLokalu : ''), [ad.kodPocztowy, ad.miejscowosc].filter(Boolean).join(' ')].filter(x => x && x.trim()).join(', ');
+    return { name: dp.nazwa || '', address: addr, nip: (dp.identyfikatory || {}).nip || '', regon: String((dp.identyfikatory || {}).regon || '').replace(/0{5}$/, ''), krs: (od.naglowekA || {}).numerKRS || '', form: dp.formaPrawna || '', ...krsDetails(od), at: todayISO(), source: 'KRS' };
+  }
+  return null;
 }
-function onNipPaste(el, text) {
+async function extractCompanyWithClaude(text) {
+  if (!S.sample) return null;
+  const prompt = `Z poniższego tekstu skopiowanego ze strony rejestru firm (CEIDG, KRS, REGON lub Biała lista VAT) wyciągnij dane jednej firmy. Zwróć wyłącznie JSON: {"name": "nazwa firmy", "address": "adres siedziby lub stałego miejsca wykonywania działalności (ulica nr, kod miejscowość)", "nip": "10 cyfr", "regon": "", "krs": "", "form": "forma prawna, np. jednoosobowa działalność gospodarcza, spółka z o.o.", "status": "status działalności, np. aktywny, zawieszony, wykreślony", "startDate": "data rozpoczęcia działalności RRRR-MM-DD", "pkd": "przeważające PKD z opisem", "owner": "imię i nazwisko właściciela (tylko jednoosobowa działalność)", "phone": "telefon firmy, jeśli podany", "email": "e-mail firmy, jeśli podany", "www": "", "registry": "CEIDG | KRS | REGON | Biała lista"}. Puste pola zostaw jako "". Nie zgaduj danych, których nie ma w tekście.
+
+Tekst:
+${String(text).slice(0, 12000)}`;
+  const r = await S.sample.json(prompt, { modelTier: 'quick' });
+  if (!r || !r.name) return null;
+  return { name: r.name, address: r.address || '', nip: nipDigits(r.nip), regon: r.regon || '', krs: r.krs || '', form: r.form || '', status: r.status || '', startDate: r.startDate || '', pkd: r.pkd || '', owner: r.owner || '', phone: r.phone || '', email: String(r.email || '').toLowerCase(), www: r.www || '', at: todayISO(), source: r.registry ? r.registry : 'rejestr (odczyt Claude)' };
+}
+async function onNipPaste(el, text) {
   const id = el.dataset.nipPaste; const l = D().leads[id]; if (!l) return;
-  const c = parseWhiteList(text);
-  if (!c) { toast('Nie rozpoznano danych. Skopiuj całą zawartość strony z Białej listy VAT i wklej ponownie.', 'bad'); return; }
-  if (c.nip && nipDigits(c.nip) !== nipDigits(l.nip)) toast('Uwaga: wklejone dane dotyczą innego NIP-u (' + c.nip + ').', 'bad');
+  let c = parseWhiteList(text);
+  if (!c) {
+    if (!S.sample) { toast('Nie rozpoznano danych. Wklej wynik z Białej listy VAT lub wyciąg KRS (JSON).', 'bad'); return; }
+    el.value = 'Claude odczytuje dane firmy…'; el.disabled = true;
+    try { c = await extractCompanyWithClaude(text); } catch (e) { c = null; }
+    el.disabled = false; el.value = '';
+    if (!c) { toast('Nie udało się odczytać danych firmy z wklejonego tekstu. Skopiuj całą stronę z wynikiem wyszukiwania.', 'bad'); return; }
+  }
+  const cur = D().leads[id];
+  if (c.nip && nipDigits(c.nip) !== nipDigits(cur.nip)) toast('Uwaga: wklejone dane dotyczą innego NIP-u (' + c.nip + ').', 'bad');
   const p = { companyData: c, updatedTs: new Date().toISOString() };
-  if (!l.company && c.name) p.company = c.name;
-  const hist = (l.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy z Białej listy VAT: ' + c.name)); p.history = hist;
+  if (!cur.company && c.name) p.company = c.name;
+  const hist = (cur.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy (' + c.source + '): ' + c.name)); p.history = hist;
   patch('leads', id, p);
   toast('Uzupełniono dane firmy: ' + c.name);
 }
 
+function meetHelper(l) {
+  const link = meetLinkFor(l);
+  const isMeet = /meet\.google\.com\//.test(l.meetingPlace || '');
+  return `<div class="callout" style="margin-top:10px"><div class="stack" style="gap:6px">
+    ${l.meetingPlace && isMeet ? `<span class="small">Link Google Meet jest gotowy – wyślij go klientowi przyciskiem poniżej.</span>` : link ? `<span class="small">Twój stały pokój Google Meet: <span class="mono">${esc(link)}</span></span>` : `<span class="small">Utwórz spotkanie w Google Meet, skopiuj link i wklej go w polu wyżej. Możesz też w „Zespół i ustawienia” wpisać swój stały link Meet – wtedy wstawi się sam.</span>`}
+    <div class="row">${link && l.meetingPlace !== link ? `<button class="btn sm primary" data-act="meet-use" data-id="${l.id}">Wstaw link Meet</button>` : ''}<a class="btn sm" href="https://meet.google.com/new" target="_blank" rel="noopener">Nowe spotkanie Google Meet</a>${l.meetingPlace && isMeet ? `<a class="btn sm ghost" href="${esc(l.meetingPlace)}" target="_blank" rel="noopener">Otwórz Meet</a>` : ''}</div>
+  </div></div>`;
+}
 function trainingStep(l) {
   const start = l.trainingStart || '';
   const end = start ? (l.trainingEnd || trainingEnd(start)) : '';
@@ -331,7 +385,7 @@ function trainingStep(l) {
   return `<div class="pstep ${cls}"><span class="lbl">3 · Szkolenie w centrali</span>
     ${start ? `<span class="val">${fdate(start)} – ${fdate(end)}</span><span class="small ink2">3 dni robocze · ${esc(l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice')}</span>` : '<span class="small ink2">Umowa podpisana. Zaplanuj 3-dniowe szkolenie wstępne w centrali (w ciągu 30 dni od podpisania umowy).</span>'}
     <label class="field"><span>${start ? 'Zmień datę rozpoczęcia' : 'Data rozpoczęcia szkolenia'}</span><input type="date" id="ld-train" data-train="${l.id}" value="${esc(start)}"></label>
-    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
+    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>${remindersBlock(l, 'szkolenie')}` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
   </div>`;
 }
 function setTraining(l, start) {
@@ -340,14 +394,17 @@ function setTraining(l, start) {
   hist.push(histEntry('system', start ? `Zaplanowano szkolenie w centrali: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia'));
   patch('leads', l.id, { trainingStart: start, trainingEnd: end, trainingPlace: l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice', nextTask: start ? 'Szkolenie wstępne w centrali (3 dni)' : '', nextTaskDate: start || '', nextTaskTime: '', history: hist, updatedTs: new Date().toISOString() });
   toast(start ? `Szkolenie: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia');
+  setTimeout(() => syncReminders(l.id, 'szkolenie'), 300);
 }
 
 /* umowa: do wglądu → Autenti → podpisana */
 function contractCard(l) {
-  const kind = modelOf(l) === 'shippoint' ? 'Umowa o współpracy Ship Center Point' : 'Umowa franczyzowa + OWU';
+  const kind = modelOf(l) === 'shippoint' ? 'Umowa Partnerska ShipCenter' : 'Umowa franczyzowa + OWU';
+  const pdfs = contractFilesFor(l).map(f => `<button class="btn sm ghost" data-act="contract-pdf" data-file="${f.id}">${ICONS.file}${esc(f.n)}</button>`).join('');
   const won = isWon(l);
   const step = (lbl, date, body, cls = '') => `<div class="pstep ${date ? 'done' : cls}"><span class="lbl">${lbl}</span>${date ? `<span class="val">${fdate(date)}</span>` : ''}${body}</div>`;
   return `<div class="card"><div class="cardhead"><h2>Umowa</h2><p>${esc(kind)}</p></div>
+    <div class="row" style="margin-bottom:10px"><span class="small muted">Wzory:</span>${pdfs}</div>
     <div class="stack" style="gap:10px">
       ${step('1 · Do wglądu', l.contractPreviewAt, `<span class="small ink2">${l.contractPreviewAt ? 'Kandydat dostał wzór umowy do zapoznania się.' : 'Dla kandydata, który chce przeczytać umowę przed decyzją.'}</span><button class="btn sm ${l.contractPreviewAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_umowa_wglad">${ICONS.email}${l.contractPreviewAt ? 'Wyślij ponownie do wglądu' : 'Wyślij umowę do wglądu'}</button>`)}
       ${step('2 · Do podpisu w Autenti', l.contractSentAt, `${l.contractSentAt ? '<span class="small ink2">Status: czeka na podpisanie umowy.</span>' : '<span class="small ink2">Po wysłaniu dokumentu w Autenti zaznacz to tutaj.</span>'}

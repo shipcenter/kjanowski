@@ -146,7 +146,7 @@ ${c.g('Jeśli termin Panu nie odpowiada', 'Jeśli termin Pani nie odpowiada', 'J
     body: `${powitanie(c)}
 
 potwierdzam nasze spotkanie: ${c.spotkanie} (${c.formaSpotkania}).
-Link / miejsce: ${c.miejsce}
+${c.l.meetingType === 'online' ? 'Link do spotkania (Google Meet): ' + c.miejsce + '\nWystarczy kliknąć link o umówionej godzinie – działa w przeglądarce, bez instalowania aplikacji.' : 'Miejsce: ' + c.miejsce}
 
 Agenda:
 • model biznesowy i źródła przychodu punktu,
@@ -255,10 +255,10 @@ ${c.g('Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:'
   email_umowa_wglad: { grp: 'Domknięcie', n: 'Umowa do wglądu', kind: 'E-mail', f: c => {
     const sp = c.model === 'shippoint' || MODEL_ALIAS[c.model] === 'shippoint';
     return {
-      subject: sp ? 'Umowa Ship Center Point – wzór do wglądu' : 'Umowa franczyzowa ShipCenter – wzór do wglądu',
+      subject: sp ? 'Umowa Partnerska ShipCenter – wzór do wglądu' : 'Umowa franczyzowa ShipCenter – wzór do wglądu',
       body: `${powitanie(c)}
 
-zgodnie z rozmową przesyłam w załączniku wzór ${sp ? 'umowy o współpracy Ship Center Point' : 'umowy franczyzowej ShipCenter wraz z Ogólnymi Warunkami Umów (OWU)'} do spokojnego zapoznania się.
+zgodnie z rozmową przesyłam wzór ${sp ? 'Umowy Partnerskiej ShipCenter' : 'umowy franczyzowej ShipCenter wraz z Ogólnymi Warunkami Umów (OWU)'} do spokojnego zapoznania się${(sp ? c.o.linkUmowaPartner : c.o.linkUmowaFranczyza) ? ':\n' + (sp ? c.o.linkUmowaPartner : c.o.linkUmowaFranczyza) : ' (w załączniku)'}.
 
 Najważniejsze zapisy w skrócie:
 ${sp ? `• opłata wstępna ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
@@ -518,7 +518,7 @@ function viewMessages() {
     <div class="sep"></div>
     ${out.subject ? `<div class="row between" style="margin-bottom:6px"><span class="small"><span class="muted">Temat:</span> <b>${esc(out.subject)}</b></span><button class="btn sm ghost" data-act="copy-subject">${ICONS.copy}Kopiuj temat</button></div>` : ''}
     <div class="msgout" id="msg-out">${renderMsgBody(out.body)}</div>
-    <div class="row" style="margin-top:10px"><button class="btn primary" data-act="copy-msg">${ICONS.copy}Kopiuj ${out.subject ? 'treść' : ''}</button>
+    <div class="row" style="margin-top:10px">${t.kind === 'E-mail' ? `<button class="btn primary" data-act="copy-msg-html">${ICONS.copy}Kopiuj e-mail z formatowaniem</button><button class="btn" data-act="copy-msg">${ICONS.copy}Kopiuj sam tekst</button>` : `<button class="btn primary" data-act="copy-msg">${ICONS.copy}Kopiuj</button>`}
     ${t.kind === 'SMS' ? `<span class="note">${out.body.length} znaków · ${Math.ceil(out.body.length / 160)} SMS</span>` : ''}
     ${l ? `<button class="btn" data-act="msg-log" data-id="${l.id}">Zapisz wysłanie w historii leada</button><a class="btn ghost" href="#lead-${l.id}">Otwórz leada</a>` : ''}</div>
     ${ai}

@@ -45,6 +45,11 @@ function handleAction(act, el, e) {
     case 'contract-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Umowa podpisana (Autenti)', { by: myMemberId() || L.ownerId || '' })); patch('leads', id, { contractSignedAt: todayISO(), status: 'pozyskany', stageDates: { ...(L.stageDates || {}), umowa: (L.stageDates || {}).umowa || todayISO() }, history: hist, nextTask: '', nextTaskDate: '', updatedTs: new Date().toISOString() }); toast('Umowa podpisana – zaplanuj szkolenie w centrali'); } return;
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
+    case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'contract-pdf': downloadContract(el.dataset.file); return;
+    case 'meet-use': if (L) { const link = meetLinkFor(L); if (link) { patch('leads', id, { meetingPlace: link, updatedTs: new Date().toISOString() }); setTimeout(() => syncReminders(id, 'spotkanie'), 300); } } return;
+    case 'meet-confirm': if (L) openMailModal(L, 'email_potwierdzenie'); return;
+    case 'sms-remind': if (L) openSmsReminderModal(L, el.dataset.topic || 'spotkanie', el.dataset.sms || ''); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
     case 'sms-cancel': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'anulowany' }); return; }
     case 'me-bind': { if (!S.userId) { toast('Nie udało się ustalić Twojego konta – otwórz panel w claude.ai po zalogowaniu.', 'bad'); return; } Object.values(D().team).filter(m => m.userId === S.userId && m.id !== id).forEach(m => patch('team', m.id, { userId: '' })); patch('team', id, { userId: S.userId }); S.ui.cOwner = null; toast('Zapamiętano: to Ty'); return; }
@@ -82,6 +87,7 @@ function handleAction(act, el, e) {
     case 'tpl': S.msg.tpl = el.dataset.k; S.ui.aiText = ''; scheduleRender(); return;
     case 'copy-subject': copyText((S.ui.msgOut || {}).subject || ''); return;
     case 'copy-msg': copyText((S.ui.msgOut || {}).body || ''); return;
+    case 'copy-msg-html': { const b = (S.ui.msgOut || {}).body || ''; copyEmailHtml(emailHtml(b, S.msg.leadId ? D().leads[S.msg.leadId] : null, false), b); return; }
     case 'copy-ai': copyText(S.ui.aiText || ''); return;
     case 'ai-clear': S.ui.aiText = ''; scheduleRender(); return;
     case 'ai-rewrite': aiRewrite(el); return;
@@ -132,6 +138,7 @@ document.addEventListener('input', e => {
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
   if (el.dataset.rev) { onRevInput(el, false); return; }
+  if (el.dataset.nipAuto === 'lf') { debounce('nip-lf', () => autoNip('lf'), 500); return; }
   if (el.dataset.locComment) { const id = el.dataset.locComment; const v = el.value; debounce('loc-comment', () => patch('locations', id, { aiComment: v }), 900); return; }
 });
 

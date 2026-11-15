@@ -19,13 +19,111 @@ function smsThanksText(l) {
 }
 const smsGatewayOn = () => !!((settings().integrations || {}).sms);
 
+/* przypomnienia SMS: o spotkaniu i o szkoleniu (można ustawić kilka) */
+const REMIND_TOPICS = {
+  spotkanie: { n: 'spotkaniu', when: { dzien: 'dzień wcześniej o 18:00', rano: 'w dniu spotkania o 8:00', '2h': '2 godziny przed spotkaniem', wlasny: 'własny termin…' } },
+  szkolenie: { n: 'szkoleniu', when: { tydzien: 'tydzień wcześniej o 10:00', dzien: 'dzień wcześniej o 18:00', rano: 'w dniu szkolenia o 7:30', wlasny: 'własny termin…' } }
+};
+const TRAINING_START_TIME = '09:00';
+const hhmm = x => String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0');
+function eventAt(l, topic) { return topic === 'szkolenie' ? (l.trainingStart ? l.trainingStart + 'T' + TRAINING_START_TIME : '') : (l.meetingAt || ''); }
+function reminderSendAt(at, when, custom) {
+  if (when === 'wlasny') return custom || '';
+  if (!at) return '';
+  const d = at.split('T')[0];
+  if (when === 'tydzien') return isoDate(addDays(new Date(d + 'T12:00'), -7)) + 'T10:00';
+  if (when === 'dzien') return isoDate(addDays(new Date(d + 'T12:00'), -1)) + 'T18:00';
+  if (when === 'rano') return d + (at.endsWith('T' + TRAINING_START_TIME) ? 'T07:30' : 'T08:00');
+  const x = new Date(at); x.setHours(x.getHours() - 2);
+  return isoDate(x) + 'T' + hhmm(x);
+}
+function smsReminderText(l, topic = 'spotkanie') {
+  const o = offer();
+  const m = l && l.ownerId ? D().team[l.ownerId] : null;
+  const who = m ? firstName(m.name) : (o.smsPodpis || 'ShipCenter');
+  const tel = (m && m.phone) || o.telefon;
+  const dm = d => d ? d.slice(8, 10) + '.' + d.slice(5, 7) : '';
+  if (topic === 'szkolenie') {
+    const end = l.trainingEnd || (l.trainingStart ? trainingEnd(l.trainingStart) : '');
+    return stripPL(`Dzień dobry, przypominamy o szkoleniu wstępnym ShipCenter ${dm(l.trainingStart)}-${dm(end)}, start ${dm(l.trainingStart)} o godz. ${TRAINING_START_TIME}, ${l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice'}. W razie pytań: ${who}, tel. ${tel}. ${o.smsPodpis || 'ShipCenter'}`);
+  }
+  const [d, t] = String(l.meetingAt || '').split('T');
+  const where = l.meetingType === 'online' ? ' (online)' + (l.meetingPlace ? ': ' + l.meetingPlace : '')
+    : l.meetingType === 'telefon' ? ' (rozmowa telefoniczna)'
+    : l.meetingPlace ? ', ' + l.meetingPlace : l.meetingType === 'centrala' ? ', ' + o.adres : '';
+  return stripPL(`Dzień dobry, przypominamy o spotkaniu ShipCenter ${dm(d)} o godz. ${t || ''}${where}. W razie zmian proszę o kontakt: ${who}, tel. ${tel}. ${o.smsPodpis || 'ShipCenter'}`);
+}
+const remindersFor = (leadId, topic) => Object.values(D().sms || {}).filter(x => x.leadId === leadId && x.kind === 'przypomnienie' && (x.topic || 'spotkanie') === topic && x.status === 'zaplanowany').sort((a, b) => (a.sendAt || '').localeCompare(b.sendAt || ''));
+function remindersBlock(l, topic) {
+  const list = remindersFor(l.id, topic);
+  const has = topic === 'szkolenie' ? !!l.trainingStart : !!l.meetingAt;
+  return `<div class="stack" style="gap:6px;margin-top:8px">
+    ${list.map(x => `<div class="row" style="gap:6px;flex-wrap:nowrap"><span class="pill">SMS ${esc(fdt(x.sendAt))}</span><button class="btn sm ghost" data-act="sms-remind" data-id="${l.id}" data-topic="${topic}" data-sms="${x.id}">Zmień</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj przypomnienie">${ICONS.x}</button></div>`).join('')}
+    <button class="btn sm ${list.length ? 'ghost' : ''}" data-act="sms-remind" data-id="${l.id}" data-topic="${topic}" ${has && l.phone ? '' : 'disabled'} title="${!l.phone ? 'Brak telefonu kandydata' : !has ? 'Najpierw ustaw termin' : ''}">${ICONS.tel}${list.length ? 'Ustaw kolejne przypomnienie SMS' : `Ustaw przypomnienie SMS o ${REMIND_TOPICS[topic].n}`}</button>
+  </div>`;
+}
+function openSmsReminderModal(l, topic = 'spotkanie', smsId = '') {
+  const T = REMIND_TOPICS[topic] || REMIND_TOPICS.spotkanie;
+  const at = eventAt(l, topic);
+  if (!at) { toast(topic === 'szkolenie' ? 'Najpierw ustaw datę szkolenia.' : 'Najpierw ustaw termin spotkania.', 'bad'); return; }
+  if (!l.phone) { toast('Brak numeru telefonu kandydata – uzupełnij w danych kandydata.', 'bad'); return; }
+  const ex = smsId ? D().sms[smsId] : null;
+  const taken = remindersFor(l.id, topic).filter(x => x.id !== smsId).map(x => x.when);
+  const nowL = nowLocal();
+  const when0 = ex ? (ex.when || 'dzien') : (Object.keys(T.when).find(k => k !== 'wlasny' && !taken.includes(k) && reminderSendAt(at, k) > nowL) || 'wlasny');
+  openModal(`<div class="mh"><h2>${ex ? 'Zmień przypomnienie' : 'Przypomnienie'} SMS o ${T.n} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <label class="field"><span>Kiedy wysłać</span><select id="sr-when">${Object.entries(T.when).map(([k, n]) => opt(k, n, when0)).join('')}</select></label>
+      <label class="field" id="sr-customwrap"><span>Własny termin</span><input type="datetime-local" id="sr-custom" value="${esc(ex && ex.when === 'wlasny' ? ex.sendAt : '')}"></label>
+      <div class="field"><span>Wyśle się</span><b id="sr-at" class="mono"></b></div>
+      <label class="field full"><span>Treść (do ${esc(l.phone)})</span><textarea id="sr-text" rows="4">${esc(ex ? ex.text : smsReminderText(l, topic))}</textarea><span class="hint" id="sr-info"></span></label>
+    </div>
+    <p class="note">${topic === 'szkolenie' ? 'Szkolenie: ' + fdate(l.trainingStart) + ' – ' + fdate(l.trainingEnd || trainingEnd(l.trainingStart)) + ', start o ' + TRAINING_START_TIME + '. ' : 'Spotkanie: ' + fdt(l.meetingAt) + '. '}SMS trafi do kolejki z ustawioną godziną. ${smsGatewayOn() ? 'SMSAPI wyśle go automatycznie.' : 'Do czasu podłączenia SMSAPI panel pokaże go w „Kontaktach” o tej godzinie – wtedy wyślij go ręcznie (przycisk „Treść” kopiuje tekst).'} Po zmianie terminu przypomnienie przesunie się samo.</p></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Zamknij</button><button class="btn primary" id="sr-save">${ex ? 'Zapisz zmiany' : 'Ustaw przypomnienie'}</button></div>`);
+  const upd = () => {
+    const w = $('#sr-when').value;
+    $('#sr-customwrap').style.display = w === 'wlasny' ? '' : 'none';
+    const sAt = reminderSendAt(at, w, $('#sr-custom').value);
+    $('#sr-at').textContent = sAt ? fdt(sAt) + (sAt < nowLocal() ? ' (termin minął – trafi od razu do wysłania)' : '') : '— wybierz termin';
+    const i = smsInfo($('#sr-text').value); $('#sr-info').textContent = `${i.len} znaków · ${i.parts} SMS${i.gsm ? '' : ' · znaki spoza GSM (krótsze SMS-y)'}`;
+  };
+  upd(); $('#sr-when').onchange = upd; $('#sr-custom').oninput = upd; $('#sr-text').oninput = upd;
+  $('#sr-save').onclick = () => {
+    const when = $('#sr-when').value, text = $('#sr-text').value.trim();
+    const sendAt = reminderSendAt(at, when, $('#sr-custom').value);
+    if (!sendAt) { toast('Wybierz termin wysyłki.', 'bad'); return; }
+    if (!text) { toast('Wpisz treść SMS-a.', 'bad'); return; }
+    const custom = text !== smsReminderText(l, topic);
+    if (ex) patch('sms', ex.id, { when, text, sendAt, eventAt: at, phone: l.phone, custom });
+    else put('sms', uid('sms'), { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic, when, sendAt, eventAt: at, custom, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+    const cur = D().leads[l.id];
+    if (cur) { const hist = (cur.history || []).slice(); hist.push(histEntry('system', `Przypomnienie SMS o ${T.n}: ${fdt(sendAt)}`)); patch('leads', l.id, { history: hist, updatedTs: new Date().toISOString() }); }
+    closeModal(); toast('Przypomnienie SMS: ' + fdt(sendAt));
+  };
+}
+/* po zmianie terminu / miejsca – przesunięcie zaplanowanych SMS-ów */
+function syncReminders(leadId, topic) {
+  const l = D().leads[leadId]; if (!l) return;
+  const list = remindersFor(leadId, topic); if (!list.length) return;
+  const at = eventAt(l, topic);
+  if (!at) { list.forEach(x => patch('sms', x.id, { status: 'anulowany' })); toast('Usunięto termin – anulowano przypomnienia SMS'); return; }
+  let n = 0;
+  list.forEach(x => {
+    const p = { eventAt: at, phone: l.phone || x.phone };
+    if (x.when !== 'wlasny') p.sendAt = reminderSendAt(at, x.when);
+    if (!x.custom) p.text = smsReminderText(l, topic);
+    if ((p.sendAt && p.sendAt !== x.sendAt) || (p.text && p.text !== x.text) || p.eventAt !== x.eventAt) { patch('sms', x.id, p); n++; }
+  });
+  if (n) toast(`Zaktualizowano przypomnienia SMS (${n})`);
+}
+
 function queueSms(l, text) {
   const id = uid('sms');
   const doc = { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'po_rozmowie', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' };
   put('sms', id, doc);
   return id;
 }
-const SMS_STATUS = { oczekuje: ['Czeka na wysłanie', 'warn'], wyslany: ['Wysłany', 'good'], blad: ['Błąd wysyłki', 'bad'], anulowany: ['Anulowany', ''] };
+const SMS_STATUS = { zaplanowany: ['Zaplanowany', ''], oczekuje: ['Czeka na wysłanie', 'warn'], wyslany: ['Wysłany', 'good'], blad: ['Błąd wysyłki', 'bad'], anulowany: ['Anulowany', ''] };
 function smsListFor(leadId) { return Object.values(D().sms || {}).filter(x => x.leadId === leadId).sort((a, b) => (b.createdTs || '').localeCompare(a.createdTs || '')); }
 
 /* modal: zapis rozmowy (pierwszej lub kolejnej) */
@@ -136,7 +234,8 @@ function viewContacts() {
   const newOnes = open.filter(l => !l.firstCallAt && l.status === 'do_kontaktu').sort((a, b) => (a.createdTs || '').localeCompare(b.createdTs || ''));
   const noNext = open.filter(l => !l.nextTaskDate && l.firstCallAt);
   const meetings = open.filter(l => l.meetingAt && l.meetingAt.slice(0, 10) >= t && l.meetingAt.slice(0, 10) <= wk).sort((a, b) => a.meetingAt.localeCompare(b.meetingAt));
-  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje');
+  const nowL = nowLocal();
+  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje' || (x.status === 'zaplanowany' && (x.sendAt || '') <= nowL));
   const ownerLabel = owner ? (owner === '_none' ? 'leady bez opiekuna' : memberName(owner)) : 'cały zespół';
   const head = `<div class="viewhead"><div class="grow"><span class="eyebrow">Przypomnienia</span><h1>Kontakty</h1>
     <p>Kogo i kiedy trzeba złapać – ${esc(ownerLabel)}. Na dziś i zaległe: <b>${groups[0][2].length + groups[1][2].length}</b>.</p></div>
@@ -162,7 +261,7 @@ function viewContacts() {
     ${trainings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.trainingStart)}">${fdateShort(l.trainingStart)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">${fdate(l.trainingStart)} – ${fdate(l.trainingEnd || trainingEnd(l.trainingStart))} · centrala</div></div><div></div></div>`).join('')}</div>` : '';
   const meetCard = `<div class="card"><div class="cardhead"><h2>Spotkania – 7 dni</h2><p>${meetings.length}</p></div>${meetings.length ? meetings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.meetingAt)}">${fdateShort(l.meetingAt)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a><div class="tiny muted">${fdt(l.meetingAt)} · ${esc(l.meetingType || '')} ${esc(l.meetingPlace || '')}</div></div><div></div></div>`).join('') : '<p class="muted small">Brak zaplanowanych spotkań.</p>'}</div>`;
   const noNextCard = noNext.length ? `<div class="card"><div class="cardhead"><h2>Bez zaplanowanego kontaktu</h2><p>${noNext.length}</p></div><p class="note" style="margin-bottom:6px">Aktywni kandydaci po pierwszej rozmowie, którym nikt nie ustawił kolejnego kontaktu.</p>${noNext.slice(0, 15).map(l => `<div class="contact-row"><span class="when muted">—</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">ostatni kontakt ${fdateShort(lastContact(l) || l.createdAt)}</div></div><div class="ctl"><button class="btn sm" data-act="snooze" data-id="${l.id}" data-d="1">Na jutro</button></div></div>`).join('')}</div>` : '';
-  const smsCard = pendingSms.length ? `<div class="card"><div class="cardhead"><h2>SMS w kolejce</h2><p>${pendingSms.length}</p></div>${smsGatewayOn() ? '' : '<p class="note" style="margin-bottom:6px">Bramka SMS nie jest podłączona. Skopiuj treść i wyślij ręcznie albo poczekaj na podłączenie.</p>'}${pendingSms.map(x => `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><a href="#lead-${x.leadId}"><b>${esc(x.leadName)}</b></a> <span class="mono small">${esc(x.phone)}</span><div class="tiny muted">${esc(x.text)}</div></div><div class="ctl"><button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}Treść</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj">${ICONS.x}</button></div></div>`).join('')}</div>` : '';
+  const smsCard = pendingSms.length ? `<div class="card"><div class="cardhead"><h2>SMS w kolejce</h2><p>${pendingSms.length}</p></div>${smsGatewayOn() ? '' : '<p class="note" style="margin-bottom:6px">Bramka SMS nie jest podłączona. Skopiuj treść i wyślij ręcznie albo poczekaj na podłączenie.</p>'}${pendingSms.map(x => `<div class="contact-row"><span class="when ${x.kind === 'przypomnienie' ? 'due' : ''}">${x.kind === 'przypomnienie' ? 'teraz' : fdateShort(x.createdTs)}</span><div style="min-width:0"><a href="#lead-${x.leadId}"><b>${esc(x.leadName)}</b></a> <span class="mono small">${esc(x.phone)}</span>${x.kind === 'przypomnienie' ? ' <span class="pill warn">przypomnienie o ' + ((REMIND_TOPICS[x.topic || 'spotkanie'] || REMIND_TOPICS.spotkanie).n) + ' ' + esc(fdt(x.eventAt || x.meetingAt)) + '</span>' : ''}<div class="tiny muted">${esc(x.text)}</div></div><div class="ctl"><button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}Treść</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj">${ICONS.x}</button></div></div>`).join('')}</div>` : '';
   const empty = !groups.some(g => g[2].length) ? `<div class="card"><div class="empty"><h3>Brak zaplanowanych kontaktów na najbliższy tydzień</h3><p>Kolejny kontakt ustawisz przy zapisie rozmowy albo w karcie leada.</p></div></div>` : '';
   return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${trainCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
 }
@@ -172,24 +271,29 @@ function openMailModal(l, tplKey) {
   const t = TEMPLATES[tplKey]; if (!t) return;
   const out = t.f(msgContext(l, l.form));
   const isPres = tplKey === 'email_prezentacja';
-  const again = tplKey === 'email_umowa_wglad' ? !!l.contractPreviewAt : isPres ? !!l.presentationAt : !!l.calcSentAt;
+  const isConf = tplKey === 'email_potwierdzenie';
+  const again = tplKey === 'email_umowa_wglad' ? !!l.contractPreviewAt : isConf ? !!l.meetingConfirmedAt : isPres ? !!l.presentationAt : !!l.calcSentAt;
   const mailto = () => `mailto:${encodeURIComponent(l.email || '')}?subject=${encodeURIComponent($('#ml-subj').value)}&body=${encodeURIComponent($('#ml-body').value)}`;
   openModal(`<div class="mh"><h2>${esc(again ? 'Wyślij ponownie: ' + t.n.toLowerCase() : t.n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <div class="mb">
-      ${again ? `<p class="callout">${tplKey === 'email_umowa_wglad' ? 'Umowa do wglądu była już wysłana ' + fdate(l.contractPreviewAt) : (isPres ? 'Prezentacja była już wysłana ' + fdate(l.presentationAt) : 'Kalkulator był już wysłany ' + fdate(l.calcSentAt))}.</p>` : ''}
+      ${again ? `<p class="callout">${tplKey === 'email_umowa_wglad' ? 'Umowa do wglądu była już wysłana ' + fdate(l.contractPreviewAt) : isConf ? 'Potwierdzenie spotkania było już wysłane ' + fdate(l.meetingConfirmedAt) : (isPres ? 'Prezentacja była już wysłana ' + fdate(l.presentationAt) : 'Kalkulator był już wysłany ' + fdate(l.calcSentAt))}.</p>` : ''}
       <div class="formgrid">
         <label class="field span2"><span>Do</span><input type="email" id="ml-to" value="${esc(l.email || '')}" placeholder="brak adresu e-mail w karcie leada"></label>
         <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="ml-copy-to">${ICONS.copy}Kopiuj adres</button></div>
         <label class="field full"><span>Temat</span><input type="text" id="ml-subj" value="${esc(out.subject || '')}"></label>
         <label class="field full"><span>Treść</span><textarea id="ml-body" rows="14">${esc(out.body)}</textarea></label>
       </div>
-      <div class="row"><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
-      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF)' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
+      <div class="row"><button type="button" class="btn sm primary" id="ml-copy-html">${ICONS.copy}Kopiuj e-mail z formatowaniem</button><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj sam tekst</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      ${tplKey === 'email_umowa_wglad' ? `<div class="row"><span class="small muted">Załączniki do pobrania:</span>${contractFilesFor(l).map(f => `<button type="button" class="btn sm" data-act="contract-pdf" data-file="${f.id}">${ICONS.file}${esc(f.n)}</button>`).join('')}</div>` : ''}
+      ${emailPreviewBlock('ml-prev')}
+      <p class="note">„Kopiuj e-mail z formatowaniem” kopiuje treść z klikalnymi linkami i firmową stopką – w Thunderbirdzie utwórz nową wiadomość, wpisz temat i wklej (Ctrl+V). Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)}, dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF – przyciski wyżej), jeśli w treści nie ma linku do niej,' : isConf ? 'ewentualnie zaproszenie z kalendarza,' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
     </div>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
   const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
-  refreshLink();
-  ['ml-to', 'ml-subj', 'ml-body'].forEach(id => { $('#' + id).oninput = refreshLink; });
+  const refreshPrev = () => { const pv = $('#ml-prev'); if (pv) pv.innerHTML = emailHtml($('#ml-body').value, l, true); };
+  refreshLink(); refreshPrev();
+  ['ml-to', 'ml-subj', 'ml-body'].forEach(id => { $('#' + id).oninput = () => { refreshLink(); refreshPrev(); }; });
+  $('#ml-copy-html').onclick = () => copyEmailHtml(emailHtml($('#ml-body').value, l, false), $('#ml-body').value);
   $('#ml-copy-to').onclick = () => copyText($('#ml-to').value);
   $('#ml-copy-subj').onclick = () => copyText($('#ml-subj').value);
   $('#ml-copy-body').onclick = () => copyText($('#ml-body').value);
@@ -201,10 +305,11 @@ function openMailModal(l, tplKey) {
     const p = { history: hist, updatedTs: new Date().toISOString() };
     const to = $('#ml-to').value.trim();
     if (to && to !== cur.email) p.email = to;
-    if (tplKey === 'email_umowa_wglad') { p.contractPreviewAt = todayISO(); if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Telefon – pytania do umowy'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); } }
+    if (isConf) { p.meetingConfirmedAt = todayISO(); }
+    else if (tplKey === 'email_umowa_wglad') { p.contractPreviewAt = todayISO(); if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Telefon – pytania do umowy'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); } }
     else if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
     else { if (!cur.calcSentAt) p.calcSentAt = todayISO(); p.calcLastAt = todayISO(); }
-    if (tplKey !== 'email_umowa_wglad' && (!cur.nextTaskDate || cur.nextTaskDate <= todayISO())) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
+    if (tplKey !== 'email_umowa_wglad' && !isConf && (!cur.nextTaskDate || cur.nextTaskDate <= todayISO())) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
     if (cur.status === 'do_kontaktu') p.status = 'w_kontakcie';
     patch('leads', l.id, p);
     closeModal();

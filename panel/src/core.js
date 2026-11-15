@@ -74,7 +74,7 @@ const DEFAULT_OFFER = {
   minPaczek: 100, przewoznicy: 'InPost, DPD, DHL, UPS, FedEx, GLS, Poczta Polska (Pocztex), ORLEN Paczka, Ambro Express',
   email: 'franczyza@shipcenter.pl', telefon: '+48 798 344 130', www: 'shipcenter.pl',
   adres: 'ul. Gliwicka 51, 40-853 Katowice', linkSpotkanie: '', linkWebinar: '',
-  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', linkPrezentacja: '', linkPrezentacjaShipPoint: '', smsPodpis: 'ShipCenter'
+  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', linkPrezentacja: '', linkPrezentacjaShipPoint: '', linkUmowaFranczyza: '', linkUmowaPartner: 'https://drive.google.com/file/d/1zr1IC75QBJAmJPl6VhOTv5iuuIg0-o2x/view?usp=sharing', linkMeet: '', smsPodpis: 'ShipCenter'
 };
 
 /* ---------- logo ShipCenter (SVG ze strony shipcenter.pl) ---------- */
@@ -277,6 +277,7 @@ function initCapabilities() {
   }).catch(() => { S.mode = 'local'; scheduleRender(); });
   c.use('downloads').then(x => { S.downloads = x; scheduleRender(); }).catch(() => { });
   c.use('sample').then(x => { S.sample = x; scheduleRender(); }).catch(() => { });
+  c.use('mcp').then(x => { S.mcp = x; scheduleRender(); }).catch(() => { });
   c.use('user').then(async u => { S.user = u; if (u) { try { S.userId = await u.id(); } catch (e) { } scheduleRender(); } }).catch(() => { });
 }
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
@@ -458,3 +459,31 @@ const nipFmt = v => { const d = nipDigits(v); return d.length === 10 ? `${d.slic
 
 /* w historii pokazujemy tylko wpisy napisane przez człowieka */
 const isManualEntry = h => h.manual || (!h.auto && h.type !== 'system' && String(h.text || '').trim() && !/^(Wysłano|Ponownie wysłano|SMS z podziękowaniem|Wykonano:|Rozmowa wg skryptu)/.test(h.text));
+
+
+/* wzory umów zapisane w panelu (pliki PDF do pobrania i dołączenia do maila) */
+const CONTRACT_FILES = {
+  franczyza: [
+    { id: '3797b8cb458ca45c42fffd6557d59633', file: 'Umowa_Franczyzowa_ShipCenter.pdf', n: 'Umowa franczyzowa (PDF)' },
+    { id: '077e5a73ee486d69409072b9661af6bd', file: 'OWU_ShipCenter.pdf', n: 'OWU (PDF)' }
+  ],
+  shippoint: [
+    { id: '10b7bbd10aa752e1459f59e2cc25d9b4', file: 'Umowa_Partnerska_ShipCenter.pdf', n: 'Umowa Partnerska (PDF)' }
+  ]
+};
+const contractFilesFor = l => CONTRACT_FILES[modelOf(l) === 'shippoint' ? 'shippoint' : 'franczyza'];
+async function downloadContract(id) {
+  const f = Object.values(CONTRACT_FILES).flat().find(x => x.id === id); if (!f) return;
+  try {
+    const r = await fetch('/_blob/' + f.id);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    await offerDownload(f.file, new Uint8Array(buf));
+  } catch (e) { toast('Nie udało się pobrać pliku ' + f.file + ' (' + e.message + ')', 'bad'); }
+}
+
+/* Google Meet: stały pokój opiekuna albo domyślny z ustawień */
+function meetLinkFor(l) {
+  const m = (l && l.ownerId && D().team[l.ownerId]) || (myMemberId() && D().team[myMemberId()]) || null;
+  return (m && m.meetLink) || offer().linkMeet || '';
+}

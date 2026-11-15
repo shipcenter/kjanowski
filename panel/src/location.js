@@ -132,7 +132,7 @@ function viewLocations() {
 function newLocation(leadId = '') {
   const l = leadId ? D().leads[leadId] : null;
   const x = clone(LOC_DEFAULTS);
-  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
+  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', address: l ? (l.pointAddress || '') : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
   put('locations', x.id, x);
   go('lok-' + x.id);
 }
@@ -155,7 +155,8 @@ function viewLocationEditor(id) {
       <label class="field"><span>Kandydat (lead)</span><select id="lo-leadId" data-loc="leadId">${opt('', '— brak —', L.leadId)}${leadsArr().sort((p, q) => (p.name || '').localeCompare(q.name || '', 'pl')).map(l => opt(l.id, l.name + (l.city ? ' – ' + l.city : ''), L.leadId)).join('')}</select></label>
       <label class="field span2"><span>Adres lokalu</span><input type="text" id="lo-address" data-loc="address" value="${esc(L.address)}" placeholder="ul. …, kod, miasto"></label>
       <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" value="${esc(L.city)}"></label>
-      <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select></label>
+      <label class="field"><span>Kod pocztowy</span><input type="text" id="lo-postal" data-loc="postalCode" value="${esc(L.postalCode || '')}" placeholder="uzupełni się sam" inputmode="numeric">${L.postalCode ? `<span class="hint">${L.postalVerified ? 'potwierdzony w Mapach Google' : 'szacunek – sprawdź'}</span>` : ''}</label>
+      <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select>${L.region && L.auto && L.auto.status === 'done' ? '<span class="hint">uzupełnione automatycznie</span>' : ''}</label>
     </div></div>
     <div class="card"><div class="cardhead"><h2>Okolica i popyt</h2>${S.sample ? `<button class="btn sm ${L.auto && L.auto.status === 'done' ? '' : 'primary'}" data-act="loc-autofill" data-id="${x.id}" ${L.city ? '' : 'disabled title="Wpisz najpierw miasto"'}>${ICONS.spark}${L.auto && L.auto.status === 'done' ? 'Uzupełnij ponownie' : 'Uzupełnij automatycznie'}</button>` : ''}</div>
       ${autoInfo(L)}<div class="formgrid">
@@ -177,6 +178,7 @@ function viewLocationEditor(id) {
     </div></div>
     ${revenueCard(x, r)}
     <div class="card"><div class="cardhead"><h2>Konkurencja w okolicy</h2><p>tylko punkty Epaka.pl i Pakersi do ok. 3 km</p></div>
+      ${L.compAuto && L.compAuto.forAddress && L.compAuto.forAddress !== [L.address, L.city].filter(Boolean).join(', ') ? `<div class="callout bad" style="margin-bottom:12px">Adres zmienił się po sprawdzeniu konkurencji (sprawdzono dla: ${esc(L.compAuto.forAddress)}). Poproś o ponowne sprawdzenie dla nowego adresu.</div>` : ''}
       ${L.compAuto ? `<div class="callout ${(L.competitors || []).filter(c => (COMP_TYPES[c.type] || {}).w > 0 && +c.dist <= 3000).length ? '' : 'good'}" style="margin-bottom:12px"><b>Sprawdzono automatycznie ${fdt(L.compAuto.at)}</b> · źródło: ${esc(L.compAuto.source || '')}<br><span class="small">${esc(L.compAuto.note || '')}</span></div>` : ''}
       ${(L.competitors || []).map((c, i) => `<div class="comprow">
         <input type="text" id="lc-name-${i}" data-comp="${i}" data-k="name" value="${esc(c.name)}" placeholder="Nazwa / adres" aria-label="Nazwa" title="${esc([c.address, c.source].filter(Boolean).join(' · '))}">
@@ -215,7 +217,7 @@ function viewLocationEditor(id) {
       <div class="statline" style="margin-top:8px"><span>Nakłady na start</span><b>${zl(r.startup)}</b></div>
       <div class="statline"><span>Zwrot nakładów (bazowy)</span><b>${r.payback ? fmt(r.payback, 1) + ' mies.' : 'brak przy obecnych założeniach'}</b></div>
       <div class="statline"><span>Próg rentowności</span><b>${r.breakEven ? fmt(r.breakEven) + ' paczek' : '—'}</b></div></div>
-    <div class="card"><div class="cardhead"><h2>Mapa konkurencji</h2><p>odległości w skali, kierunki umowne</p></div>${compRadar(r)}</div>
+    <div class="card"><div class="cardhead"><h2>Mapa konkurencji</h2><p>${L.mapImg ? 'promień 3 km · ' + esc(L.mapImg.source || 'OpenStreetMap') : 'odległości w skali, kierunki umowne'}</p></div>${L.mapImg ? mapBlock(L) : compRadar(r)}</div>
   </div>`;
   return head + `<div class="split">${form}${results}</div>`;
 }
@@ -257,6 +259,8 @@ function onLocInput(el) {
     if (el.type === 'number') v = el.value === '' ? '' : +el.value;
     if (v === 'true') v = true; else if (v === 'false') v = false;
     nx[k] = v;
+    if ((k === 'address' || k === 'city') && x[k] !== v) { nx.postalVerified = false; }
+    if (k === 'postalCode') nx.postalVerified = false;
   } else if (el.dataset.locA) { nx.a = { ...(nx.a || {}), [el.dataset.locA]: +el.value || 0 }; }
   else if (el.dataset.comp != null) {
     const i = +el.dataset.comp; const comps = (nx.competitors || []).slice();
@@ -312,7 +316,7 @@ function reportHTML(x, r, standalone = true) {
   <p class="small muted">Przepustowość: ${r.people} os. przy obsłudze, ${fmt(+L.hours)} godz. dziennie, ${fmt(+L.days)} dni w tygodniu, zaplecze ${fmt(+L.storage)} m². Wąskie gardło: ${esc(r.bottleneck)}. Uwzględniono też wydania paczek (${fmt(+L.rev.pickups || 0)} miesięcznie).</p>
   <h2>Konkurencja</h2>
   ${L.compAuto ? `<p class="small" style="margin:0 0 8px">${esc(L.compAuto.note || '')} <span class="muted">(źródło: ${esc(L.compAuto.source || '')}, ${esc(fdate(L.compAuto.at))})</span></p>` : ''}
-  <div class="two"><div>${radar.svg}${radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${esc(cp.name || '—')}${cp.address ? `<div class="small muted">${esc(cp.address)}</div>` : ''}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : `<p class="muted">${L.compAuto ? 'Brak punktów Epaka.pl i Pakersi w promieniu 3 km.' : 'Nie wprowadzono punktów konkurencji.'}</p>`}
+  <div class="two"><div>${L.mapImg ? `<img src="${esc(L.mapImg.url)}" alt="Mapa konkurencji" style="width:100%;border-radius:8px;display:block">` : radar.svg + radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${cp.no ? `<b>${cp.no}.</b> ` : ''}${esc(cp.name || '—')}${cp.address ? `<div class="small muted">${esc(cp.address)}</div>` : ''}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : `<p class="muted">${L.compAuto ? 'Brak punktów Epaka.pl i Pakersi w promieniu 3 km.' : 'Nie wprowadzono punktów konkurencji.'}</p>`}
   <p class="small muted">Jako konkurencję liczymy punkty pośredników kurierskich Epaka.pl i Pakersi. Inny punkt sieci ShipCenter nie powstanie bliżej niż ${o.ochrona} km.</p></div></div>
   <h2>Szacowany przychód punktu</h2>
   <table>${r.fin.base.lines.map(ln => { const it = REV_ITEMS.find(i => i.k === ln.k); return `<tr><td>${esc(ln.n)}</td><td class="small muted">${fmt(ln.count)} / mies. × ${zl(+L.a[it.p], ln.k === 'pickups' ? 2 : 0)}</td><td class="r">${zl(ln.revenue)}</td></tr>`; }).join('')}<tr><td><b>Razem</b></td><td class="small muted">w skali roku ok. ${zl(r.fin.base.revenue * 12)}</td><td class="r"><b>${zl(r.fin.base.revenue)}</b></td></tr></table>
@@ -460,13 +464,16 @@ function openReportMailModal(id) {
         <label class="field full"><span>Temat</span><input type="text" id="rm-subj" value="${esc(out.subject)}"></label>
         <label class="field full"><span>Treść</span><textarea id="rm-body" rows="13">${esc(body)}</textarea></label>
       </div>
-      <div class="row"><button type="button" class="btn primary sm" id="rm-pdf">${ICONS.down}Pobierz PDF (załącznik)</button><button type="button" class="btn sm" id="rm-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="rm-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="rm-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
-      <p class="note">Dlaczego PDF, a nie HTML w treści: Gmail i Outlook wycinają style i wykresy z HTML-a, a załączniki .html bywają oznaczane jako podejrzane. PDF wygląda u kandydata tak samo jak w podglądzie. Panel nie wysyła maili sam – wyślij ze skrzynki ${esc(offer().email)}.</p>
+      <div class="row"><button type="button" class="btn primary sm" id="rm-pdf">${ICONS.down}Pobierz PDF (załącznik)</button><button type="button" class="btn primary sm" id="rm-copy-html">${ICONS.copy}Kopiuj e-mail z formatowaniem</button><button type="button" class="btn sm" id="rm-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="rm-copy-body">${ICONS.copy}Kopiuj sam tekst</button><a class="btn sm" id="rm-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      ${emailPreviewBlock('rm-prev')}
+      <p class="note">Pełny raport idzie jako PDF w załączniku (wygląda u kandydata tak samo jak w podglądzie). Treść maila skopiuj z formatowaniem – z klikalnymi linkami i firmową stopką. Panel nie wysyła maili sam – wyślij ze skrzynki ${esc(offer().email)}.</p>
     </div>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="rm-save">Zapisz jako wysłany</button></div>`, { wide: true });
   const href = () => `mailto:${encodeURIComponent($('#rm-to').value)}?subject=${encodeURIComponent($('#rm-subj').value)}&body=${encodeURIComponent($('#rm-body').value)}`;
   const upd = () => { $('#rm-open').href = href(); };
-  upd(); ['rm-to', 'rm-subj', 'rm-body'].forEach(i => { $('#' + i).oninput = upd; });
+  const prev = () => { const pv = $('#rm-prev'); if (pv) pv.innerHTML = emailHtml($('#rm-body').value, l, true); };
+  upd(); prev(); ['rm-to', 'rm-subj', 'rm-body'].forEach(i => { $('#' + i).oninput = () => { upd(); prev(); }; });
+  $('#rm-copy-html').onclick = () => copyEmailHtml(emailHtml($('#rm-body').value, l, false), $('#rm-body').value);
   $('#rm-copy-to').onclick = () => copyText($('#rm-to').value);
   $('#rm-copy-subj').onclick = () => copyText($('#rm-subj').value);
   $('#rm-copy-body').onclick = () => copyText($('#rm-body').value);
@@ -509,7 +516,7 @@ async function autoFillLocation(id, btn) {
   const key = [x.address, x.city].filter(Boolean).join(', ');
   AUTO_BUSY[id] = true; scheduleRender();
   const prompt = `Jesteś analitykiem lokalizacji sieci ShipCenter (punkty nadawcze paczek) w Polsce. Dla adresu "${key}"${x.region ? ' (województwo ' + x.region + ')' : ''} ustal dane o okolicy na podstawie swojej wiedzy: dane GUS o mieście i dzielnicach, charakter dzielnicy i ulicy (centrum, osiedle bloków, domy jednorodzinne, strefa przemysłowa, galeria, dworzec). Zwróć wyłącznie obiekt JSON z polami:
-{"city": "nazwa miasta", "region": "województwo małymi literami, np. śląskie", "cityPop": liczba mieszkańców miasta lub gminy, "cityAreaKm2": powierzchnia miasta w km2, "district": "dzielnica lub pusty tekst", "catchment": mieszkańcy w promieniu ok. 1,5 km od adresu (gęstość dzielnicy razy ok. 7 km2, nie więcej niż cityPop), "type": jedno z "ulica" | "osiedle" | "galeria" | "park" | "biznes" | "wezel" (ulica = ulica handlowa lub centrum, park = park handlowy lub przy markecie, biznes = strefa biznesowa lub przemysłowa, wezel = dworzec lub węzeł komunikacyjny), "traffic": szacowany ruch pieszy przy lokalu w osobach na dzień (deptak dużego miasta 5000-15000, ulica handlowa 2000-5000, osiedle 500-1500, strefa przemysłowa 200-600), "parking": "brak" | "ograniczony" | "dobry", "firms": szacowana liczba firm w promieniu 3 km regularnie wysyłających paczki (około 1-1,5% podmiotów REGON w tym obszarze, minimum 10), "confidence": "niska" | "średnia" | "wysoka", "notes": "2-3 zdania po polsku: skąd liczby i co jest niepewne, np. czy taka ulica istnieje w tym mieście"}
+{"city": "nazwa miasta", "region": "województwo małymi literami, np. śląskie", "postalCode": "kod pocztowy w formacie 00-000 dla tej ulicy i numeru (jeśli nie masz pewności – kod najbardziej prawdopodobny dla tej ulicy)", "cityPop": liczba mieszkańców miasta lub gminy, "cityAreaKm2": powierzchnia miasta w km2, "district": "dzielnica lub pusty tekst", "catchment": mieszkańcy w promieniu ok. 1,5 km od adresu (gęstość dzielnicy razy ok. 7 km2, nie więcej niż cityPop), "type": jedno z "ulica" | "osiedle" | "galeria" | "park" | "biznes" | "wezel" (ulica = ulica handlowa lub centrum, park = park handlowy lub przy markecie, biznes = strefa biznesowa lub przemysłowa, wezel = dworzec lub węzeł komunikacyjny), "traffic": szacowany ruch pieszy przy lokalu w osobach na dzień (deptak dużego miasta 5000-15000, ulica handlowa 2000-5000, osiedle 500-1500, strefa przemysłowa 200-600), "parking": "brak" | "ograniczony" | "dobry", "firms": szacowana liczba firm w promieniu 3 km regularnie wysyłających paczki (około 1-1,5% podmiotów REGON w tym obszarze, minimum 10), "confidence": "niska" | "średnia" | "wysoka", "notes": "2-3 zdania po polsku: skąd liczby i co jest niepewne, np. czy taka ulica istnieje w tym mieście"}
 Liczby podawaj jako liczby całkowite. Jeśli nie znasz ulicy, oprzyj się na mieście, napisz to w notes i ustaw confidence na "niska".`;
   try {
     const r = await S.sample.json(prompt, { modelTier: 'default' });
@@ -523,10 +530,12 @@ Liczby podawaj jako liczby całkowite. Jeśli nie znasz ulicy, oprzyj się na mi
     if (['brak', 'ograniczony', 'dobry'].includes(r.parking)) p.parking = r.parking;
     const firms = num(r.firms, 1, 20000); if (firms) p.firms = firms;
     const reg = String(r.region || '').toLowerCase().replace('województwo', '').trim();
-    if (REGIONS.includes(reg) && !cur.region) p.region = reg;
+    if (REGIONS.includes(reg)) p.region = reg;
+    const pc = String(r.postalCode || '').match(/\d{2}-\d{3}/);
+    if (pc && !cur.postalVerified) { p.postalCode = pc[0]; p.postalVerified = false; }
     if (r.city && !cur.city) p.city = String(r.city);
     p.auto = { status: 'done', at: nowLocal(), forAddress: key, confidence: ['niska', 'średnia', 'wysoka'].includes(r.confidence) ? r.confidence : 'średnia', notes: String(r.notes || '').slice(0, 600) + (r.district ? ` Dzielnica: ${r.district}.` : '') + (r.cityAreaKm2 ? ` Powierzchnia miasta ok. ${fmt(+r.cityAreaKm2)} km².` : ''), source: 'Źródło: wiedza Claude (dane GUS i charakter okolicy, bez wyszukiwania na żywo).' };
-    if (reg && cur.region && REGIONS.includes(reg) && reg !== cur.region) p.auto.notes += ` Uwaga: adres wskazuje na województwo ${reg}, a w analizie wpisano ${cur.region}.`;
+    if (reg && cur.region && REGIONS.includes(reg) && reg !== cur.region) p.auto.notes += ` Województwo zmieniono z „${cur.region}” na „${reg}” zgodnie z adresem.`;
     await patch('locations', id, p);
     toast('Uzupełniono dane o okolicy');
   } catch (e) {
@@ -565,4 +574,12 @@ function onRevInput(el, final) {
   const t = $('#rv-total'); if (t) t.textContent = zl(r.fin.base.revenue);
   const yv = $('#rv-year'); if (yv) yv.textContent = zl(r.fin.base.revenue * 12);
   if (final) { scheduleRender(); debounce('loc-save-' + id, () => { const cur = D().locations[id]; if (cur) put('locations', id, cur); }, 600); }
+}
+
+function mapBlock(L) {
+  const list = (L.competitors || []).filter(c => c.no).sort((a, b) => a.no - b.no);
+  const col = { pakersi: 'var(--s7)', epaka: 'var(--s1)', sc: 'var(--s8)' };
+  return `<img src="${esc(L.mapImg.url)}" alt="Mapa: lokal, promień 3 km i punkty konkurencji" style="width:100%;border-radius:10px;display:block;border:1px solid var(--line)">
+    ${list.length ? `<div class="stack" style="gap:6px;margin-top:10px">${list.map(c => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:50%;background:${col[c.type] || 'var(--muted)'};color:#fff;font-size:.75rem;font-weight:700;display:grid;place-items:center">${c.no}</span><span class="small"><b>${esc(c.name || '')}</b> · ${fmt(+c.dist)} m<br><span class="muted">${esc(c.address || '')}</span></span></div>`).join('')}</div>` : '<p class="note" style="margin-top:8px">Brak punktów Epaka.pl, Pakersi i ShipCenter w promieniu 3 km.</p>'}
+    <p class="tiny muted" style="margin-top:6px">Mapa z ${fdate(L.mapImg.at)} · © OpenStreetMap contributors</p>`;
 }

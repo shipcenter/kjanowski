@@ -7,6 +7,8 @@ const LEAD_FIELDS = [
   { k: 'phone', n: 'Telefon', keys: ['telefon', 'tel', 'phone', 'phone number', 'phone_number', 'numer telefonu', 'nr telefonu', 'komórka'] },
   { k: 'email', n: 'E-mail', keys: ['email', 'e-mail', 'mail', 'adres e-mail', 'adres email'] },
   { k: 'city', n: 'Miasto', keys: ['miasto', 'city', 'miejscowość', 'miejscowosc', 'lokalizacja', 'location'] },
+  { k: 'pointAddress', n: 'Adres planowanego punktu', keys: ['adres', 'adres punktu', 'adres lokalu', 'ulica', 'address', 'street'] },
+  { k: 'nip', n: 'NIP', keys: ['nip', 'tax id', 'vat id'] },
   { k: 'region', n: 'Województwo', keys: ['województwo', 'wojewodztwo', 'region', 'state', 'woj'] },
   { k: 'source', n: 'Źródło', keys: ['źródło', 'zrodlo', 'source', 'kanał', 'kanal', 'utm_source', 'platform', 'platforma'] },
   { k: 'owner', n: 'Opiekun', keys: ['opiekun', 'owner', 'handlowiec', 'przypisany', 'assigned'] },
@@ -185,7 +187,7 @@ async function runImport(btn) {
 function leadRowsForExport(list) {
   return list.map(l => ({
     'Kod': leadCode(l.id), 'Imię i nazwisko': l.name || '', 'Firma': l.company || '', 'Telefon': l.phone || '', 'E-mail': l.email || '',
-    'Miasto': l.city || '', 'Województwo': l.region || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
+    'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
     'Etap': STAGES[stageIdx(l)].n, 'Status kontaktu': STATUS_MAP[l.status]?.n || '', 'Powód utraty': l.lostReason || '',
     'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',
@@ -295,7 +297,8 @@ function viewSettings() {
       ${f('email', 'E-mail działu franczyzy', 'email')}${f('telefon', 'Telefon', 'tel')}${f('www', 'Strona', 'text')}${f('adres', 'Adres centrali', 'text')}
       ${f('linkKalkulator', 'Link do kalkulatora franczyzy', 'url')}${f('smsPodpis', 'Podpis w SMS', 'text')}
       ${f('linkPrezentacja', 'Link do prezentacji – franczyza', 'url', 'np. PDF na Dysku Google; puste = prezentacja w załączniku')}${f('linkPrezentacjaShipPoint', 'Link do prezentacji – Ship Point', 'url')}
-      ${f('linkSpotkanie', 'Link do kalendarza spotkań', 'url', 'np. Calendly, Google Kalendarz')}${f('linkWebinar', 'Link do zapisów na webinar', 'url')}
+      ${f('linkUmowaFranczyza', 'Link do wzoru umowy franczyzowej z OWU (PDF)', 'url', 'Dysk Google: Udostępnij → „Każdy, kto ma link” → Kopiuj link')}${f('linkUmowaPartner', 'Link do wzoru umowy Partner / Ship Point (PDF)', 'url')}
+      ${f('linkSpotkanie', 'Link do kalendarza spotkań', 'url', 'np. Calendly, Google Kalendarz')}${f('linkMeet', 'Domyślny link Google Meet', 'url', 'gdy opiekun nie ma własnego pokoju Meet')}${f('linkWebinar', 'Link do zapisów na webinar', 'url')}
     </div>
     <div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="offer-reset">Przywróć wartości domyślne</button><span class="note">Zmiany zapisują się automatycznie po opuszczeniu pola.</span></div></div>`;
   const dataCard = `<div class="card"><div class="cardhead"><h2>Dane</h2></div>
@@ -312,13 +315,14 @@ function openMemberModal(m = null) {
       <label class="field"><span>Rola</span><select id="mf-role">${ROLES.map(r => opt(r, r, m.role)).join('')}</select></label>
       <label class="field"><span>Telefon</span><input type="tel" id="mf-phone" value="${esc(m.phone)}"></label>
       <label class="field"><span>E-mail</span><input type="email" id="mf-email" value="${esc(m.email)}"></label>
+      <label class="field full"><span>Stały link Google Meet (opcjonalnie)</span><input type="url" id="mf-meet" value="${esc(m.meetLink || '')}" placeholder="https://meet.google.com/abc-defg-hij"><span class="hint">Wstawi się sam przy spotkaniach online tej osoby. Stały pokój: utwórz w Kalendarzu Google wydarzenie cykliczne z Google Meet i skopiuj jego link.</span></label>
       <div class="field full"><span>Regiony (do automatycznego przypisywania leadów)</span><div class="row">${REGIONS.map((r, i) => `<label class="chk small"><input type="checkbox" id="mf-reg-${i}" value="${esc(r)}" ${(m.regions || []).includes(r) ? 'checked' : ''}>${esc(r)}</label>`).join('')}</div></div>
     </div></form>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="mf-save">Zapisz</button></div>`);
   const save = () => {
     const name = $('#mf-name').value.trim();
     if (!name) { toast('Wpisz imię i nazwisko.', 'bad'); return; }
-    put('team', m.id, { ...m, name, role: $('#mf-role').value, phone: $('#mf-phone').value.trim(), email: $('#mf-email').value.trim(), regions: REGIONS.filter((r, i) => $('#mf-reg-' + i).checked) });
+    put('team', m.id, { ...m, name, role: $('#mf-role').value, phone: $('#mf-phone').value.trim(), email: $('#mf-email').value.trim(), meetLink: $('#mf-meet').value.trim(), regions: REGIONS.filter((r, i) => $('#mf-reg-' + i).checked) });
     closeModal(); toast('Zapisano');
   };
   $('#mf-save').onclick = save;

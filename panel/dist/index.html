@@ -143,6 +143,9 @@ main { padding-block: 20px 64px; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field > span { font-size: .76rem; color: var(--ink-2); font-weight: 500; }
 .field .hint { font-size: .72rem; color: var(--muted); }
+.field .hint.good { color: var(--good, #15803d); font-weight: 600; }
+.field .hint.warn { color: var(--warn, #b45309); }
+input.autofilled { background: color-mix(in srgb, var(--good, #15803d) 8%, var(--bg-input, #fff)); }
 input[type=text], input[type=email], input[type=tel], input[type=number], input[type=date], input[type=datetime-local], input[type=time], input[type=search], input[type=url], select, textarea {
   width: 100%; min-width: 0; border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 8px 10px; font-size: .86rem; color: var(--ink);
 }
@@ -531,7 +534,7 @@ const DEFAULT_OFFER = {
   minPaczek: 100, przewoznicy: 'InPost, DPD, DHL, UPS, FedEx, GLS, Poczta Polska (Pocztex), ORLEN Paczka, Ambro Express',
   email: 'franczyza@shipcenter.pl', telefon: '+48 798 344 130', www: 'shipcenter.pl',
   adres: 'ul. Gliwicka 51, 40-853 Katowice', linkSpotkanie: '', linkWebinar: '',
-  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', linkPrezentacja: '', linkPrezentacjaShipPoint: '', smsPodpis: 'ShipCenter'
+  linkKalkulator: 'https://shipcenter.pl/franczyza/kalkulator', linkPrezentacja: '', linkPrezentacjaShipPoint: '', linkUmowaFranczyza: '', linkUmowaPartner: 'https://drive.google.com/file/d/1zr1IC75QBJAmJPl6VhOTv5iuuIg0-o2x/view?usp=sharing', linkMeet: '', smsPodpis: 'ShipCenter'
 };
 
 /* ---------- logo ShipCenter (SVG ze strony shipcenter.pl) ---------- */
@@ -734,6 +737,7 @@ function initCapabilities() {
   }).catch(() => { S.mode = 'local'; scheduleRender(); });
   c.use('downloads').then(x => { S.downloads = x; scheduleRender(); }).catch(() => { });
   c.use('sample').then(x => { S.sample = x; scheduleRender(); }).catch(() => { });
+  c.use('mcp').then(x => { S.mcp = x; scheduleRender(); }).catch(() => { });
   c.use('user').then(async u => { S.user = u; if (u) { try { S.userId = await u.id(); } catch (e) { } scheduleRender(); } }).catch(() => { });
 }
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
@@ -915,6 +919,34 @@ const nipFmt = v => { const d = nipDigits(v); return d.length === 10 ? `${d.slic
 
 /* w historii pokazujemy tylko wpisy napisane przez człowieka */
 const isManualEntry = h => h.manual || (!h.auto && h.type !== 'system' && String(h.text || '').trim() && !/^(Wysłano|Ponownie wysłano|SMS z podziękowaniem|Wykonano:|Rozmowa wg skryptu)/.test(h.text));
+
+
+/* wzory umów zapisane w panelu (pliki PDF do pobrania i dołączenia do maila) */
+const CONTRACT_FILES = {
+  franczyza: [
+    { id: '3797b8cb458ca45c42fffd6557d59633', file: 'Umowa_Franczyzowa_ShipCenter.pdf', n: 'Umowa franczyzowa (PDF)' },
+    { id: '077e5a73ee486d69409072b9661af6bd', file: 'OWU_ShipCenter.pdf', n: 'OWU (PDF)' }
+  ],
+  shippoint: [
+    { id: '10b7bbd10aa752e1459f59e2cc25d9b4', file: 'Umowa_Partnerska_ShipCenter.pdf', n: 'Umowa Partnerska (PDF)' }
+  ]
+};
+const contractFilesFor = l => CONTRACT_FILES[modelOf(l) === 'shippoint' ? 'shippoint' : 'franczyza'];
+async function downloadContract(id) {
+  const f = Object.values(CONTRACT_FILES).flat().find(x => x.id === id); if (!f) return;
+  try {
+    const r = await fetch('/_blob/' + f.id);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    await offerDownload(f.file, new Uint8Array(buf));
+  } catch (e) { toast('Nie udało się pobrać pliku ' + f.file + ' (' + e.message + ')', 'bad'); }
+}
+
+/* Google Meet: stały pokój opiekuna albo domyślny z ustawień */
+function meetLinkFor(l) {
+  const m = (l && l.ownerId && D().team[l.ownerId]) || (myMemberId() && D().team[myMemberId()]) || null;
+  return (m && m.meetLink) || offer().linkMeet || '';
+}
 
 /* ===== Powłoka aplikacji: routing, renderowanie, modale, wykresy ===== */
 
@@ -1424,9 +1456,11 @@ function leadFormFields(l, prefix = 'lf') {
   return `<div class="formgrid">
     <label class="field span2"><span>Imię i nazwisko *</span><input type="text" id="${prefix}-name" value="${esc(l.name)}" required></label>
     <label class="field"><span>Firma (opcjonalnie)</span><input type="text" id="${prefix}-company" value="${esc(l.company)}"></label>
-    <label class="field"><span>NIP</span><input type="text" id="${prefix}-nip" inputmode="numeric" value="${esc(l.nip ? nipFmt(l.nip) : '')}" placeholder="np. 634-286-76-10">${l.nip ? `<span class="hint ${nipValid(l.nip) ? '' : 'overdue'}">${nipValid(l.nip) ? 'NIP poprawny' : 'Błędny NIP – sprawdź cyfry'}</span>` : ''}</label>
+    <label class="field"><span>NIP</span><input type="text" id="${prefix}-nip" data-nip-auto="${prefix}" inputmode="numeric" value="${esc(l.nip ? nipFmt(l.nip) : '')}" placeholder="np. 634-286-76-10"><span class="hint ${l.nip && !nipValid(l.nip) ? 'overdue' : ''}" id="${prefix}-nip-st">${l.nip ? (nipValid(l.nip) ? 'NIP poprawny' + (l.companyData ? ' · dane firmy pobrane' : '') : 'Błędny NIP – sprawdź cyfry') : (prefix === 'lf' ? 'Po wpisaniu NIP-u dane firmy uzupełnią się same' : '')}</span></label>
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
+    ${prefix === 'lf' ? `<div class="field full" id="lf-companybox"></div>` : ''}
+    <label class="field span2"><span>Adres planowanego punktu (opcjonalnie)</span><input type="text" id="${prefix}-pointAddress" value="${esc(l.pointAddress || '')}" placeholder="ulica i numer, jeśli kandydat ma już lokal na oku"></label>
     <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" value="${esc(l.city)}"></label>
     <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select></label>
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
@@ -1440,10 +1474,11 @@ function leadFormFields(l, prefix = 'lf') {
 }
 function readLeadForm(prefix = 'lf') {
   const v = id => ($('#' + prefix + '-' + id) || {}).value || '';
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
   const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
+  REG.pending.lf = null;
   openModal(`<div class="mh"><h2>Nowy lead</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <form class="mb" id="lead-form">${leadFormFields(l)}
       <div class="formgrid">
@@ -1458,6 +1493,9 @@ function openLeadModal() {
     if (!d.name) { toast('Wpisz imię i nazwisko kandydata.', 'bad'); $('#lf-name').focus(); return; }
     const dup = findDuplicate(d);
     const lead = newLead({ ...d, nextTask: $('#lf-task').value.trim(), nextTaskDate: $('#lf-taskdate').value, notes: $('#lf-notes').value.trim() });
+    const pc = REG.pending.lf;
+    if (pc && d.nip && nipDigits(pc.nip) === d.nip) lead.companyData = pc;
+    REG.pending.lf = null;
     lead.history = [histEntry('system', 'Lead dodany ręcznie' + (d.ownerId ? ' · opiekun: ' + memberName(d.ownerId) : ''))];
     put('leads', lead.id, lead);
     toast(dup ? `Zapisano. Uwaga: podobny lead już istnieje (${dup.name}).` : 'Lead zapisany');
@@ -1537,9 +1575,11 @@ function viewLead(id) {
   const meeting = `<div class="card"><div class="cardhead"><h2>Spotkanie</h2>${l.meetingAt ? `<p class="${dueCls(l.meetingAt)}">${fdt(l.meetingAt)}</p>` : ''}</div>
     <div class="formgrid"><label class="field"><span>Termin</span><input type="datetime-local" id="ld-meet" data-lead-field="meetingAt" value="${esc(l.meetingAt)}"></label>
     <label class="field"><span>Forma</span><select id="ld-meettype" data-lead-field="meetingType">${opt('', '—', l.meetingType)}${opt('online', 'Online (wideo)', l.meetingType)}${opt('telefon', 'Telefon', l.meetingType)}${opt('centrala', 'Centrala – Katowice', l.meetingType)}${opt('lokal', 'W planowanym lokalu', l.meetingType)}${opt('punkt', 'W działającym punkcie', l.meetingType)}</select></label>
-    <label class="field full"><span>Miejsce / link</span><input type="text" id="ld-meetplace" data-lead-field="meetingPlace" value="${esc(l.meetingPlace)}" placeholder="Adres lub link do spotkania"></label></div>
+    <label class="field full"><span>${l.meetingType === 'online' ? 'Link do spotkania (Google Meet)' : 'Miejsce / link'}</span><input type="text" id="ld-meetplace" data-lead-field="meetingPlace" value="${esc(l.meetingPlace)}" placeholder="${l.meetingType === 'online' ? 'https://meet.google.com/…' : 'Adres lub link do spotkania'}"></label></div>
+    ${l.meetingType === 'online' ? meetHelper(l) : ''}
     <div class="row" style="margin-top:10px"><button class="btn sm" data-act="meeting-log" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>Spotkanie odbyte – zapisz</button>
-    <button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_potwierdzenie">Potwierdzenie spotkania</button></div></div>`;
+    <button class="btn sm ${l.meetingType === 'online' && l.meetingPlace ? 'primary' : 'ghost'}" data-act="meet-confirm" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>${ICONS.email}${l.meetingType === 'online' ? 'Wyślij klientowi link i potwierdzenie' : 'Potwierdzenie spotkania'}</button></div>
+    ${l.meetingAt ? remindersBlock(l, 'spotkanie') : ''}</div>`;
 
   const handoffs = (l.handoffs || []).slice().reverse();
   const handoff = `<div class="card"><div class="cardhead"><h2>Przekazanie leada</h2><p>Zmienia opiekuna i zapisuje notatkę dla nowej osoby</p></div>
@@ -1603,14 +1643,17 @@ function saveLeadField(el) {
     hist.push(histEntry('system', `Status: ${STATUS_MAP[l.status]?.n || '—'} → ${STATUS_MAP[v]?.n}`));
     p.history = hist;
     if (v === 'pozyskany') { setWon(l); return; }
+    if (l.status === 'pozyskany' || (l.stageDates || {}).umowa) { const sd = { ...(l.stageDates || {}) }; delete sd.umowa; p.stageDates = sd; p.contractSignedAt = ''; }
   }
+  if (f === 'meetingType' && v === 'online' && !l.meetingPlace && meetLinkFor(l)) p.meetingPlace = meetLinkFor(l);
   if (f === 'ownerId' && l.ownerId !== v) {
     const hist = (l.history || []).slice();
     hist.push(histEntry('system', `Opiekun: ${memberName(l.ownerId) || 'brak'} → ${memberName(v) || 'brak'}`));
     p.history = hist;
   }
-  if (f === 'meetingAt' && v && l.status !== 'pozyskany') p.status = 'umowione';
+  if (f === 'meetingAt' && v && l.status !== 'pozyskany' && l.status !== 'czeka_umowa') p.status = 'umowione';
   patch('leads', id, p);
+  if (['meetingAt', 'meetingPlace', 'meetingType', 'phone'].includes(f)) setTimeout(() => syncReminders(id, 'spotkanie'), 300);
 }
 function saveLeadEdit() {
   const id = S.route.id; const l = D().leads[id]; if (!l) return;
@@ -1625,40 +1668,83 @@ function saveLeadEdit() {
     p.history = hist;
   }
   patch('leads', id, p);
+  if (changed.includes('nip') && nipValid(d.nip)) setTimeout(() => autoNip('le', id), 50);
 }
 
 /* dane firmy z Białej listy VAT (Ministerstwo Finansów) */
 function companyBox(l) {
   const d = nipDigits(l.nip);
   const ok = nipValid(d);
-  const url = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
   const c = l.companyData;
+  const krs = (c && c.krs) || '';
+  const wl = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
+  const auto = S.mcp ? `<button class="btn sm ${c ? '' : 'primary'}" data-act="reg-lookup" data-id="${l.id}">${ICONS.file}${c ? 'Pobierz ponownie z rejestrów' : 'Pobierz dane z rejestrów'}</button>` : '';
   return `<div class="sep"></div><div class="row between"><h3>Dane firmy z rejestru</h3>${c ? `<span class="tiny muted">pobrano ${fdate(c.at)}</span>` : ''}</div>
-    ${c ? `<dl class="kv" style="margin-top:8px"><dt>Nazwa</dt><dd>${esc(c.name || '—')}</dd><dt>Adres</dt><dd>${esc(c.address || '—')}</dd><dt>NIP</dt><dd>${esc(nipFmt(c.nip || d))}</dd><dt>REGON</dt><dd>${esc(c.regon || '—')}</dd>${c.krs ? `<dt>KRS</dt><dd>${esc(c.krs)}</dd>` : ''}<dt>Status VAT</dt><dd>${c.statusVat ? `<span class="pill ${c.statusVat === 'Czynny' ? 'good' : 'warn'}">${esc(c.statusVat)}</span>` : '—'}</dd>${c.registrationLegalDate ? `<dt>Rejestracja</dt><dd>${esc(c.registrationLegalDate)}</dd>` : ''}</dl>` : ''}
-    ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP powyżej, aby pobrać nazwę, adres, REGON i status VAT firmy.</p>'
+    ${c ? `<div style="margin-top:8px">${companyKv(c)}</div>` : ''}
+    ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP w danych kandydata – dane firmy (CEIDG / KRS / Biała lista VAT) uzupełnią się same.</p>'
       : !ok ? '<p class="note overdue" style="margin-top:6px">NIP ma błędną sumę kontrolną – popraw cyfry.</p>'
-      : `<div class="stack" style="gap:8px;margin-top:8px"><div class="row"><a class="btn sm" href="${url}" target="_blank" rel="noopener">${ICONS.file}1. Otwórz dane z Białej listy VAT</a><span class="note">Otworzy się oficjalna strona Ministerstwa Finansów z danymi tej firmy. Zaznacz wszystko (Ctrl+A), skopiuj (Ctrl+C)…</span></div>
-        <label class="field"><span>2. …i wklej tutaj (Ctrl+V) – panel sam uzupełni dane</span><textarea id="nip-paste" data-nip-paste="${l.id}" rows="2" placeholder="Wklej wynik z Białej listy VAT"></textarea></label></div>`}`;
+      : `<div class="stack" style="gap:8px;margin-top:8px">
+        ${auto ? `<div class="row">${auto}</div>` : `<p class="note">Automatyczne pobieranie działa, gdy panel jest otwarty w aplikacji Claude na komputerze. Tutaj możesz skorzystać z wklejania poniżej.</p>`}
+        <details class="adv" ${c || S.mcp ? '' : 'open'}><summary>Ręcznie: otwórz rejestr i wklej stronę</summary>
+        <div class="stack" style="gap:8px;margin-top:8px">
+        <div class="row">
+          <a class="btn sm" href="${wl}" target="_blank" rel="noopener">${ICONS.file}Biała lista VAT</a>
+          <a class="btn sm" href="https://www.biznes.gov.pl/pl/wyszukiwarka-firm/?searchType=advanced&nip=${d}" target="_blank" rel="noopener">${ICONS.file}CEIDG / KRS – wyszukiwarka firm</a>
+          ${krs ? `<a class="btn sm" href="https://api-krs.ms.gov.pl/api/krs/OdpisAktualny/${esc(krs)}?rejestr=P&format=json" target="_blank" rel="noopener">${ICONS.file}Odpis KRS</a>` : ''}
+          <button class="btn sm ghost" data-act="copy" data-text="${d}">${ICONS.copy}Kopiuj NIP</button>
+        </div>
+        <label class="field"><span>Wklej tutaj (Ctrl+V) skopiowaną stronę – panel sam rozpozna dane</span><textarea id="nip-paste" data-nip-paste="${l.id}" rows="2" placeholder="Ctrl+A, Ctrl+C na stronie rejestru, potem Ctrl+V tutaj"></textarea></label></div></details></div>`}`;
 }
 function parseWhiteList(text) {
   let j;
   try { j = JSON.parse(text); } catch (e) { const m = String(text).match(/\{[\s\S]*\}/); if (!m) return null; try { j = JSON.parse(m[0]); } catch (e2) { return null; } }
   const sub = j && j.result && (j.result.subject || (j.result.subjects || [])[0]);
-  if (!sub) return null;
-  return { name: sub.name || '', address: sub.workingAddress || sub.residenceAddress || '', nip: sub.nip || '', regon: sub.regon || '', krs: sub.krs || '', statusVat: sub.statusVat || '', registrationLegalDate: sub.registrationLegalDate || '', at: todayISO(), source: 'Biała lista VAT (MF)' };
+  if (sub) return { name: sub.name || '', address: sub.workingAddress || sub.residenceAddress || '', nip: sub.nip || '', regon: sub.regon || '', krs: sub.krs || '', statusVat: sub.statusVat || '', registrationLegalDate: sub.registrationLegalDate || '', at: todayISO(), source: 'Biała lista VAT' };
+  const od = j && j.odpis;
+  if (od && od.dane) {
+    const d1 = od.dane.dzial1 || {}, dp = d1.danePodmiotu || {}, ad = (d1.siedzibaIAdres || {}).adres || {};
+    const addr = [[ad.ulica, ad.nrDomu].filter(Boolean).join(' ') + (ad.nrLokalu ? '/' + ad.nrLokalu : ''), [ad.kodPocztowy, ad.miejscowosc].filter(Boolean).join(' ')].filter(x => x && x.trim()).join(', ');
+    return { name: dp.nazwa || '', address: addr, nip: (dp.identyfikatory || {}).nip || '', regon: String((dp.identyfikatory || {}).regon || '').replace(/0{5}$/, ''), krs: (od.naglowekA || {}).numerKRS || '', form: dp.formaPrawna || '', ...krsDetails(od), at: todayISO(), source: 'KRS' };
+  }
+  return null;
 }
-function onNipPaste(el, text) {
+async function extractCompanyWithClaude(text) {
+  if (!S.sample) return null;
+  const prompt = `Z poniższego tekstu skopiowanego ze strony rejestru firm (CEIDG, KRS, REGON lub Biała lista VAT) wyciągnij dane jednej firmy. Zwróć wyłącznie JSON: {"name": "nazwa firmy", "address": "adres siedziby lub stałego miejsca wykonywania działalności (ulica nr, kod miejscowość)", "nip": "10 cyfr", "regon": "", "krs": "", "form": "forma prawna, np. jednoosobowa działalność gospodarcza, spółka z o.o.", "status": "status działalności, np. aktywny, zawieszony, wykreślony", "startDate": "data rozpoczęcia działalności RRRR-MM-DD", "pkd": "przeważające PKD z opisem", "owner": "imię i nazwisko właściciela (tylko jednoosobowa działalność)", "phone": "telefon firmy, jeśli podany", "email": "e-mail firmy, jeśli podany", "www": "", "registry": "CEIDG | KRS | REGON | Biała lista"}. Puste pola zostaw jako "". Nie zgaduj danych, których nie ma w tekście.
+
+Tekst:
+${String(text).slice(0, 12000)}`;
+  const r = await S.sample.json(prompt, { modelTier: 'quick' });
+  if (!r || !r.name) return null;
+  return { name: r.name, address: r.address || '', nip: nipDigits(r.nip), regon: r.regon || '', krs: r.krs || '', form: r.form || '', status: r.status || '', startDate: r.startDate || '', pkd: r.pkd || '', owner: r.owner || '', phone: r.phone || '', email: String(r.email || '').toLowerCase(), www: r.www || '', at: todayISO(), source: r.registry ? r.registry : 'rejestr (odczyt Claude)' };
+}
+async function onNipPaste(el, text) {
   const id = el.dataset.nipPaste; const l = D().leads[id]; if (!l) return;
-  const c = parseWhiteList(text);
-  if (!c) { toast('Nie rozpoznano danych. Skopiuj całą zawartość strony z Białej listy VAT i wklej ponownie.', 'bad'); return; }
-  if (c.nip && nipDigits(c.nip) !== nipDigits(l.nip)) toast('Uwaga: wklejone dane dotyczą innego NIP-u (' + c.nip + ').', 'bad');
+  let c = parseWhiteList(text);
+  if (!c) {
+    if (!S.sample) { toast('Nie rozpoznano danych. Wklej wynik z Białej listy VAT lub wyciąg KRS (JSON).', 'bad'); return; }
+    el.value = 'Claude odczytuje dane firmy…'; el.disabled = true;
+    try { c = await extractCompanyWithClaude(text); } catch (e) { c = null; }
+    el.disabled = false; el.value = '';
+    if (!c) { toast('Nie udało się odczytać danych firmy z wklejonego tekstu. Skopiuj całą stronę z wynikiem wyszukiwania.', 'bad'); return; }
+  }
+  const cur = D().leads[id];
+  if (c.nip && nipDigits(c.nip) !== nipDigits(cur.nip)) toast('Uwaga: wklejone dane dotyczą innego NIP-u (' + c.nip + ').', 'bad');
   const p = { companyData: c, updatedTs: new Date().toISOString() };
-  if (!l.company && c.name) p.company = c.name;
-  const hist = (l.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy z Białej listy VAT: ' + c.name)); p.history = hist;
+  if (!cur.company && c.name) p.company = c.name;
+  const hist = (cur.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy (' + c.source + '): ' + c.name)); p.history = hist;
   patch('leads', id, p);
   toast('Uzupełniono dane firmy: ' + c.name);
 }
 
+function meetHelper(l) {
+  const link = meetLinkFor(l);
+  const isMeet = /meet\.google\.com\//.test(l.meetingPlace || '');
+  return `<div class="callout" style="margin-top:10px"><div class="stack" style="gap:6px">
+    ${l.meetingPlace && isMeet ? `<span class="small">Link Google Meet jest gotowy – wyślij go klientowi przyciskiem poniżej.</span>` : link ? `<span class="small">Twój stały pokój Google Meet: <span class="mono">${esc(link)}</span></span>` : `<span class="small">Utwórz spotkanie w Google Meet, skopiuj link i wklej go w polu wyżej. Możesz też w „Zespół i ustawienia” wpisać swój stały link Meet – wtedy wstawi się sam.</span>`}
+    <div class="row">${link && l.meetingPlace !== link ? `<button class="btn sm primary" data-act="meet-use" data-id="${l.id}">Wstaw link Meet</button>` : ''}<a class="btn sm" href="https://meet.google.com/new" target="_blank" rel="noopener">Nowe spotkanie Google Meet</a>${l.meetingPlace && isMeet ? `<a class="btn sm ghost" href="${esc(l.meetingPlace)}" target="_blank" rel="noopener">Otwórz Meet</a>` : ''}</div>
+  </div></div>`;
+}
 function trainingStep(l) {
   const start = l.trainingStart || '';
   const end = start ? (l.trainingEnd || trainingEnd(start)) : '';
@@ -1666,7 +1752,7 @@ function trainingStep(l) {
   return `<div class="pstep ${cls}"><span class="lbl">3 · Szkolenie w centrali</span>
     ${start ? `<span class="val">${fdate(start)} – ${fdate(end)}</span><span class="small ink2">3 dni robocze · ${esc(l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice')}</span>` : '<span class="small ink2">Umowa podpisana. Zaplanuj 3-dniowe szkolenie wstępne w centrali (w ciągu 30 dni od podpisania umowy).</span>'}
     <label class="field"><span>${start ? 'Zmień datę rozpoczęcia' : 'Data rozpoczęcia szkolenia'}</span><input type="date" id="ld-train" data-train="${l.id}" value="${esc(start)}"></label>
-    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
+    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>${remindersBlock(l, 'szkolenie')}` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
   </div>`;
 }
 function setTraining(l, start) {
@@ -1675,14 +1761,17 @@ function setTraining(l, start) {
   hist.push(histEntry('system', start ? `Zaplanowano szkolenie w centrali: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia'));
   patch('leads', l.id, { trainingStart: start, trainingEnd: end, trainingPlace: l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice', nextTask: start ? 'Szkolenie wstępne w centrali (3 dni)' : '', nextTaskDate: start || '', nextTaskTime: '', history: hist, updatedTs: new Date().toISOString() });
   toast(start ? `Szkolenie: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia');
+  setTimeout(() => syncReminders(l.id, 'szkolenie'), 300);
 }
 
 /* umowa: do wglądu → Autenti → podpisana */
 function contractCard(l) {
-  const kind = modelOf(l) === 'shippoint' ? 'Umowa o współpracy Ship Center Point' : 'Umowa franczyzowa + OWU';
+  const kind = modelOf(l) === 'shippoint' ? 'Umowa Partnerska ShipCenter' : 'Umowa franczyzowa + OWU';
+  const pdfs = contractFilesFor(l).map(f => `<button class="btn sm ghost" data-act="contract-pdf" data-file="${f.id}">${ICONS.file}${esc(f.n)}</button>`).join('');
   const won = isWon(l);
   const step = (lbl, date, body, cls = '') => `<div class="pstep ${date ? 'done' : cls}"><span class="lbl">${lbl}</span>${date ? `<span class="val">${fdate(date)}</span>` : ''}${body}</div>`;
   return `<div class="card"><div class="cardhead"><h2>Umowa</h2><p>${esc(kind)}</p></div>
+    <div class="row" style="margin-bottom:10px"><span class="small muted">Wzory:</span>${pdfs}</div>
     <div class="stack" style="gap:10px">
       ${step('1 · Do wglądu', l.contractPreviewAt, `<span class="small ink2">${l.contractPreviewAt ? 'Kandydat dostał wzór umowy do zapoznania się.' : 'Dla kandydata, który chce przeczytać umowę przed decyzją.'}</span><button class="btn sm ${l.contractPreviewAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_umowa_wglad">${ICONS.email}${l.contractPreviewAt ? 'Wyślij ponownie do wglądu' : 'Wyślij umowę do wglądu'}</button>`)}
       ${step('2 · Do podpisu w Autenti', l.contractSentAt, `${l.contractSentAt ? '<span class="small ink2">Status: czeka na podpisanie umowy.</span>' : '<span class="small ink2">Po wysłaniu dokumentu w Autenti zaznacz to tutaj.</span>'}
@@ -1714,13 +1803,111 @@ function smsThanksText(l) {
 }
 const smsGatewayOn = () => !!((settings().integrations || {}).sms);
 
+/* przypomnienia SMS: o spotkaniu i o szkoleniu (można ustawić kilka) */
+const REMIND_TOPICS = {
+  spotkanie: { n: 'spotkaniu', when: { dzien: 'dzień wcześniej o 18:00', rano: 'w dniu spotkania o 8:00', '2h': '2 godziny przed spotkaniem', wlasny: 'własny termin…' } },
+  szkolenie: { n: 'szkoleniu', when: { tydzien: 'tydzień wcześniej o 10:00', dzien: 'dzień wcześniej o 18:00', rano: 'w dniu szkolenia o 7:30', wlasny: 'własny termin…' } }
+};
+const TRAINING_START_TIME = '09:00';
+const hhmm = x => String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0');
+function eventAt(l, topic) { return topic === 'szkolenie' ? (l.trainingStart ? l.trainingStart + 'T' + TRAINING_START_TIME : '') : (l.meetingAt || ''); }
+function reminderSendAt(at, when, custom) {
+  if (when === 'wlasny') return custom || '';
+  if (!at) return '';
+  const d = at.split('T')[0];
+  if (when === 'tydzien') return isoDate(addDays(new Date(d + 'T12:00'), -7)) + 'T10:00';
+  if (when === 'dzien') return isoDate(addDays(new Date(d + 'T12:00'), -1)) + 'T18:00';
+  if (when === 'rano') return d + (at.endsWith('T' + TRAINING_START_TIME) ? 'T07:30' : 'T08:00');
+  const x = new Date(at); x.setHours(x.getHours() - 2);
+  return isoDate(x) + 'T' + hhmm(x);
+}
+function smsReminderText(l, topic = 'spotkanie') {
+  const o = offer();
+  const m = l && l.ownerId ? D().team[l.ownerId] : null;
+  const who = m ? firstName(m.name) : (o.smsPodpis || 'ShipCenter');
+  const tel = (m && m.phone) || o.telefon;
+  const dm = d => d ? d.slice(8, 10) + '.' + d.slice(5, 7) : '';
+  if (topic === 'szkolenie') {
+    const end = l.trainingEnd || (l.trainingStart ? trainingEnd(l.trainingStart) : '');
+    return stripPL(`Dzień dobry, przypominamy o szkoleniu wstępnym ShipCenter ${dm(l.trainingStart)}-${dm(end)}, start ${dm(l.trainingStart)} o godz. ${TRAINING_START_TIME}, ${l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice'}. W razie pytań: ${who}, tel. ${tel}. ${o.smsPodpis || 'ShipCenter'}`);
+  }
+  const [d, t] = String(l.meetingAt || '').split('T');
+  const where = l.meetingType === 'online' ? ' (online)' + (l.meetingPlace ? ': ' + l.meetingPlace : '')
+    : l.meetingType === 'telefon' ? ' (rozmowa telefoniczna)'
+    : l.meetingPlace ? ', ' + l.meetingPlace : l.meetingType === 'centrala' ? ', ' + o.adres : '';
+  return stripPL(`Dzień dobry, przypominamy o spotkaniu ShipCenter ${dm(d)} o godz. ${t || ''}${where}. W razie zmian proszę o kontakt: ${who}, tel. ${tel}. ${o.smsPodpis || 'ShipCenter'}`);
+}
+const remindersFor = (leadId, topic) => Object.values(D().sms || {}).filter(x => x.leadId === leadId && x.kind === 'przypomnienie' && (x.topic || 'spotkanie') === topic && x.status === 'zaplanowany').sort((a, b) => (a.sendAt || '').localeCompare(b.sendAt || ''));
+function remindersBlock(l, topic) {
+  const list = remindersFor(l.id, topic);
+  const has = topic === 'szkolenie' ? !!l.trainingStart : !!l.meetingAt;
+  return `<div class="stack" style="gap:6px;margin-top:8px">
+    ${list.map(x => `<div class="row" style="gap:6px;flex-wrap:nowrap"><span class="pill">SMS ${esc(fdt(x.sendAt))}</span><button class="btn sm ghost" data-act="sms-remind" data-id="${l.id}" data-topic="${topic}" data-sms="${x.id}">Zmień</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj przypomnienie">${ICONS.x}</button></div>`).join('')}
+    <button class="btn sm ${list.length ? 'ghost' : ''}" data-act="sms-remind" data-id="${l.id}" data-topic="${topic}" ${has && l.phone ? '' : 'disabled'} title="${!l.phone ? 'Brak telefonu kandydata' : !has ? 'Najpierw ustaw termin' : ''}">${ICONS.tel}${list.length ? 'Ustaw kolejne przypomnienie SMS' : `Ustaw przypomnienie SMS o ${REMIND_TOPICS[topic].n}`}</button>
+  </div>`;
+}
+function openSmsReminderModal(l, topic = 'spotkanie', smsId = '') {
+  const T = REMIND_TOPICS[topic] || REMIND_TOPICS.spotkanie;
+  const at = eventAt(l, topic);
+  if (!at) { toast(topic === 'szkolenie' ? 'Najpierw ustaw datę szkolenia.' : 'Najpierw ustaw termin spotkania.', 'bad'); return; }
+  if (!l.phone) { toast('Brak numeru telefonu kandydata – uzupełnij w danych kandydata.', 'bad'); return; }
+  const ex = smsId ? D().sms[smsId] : null;
+  const taken = remindersFor(l.id, topic).filter(x => x.id !== smsId).map(x => x.when);
+  const nowL = nowLocal();
+  const when0 = ex ? (ex.when || 'dzien') : (Object.keys(T.when).find(k => k !== 'wlasny' && !taken.includes(k) && reminderSendAt(at, k) > nowL) || 'wlasny');
+  openModal(`<div class="mh"><h2>${ex ? 'Zmień przypomnienie' : 'Przypomnienie'} SMS o ${T.n} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <label class="field"><span>Kiedy wysłać</span><select id="sr-when">${Object.entries(T.when).map(([k, n]) => opt(k, n, when0)).join('')}</select></label>
+      <label class="field" id="sr-customwrap"><span>Własny termin</span><input type="datetime-local" id="sr-custom" value="${esc(ex && ex.when === 'wlasny' ? ex.sendAt : '')}"></label>
+      <div class="field"><span>Wyśle się</span><b id="sr-at" class="mono"></b></div>
+      <label class="field full"><span>Treść (do ${esc(l.phone)})</span><textarea id="sr-text" rows="4">${esc(ex ? ex.text : smsReminderText(l, topic))}</textarea><span class="hint" id="sr-info"></span></label>
+    </div>
+    <p class="note">${topic === 'szkolenie' ? 'Szkolenie: ' + fdate(l.trainingStart) + ' – ' + fdate(l.trainingEnd || trainingEnd(l.trainingStart)) + ', start o ' + TRAINING_START_TIME + '. ' : 'Spotkanie: ' + fdt(l.meetingAt) + '. '}SMS trafi do kolejki z ustawioną godziną. ${smsGatewayOn() ? 'SMSAPI wyśle go automatycznie.' : 'Do czasu podłączenia SMSAPI panel pokaże go w „Kontaktach” o tej godzinie – wtedy wyślij go ręcznie (przycisk „Treść” kopiuje tekst).'} Po zmianie terminu przypomnienie przesunie się samo.</p></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Zamknij</button><button class="btn primary" id="sr-save">${ex ? 'Zapisz zmiany' : 'Ustaw przypomnienie'}</button></div>`);
+  const upd = () => {
+    const w = $('#sr-when').value;
+    $('#sr-customwrap').style.display = w === 'wlasny' ? '' : 'none';
+    const sAt = reminderSendAt(at, w, $('#sr-custom').value);
+    $('#sr-at').textContent = sAt ? fdt(sAt) + (sAt < nowLocal() ? ' (termin minął – trafi od razu do wysłania)' : '') : '— wybierz termin';
+    const i = smsInfo($('#sr-text').value); $('#sr-info').textContent = `${i.len} znaków · ${i.parts} SMS${i.gsm ? '' : ' · znaki spoza GSM (krótsze SMS-y)'}`;
+  };
+  upd(); $('#sr-when').onchange = upd; $('#sr-custom').oninput = upd; $('#sr-text').oninput = upd;
+  $('#sr-save').onclick = () => {
+    const when = $('#sr-when').value, text = $('#sr-text').value.trim();
+    const sendAt = reminderSendAt(at, when, $('#sr-custom').value);
+    if (!sendAt) { toast('Wybierz termin wysyłki.', 'bad'); return; }
+    if (!text) { toast('Wpisz treść SMS-a.', 'bad'); return; }
+    const custom = text !== smsReminderText(l, topic);
+    if (ex) patch('sms', ex.id, { when, text, sendAt, eventAt: at, phone: l.phone, custom });
+    else put('sms', uid('sms'), { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic, when, sendAt, eventAt: at, custom, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+    const cur = D().leads[l.id];
+    if (cur) { const hist = (cur.history || []).slice(); hist.push(histEntry('system', `Przypomnienie SMS o ${T.n}: ${fdt(sendAt)}`)); patch('leads', l.id, { history: hist, updatedTs: new Date().toISOString() }); }
+    closeModal(); toast('Przypomnienie SMS: ' + fdt(sendAt));
+  };
+}
+/* po zmianie terminu / miejsca – przesunięcie zaplanowanych SMS-ów */
+function syncReminders(leadId, topic) {
+  const l = D().leads[leadId]; if (!l) return;
+  const list = remindersFor(leadId, topic); if (!list.length) return;
+  const at = eventAt(l, topic);
+  if (!at) { list.forEach(x => patch('sms', x.id, { status: 'anulowany' })); toast('Usunięto termin – anulowano przypomnienia SMS'); return; }
+  let n = 0;
+  list.forEach(x => {
+    const p = { eventAt: at, phone: l.phone || x.phone };
+    if (x.when !== 'wlasny') p.sendAt = reminderSendAt(at, x.when);
+    if (!x.custom) p.text = smsReminderText(l, topic);
+    if ((p.sendAt && p.sendAt !== x.sendAt) || (p.text && p.text !== x.text) || p.eventAt !== x.eventAt) { patch('sms', x.id, p); n++; }
+  });
+  if (n) toast(`Zaktualizowano przypomnienia SMS (${n})`);
+}
+
 function queueSms(l, text) {
   const id = uid('sms');
   const doc = { leadId: l.id, leadName: l.name || '', phone: l.phone || '', text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'po_rozmowie', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' };
   put('sms', id, doc);
   return id;
 }
-const SMS_STATUS = { oczekuje: ['Czeka na wysłanie', 'warn'], wyslany: ['Wysłany', 'good'], blad: ['Błąd wysyłki', 'bad'], anulowany: ['Anulowany', ''] };
+const SMS_STATUS = { zaplanowany: ['Zaplanowany', ''], oczekuje: ['Czeka na wysłanie', 'warn'], wyslany: ['Wysłany', 'good'], blad: ['Błąd wysyłki', 'bad'], anulowany: ['Anulowany', ''] };
 function smsListFor(leadId) { return Object.values(D().sms || {}).filter(x => x.leadId === leadId).sort((a, b) => (b.createdTs || '').localeCompare(a.createdTs || '')); }
 
 /* modal: zapis rozmowy (pierwszej lub kolejnej) */
@@ -1831,7 +2018,8 @@ function viewContacts() {
   const newOnes = open.filter(l => !l.firstCallAt && l.status === 'do_kontaktu').sort((a, b) => (a.createdTs || '').localeCompare(b.createdTs || ''));
   const noNext = open.filter(l => !l.nextTaskDate && l.firstCallAt);
   const meetings = open.filter(l => l.meetingAt && l.meetingAt.slice(0, 10) >= t && l.meetingAt.slice(0, 10) <= wk).sort((a, b) => a.meetingAt.localeCompare(b.meetingAt));
-  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje');
+  const nowL = nowLocal();
+  const pendingSms = Object.values(D().sms || {}).filter(x => x.status === 'oczekuje' || (x.status === 'zaplanowany' && (x.sendAt || '') <= nowL));
   const ownerLabel = owner ? (owner === '_none' ? 'leady bez opiekuna' : memberName(owner)) : 'cały zespół';
   const head = `<div class="viewhead"><div class="grow"><span class="eyebrow">Przypomnienia</span><h1>Kontakty</h1>
     <p>Kogo i kiedy trzeba złapać – ${esc(ownerLabel)}. Na dziś i zaległe: <b>${groups[0][2].length + groups[1][2].length}</b>.</p></div>
@@ -1857,7 +2045,7 @@ function viewContacts() {
     ${trainings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.trainingStart)}">${fdateShort(l.trainingStart)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">${fdate(l.trainingStart)} – ${fdate(l.trainingEnd || trainingEnd(l.trainingStart))} · centrala</div></div><div></div></div>`).join('')}</div>` : '';
   const meetCard = `<div class="card"><div class="cardhead"><h2>Spotkania – 7 dni</h2><p>${meetings.length}</p></div>${meetings.length ? meetings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.meetingAt)}">${fdateShort(l.meetingAt)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a><div class="tiny muted">${fdt(l.meetingAt)} · ${esc(l.meetingType || '')} ${esc(l.meetingPlace || '')}</div></div><div></div></div>`).join('') : '<p class="muted small">Brak zaplanowanych spotkań.</p>'}</div>`;
   const noNextCard = noNext.length ? `<div class="card"><div class="cardhead"><h2>Bez zaplanowanego kontaktu</h2><p>${noNext.length}</p></div><p class="note" style="margin-bottom:6px">Aktywni kandydaci po pierwszej rozmowie, którym nikt nie ustawił kolejnego kontaktu.</p>${noNext.slice(0, 15).map(l => `<div class="contact-row"><span class="when muted">—</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">ostatni kontakt ${fdateShort(lastContact(l) || l.createdAt)}</div></div><div class="ctl"><button class="btn sm" data-act="snooze" data-id="${l.id}" data-d="1">Na jutro</button></div></div>`).join('')}</div>` : '';
-  const smsCard = pendingSms.length ? `<div class="card"><div class="cardhead"><h2>SMS w kolejce</h2><p>${pendingSms.length}</p></div>${smsGatewayOn() ? '' : '<p class="note" style="margin-bottom:6px">Bramka SMS nie jest podłączona. Skopiuj treść i wyślij ręcznie albo poczekaj na podłączenie.</p>'}${pendingSms.map(x => `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><a href="#lead-${x.leadId}"><b>${esc(x.leadName)}</b></a> <span class="mono small">${esc(x.phone)}</span><div class="tiny muted">${esc(x.text)}</div></div><div class="ctl"><button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}Treść</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj">${ICONS.x}</button></div></div>`).join('')}</div>` : '';
+  const smsCard = pendingSms.length ? `<div class="card"><div class="cardhead"><h2>SMS w kolejce</h2><p>${pendingSms.length}</p></div>${smsGatewayOn() ? '' : '<p class="note" style="margin-bottom:6px">Bramka SMS nie jest podłączona. Skopiuj treść i wyślij ręcznie albo poczekaj na podłączenie.</p>'}${pendingSms.map(x => `<div class="contact-row"><span class="when ${x.kind === 'przypomnienie' ? 'due' : ''}">${x.kind === 'przypomnienie' ? 'teraz' : fdateShort(x.createdTs)}</span><div style="min-width:0"><a href="#lead-${x.leadId}"><b>${esc(x.leadName)}</b></a> <span class="mono small">${esc(x.phone)}</span>${x.kind === 'przypomnienie' ? ' <span class="pill warn">przypomnienie o ' + ((REMIND_TOPICS[x.topic || 'spotkanie'] || REMIND_TOPICS.spotkanie).n) + ' ' + esc(fdt(x.eventAt || x.meetingAt)) + '</span>' : ''}<div class="tiny muted">${esc(x.text)}</div></div><div class="ctl"><button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}Treść</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj">${ICONS.x}</button></div></div>`).join('')}</div>` : '';
   const empty = !groups.some(g => g[2].length) ? `<div class="card"><div class="empty"><h3>Brak zaplanowanych kontaktów na najbliższy tydzień</h3><p>Kolejny kontakt ustawisz przy zapisie rozmowy albo w karcie leada.</p></div></div>` : '';
   return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${trainCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
 }
@@ -1867,24 +2055,29 @@ function openMailModal(l, tplKey) {
   const t = TEMPLATES[tplKey]; if (!t) return;
   const out = t.f(msgContext(l, l.form));
   const isPres = tplKey === 'email_prezentacja';
-  const again = tplKey === 'email_umowa_wglad' ? !!l.contractPreviewAt : isPres ? !!l.presentationAt : !!l.calcSentAt;
+  const isConf = tplKey === 'email_potwierdzenie';
+  const again = tplKey === 'email_umowa_wglad' ? !!l.contractPreviewAt : isConf ? !!l.meetingConfirmedAt : isPres ? !!l.presentationAt : !!l.calcSentAt;
   const mailto = () => `mailto:${encodeURIComponent(l.email || '')}?subject=${encodeURIComponent($('#ml-subj').value)}&body=${encodeURIComponent($('#ml-body').value)}`;
   openModal(`<div class="mh"><h2>${esc(again ? 'Wyślij ponownie: ' + t.n.toLowerCase() : t.n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <div class="mb">
-      ${again ? `<p class="callout">${tplKey === 'email_umowa_wglad' ? 'Umowa do wglądu była już wysłana ' + fdate(l.contractPreviewAt) : (isPres ? 'Prezentacja była już wysłana ' + fdate(l.presentationAt) : 'Kalkulator był już wysłany ' + fdate(l.calcSentAt))}.</p>` : ''}
+      ${again ? `<p class="callout">${tplKey === 'email_umowa_wglad' ? 'Umowa do wglądu była już wysłana ' + fdate(l.contractPreviewAt) : isConf ? 'Potwierdzenie spotkania było już wysłane ' + fdate(l.meetingConfirmedAt) : (isPres ? 'Prezentacja była już wysłana ' + fdate(l.presentationAt) : 'Kalkulator był już wysłany ' + fdate(l.calcSentAt))}.</p>` : ''}
       <div class="formgrid">
         <label class="field span2"><span>Do</span><input type="email" id="ml-to" value="${esc(l.email || '')}" placeholder="brak adresu e-mail w karcie leada"></label>
         <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="ml-copy-to">${ICONS.copy}Kopiuj adres</button></div>
         <label class="field full"><span>Temat</span><input type="text" id="ml-subj" value="${esc(out.subject || '')}"></label>
         <label class="field full"><span>Treść</span><textarea id="ml-body" rows="14">${esc(out.body)}</textarea></label>
       </div>
-      <div class="row"><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
-      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF)' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
+      <div class="row"><button type="button" class="btn sm primary" id="ml-copy-html">${ICONS.copy}Kopiuj e-mail z formatowaniem</button><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj sam tekst</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      ${tplKey === 'email_umowa_wglad' ? `<div class="row"><span class="small muted">Załączniki do pobrania:</span>${contractFilesFor(l).map(f => `<button type="button" class="btn sm" data-act="contract-pdf" data-file="${f.id}">${ICONS.file}${esc(f.n)}</button>`).join('')}</div>` : ''}
+      ${emailPreviewBlock('ml-prev')}
+      <p class="note">„Kopiuj e-mail z formatowaniem” kopiuje treść z klikalnymi linkami i firmową stopką – w Thunderbirdzie utwórz nową wiadomość, wpisz temat i wklej (Ctrl+V). Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)}, dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF – przyciski wyżej), jeśli w treści nie ma linku do niej,' : isConf ? 'ewentualnie zaproszenie z kalendarza,' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
     </div>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
   const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
-  refreshLink();
-  ['ml-to', 'ml-subj', 'ml-body'].forEach(id => { $('#' + id).oninput = refreshLink; });
+  const refreshPrev = () => { const pv = $('#ml-prev'); if (pv) pv.innerHTML = emailHtml($('#ml-body').value, l, true); };
+  refreshLink(); refreshPrev();
+  ['ml-to', 'ml-subj', 'ml-body'].forEach(id => { $('#' + id).oninput = () => { refreshLink(); refreshPrev(); }; });
+  $('#ml-copy-html').onclick = () => copyEmailHtml(emailHtml($('#ml-body').value, l, false), $('#ml-body').value);
   $('#ml-copy-to').onclick = () => copyText($('#ml-to').value);
   $('#ml-copy-subj').onclick = () => copyText($('#ml-subj').value);
   $('#ml-copy-body').onclick = () => copyText($('#ml-body').value);
@@ -1896,10 +2089,11 @@ function openMailModal(l, tplKey) {
     const p = { history: hist, updatedTs: new Date().toISOString() };
     const to = $('#ml-to').value.trim();
     if (to && to !== cur.email) p.email = to;
-    if (tplKey === 'email_umowa_wglad') { p.contractPreviewAt = todayISO(); if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Telefon – pytania do umowy'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); } }
+    if (isConf) { p.meetingConfirmedAt = todayISO(); }
+    else if (tplKey === 'email_umowa_wglad') { p.contractPreviewAt = todayISO(); if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Telefon – pytania do umowy'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); } }
     else if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
     else { if (!cur.calcSentAt) p.calcSentAt = todayISO(); p.calcLastAt = todayISO(); }
-    if (tplKey !== 'email_umowa_wglad' && (!cur.nextTaskDate || cur.nextTaskDate <= todayISO())) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
+    if (tplKey !== 'email_umowa_wglad' && !isConf && (!cur.nextTaskDate || cur.nextTaskDate <= todayISO())) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
     if (cur.status === 'do_kontaktu') p.status = 'w_kontakcie';
     patch('leads', l.id, p);
     closeModal();
@@ -2055,7 +2249,7 @@ ${c.g('Jeśli termin Panu nie odpowiada', 'Jeśli termin Pani nie odpowiada', 'J
     body: `${powitanie(c)}
 
 potwierdzam nasze spotkanie: ${c.spotkanie} (${c.formaSpotkania}).
-Link / miejsce: ${c.miejsce}
+${c.l.meetingType === 'online' ? 'Link do spotkania (Google Meet): ' + c.miejsce + '\nWystarczy kliknąć link o umówionej godzinie – działa w przeglądarce, bez instalowania aplikacji.' : 'Miejsce: ' + c.miejsce}
 
 Agenda:
 • model biznesowy i źródła przychodu punktu,
@@ -2164,10 +2358,10 @@ ${c.g('Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:'
   email_umowa_wglad: { grp: 'Domknięcie', n: 'Umowa do wglądu', kind: 'E-mail', f: c => {
     const sp = c.model === 'shippoint' || MODEL_ALIAS[c.model] === 'shippoint';
     return {
-      subject: sp ? 'Umowa Ship Center Point – wzór do wglądu' : 'Umowa franczyzowa ShipCenter – wzór do wglądu',
+      subject: sp ? 'Umowa Partnerska ShipCenter – wzór do wglądu' : 'Umowa franczyzowa ShipCenter – wzór do wglądu',
       body: `${powitanie(c)}
 
-zgodnie z rozmową przesyłam w załączniku wzór ${sp ? 'umowy o współpracy Ship Center Point' : 'umowy franczyzowej ShipCenter wraz z Ogólnymi Warunkami Umów (OWU)'} do spokojnego zapoznania się.
+zgodnie z rozmową przesyłam wzór ${sp ? 'Umowy Partnerskiej ShipCenter' : 'umowy franczyzowej ShipCenter wraz z Ogólnymi Warunkami Umów (OWU)'} do spokojnego zapoznania się${(sp ? c.o.linkUmowaPartner : c.o.linkUmowaFranczyza) ? ':\n' + (sp ? c.o.linkUmowaPartner : c.o.linkUmowaFranczyza) : ' (w załączniku)'}.
 
 Najważniejsze zapisy w skrócie:
 ${sp ? `• opłata wstępna ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
@@ -2427,7 +2621,7 @@ function viewMessages() {
     <div class="sep"></div>
     ${out.subject ? `<div class="row between" style="margin-bottom:6px"><span class="small"><span class="muted">Temat:</span> <b>${esc(out.subject)}</b></span><button class="btn sm ghost" data-act="copy-subject">${ICONS.copy}Kopiuj temat</button></div>` : ''}
     <div class="msgout" id="msg-out">${renderMsgBody(out.body)}</div>
-    <div class="row" style="margin-top:10px"><button class="btn primary" data-act="copy-msg">${ICONS.copy}Kopiuj ${out.subject ? 'treść' : ''}</button>
+    <div class="row" style="margin-top:10px">${t.kind === 'E-mail' ? `<button class="btn primary" data-act="copy-msg-html">${ICONS.copy}Kopiuj e-mail z formatowaniem</button><button class="btn" data-act="copy-msg">${ICONS.copy}Kopiuj sam tekst</button>` : `<button class="btn primary" data-act="copy-msg">${ICONS.copy}Kopiuj</button>`}
     ${t.kind === 'SMS' ? `<span class="note">${out.body.length} znaków · ${Math.ceil(out.body.length / 160)} SMS</span>` : ''}
     ${l ? `<button class="btn" data-act="msg-log" data-id="${l.id}">Zapisz wysłanie w historii leada</button><a class="btn ghost" href="#lead-${l.id}">Otwórz leada</a>` : ''}</div>
     ${ai}
@@ -2465,6 +2659,303 @@ Polecenie użytkownika: ${instr}`;
   }
   btn.disabled = false; btn.innerHTML = label;
   scheduleRender();
+}
+
+/* ===== E-mail w szablonie ShipCenter: klikalne linki + firmowa stopka ===== */
+
+const EMAIL_LOGO_URL = 'https://shipcenter.pl/panel/logo_stopka.png';
+const A = 'font-family:Arial,Helvetica,sans-serif;';
+
+function senderOf(l) {
+  const o = offer();
+  const m = (myMemberId() && D().team[myMemberId()]) || (l && l.ownerId ? D().team[l.ownerId] : null);
+  return {
+    name: m ? String(m.name).replace(/^Przykład:\s*/, '') : 'Dział Franczyzy',
+    role: m && m.role ? m.role.replace('Centrala – ', '') : 'Rozwój sieci franczyzowej',
+    phone: (m && m.phone) || o.telefon,
+    email: (m && m.email) || o.email
+  };
+}
+
+function signatureHtml(s, preview = false) {
+  const tel = 'tel:' + String(s.phone || '').replace(/[^\d+]/g, '');
+  const phoneTxt = esc(s.phone || '').replace(/ /g, '&nbsp;');
+  const logo = preview
+    ? `<span style="display:block;width:160px">${LOGO_SVG.replace('<svg ', '<svg style="width:160px;height:auto;display:block" ')}</span>`
+    : `<img src="${EMAIL_LOGO_URL}" width="160" height="33" alt="Ship Center" style="display:block;width:160px;height:33px;border:0;outline:none;text-decoration:none;">`;
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="480" style="width:480px;border-collapse:collapse;${A}color:#111827;">
+  <tr>
+    <td valign="top" style="padding:0 22px 0 0;">
+      <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;">
+        <tr><td style="${A}font-size:18px;line-height:22px;font-weight:bold;color:#111827;">${esc(s.name)}</td></tr>
+        <tr><td style="${A}font-size:13px;line-height:18px;color:#6B7280;padding:2px 0 0 0;">${esc(s.role)}</td></tr>
+        <tr><td style="padding:10px 0 10px 0;"><table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;"><tr><td width="32" height="3" bgcolor="#E94E1A" style="width:32px;height:3px;background-color:#E94E1A;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>
+        <tr><td><table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;">
+          <tr><td width="18" style="width:18px;${A}font-size:12px;line-height:20px;font-weight:bold;color:#E94E1A;">T</td><td style="${A}font-size:13px;line-height:20px;"><a href="${esc(tel)}" style="color:#111827;text-decoration:none;">${phoneTxt}</a></td></tr>
+          <tr><td width="18" style="width:18px;${A}font-size:12px;line-height:20px;font-weight:bold;color:#E94E1A;">E</td><td style="${A}font-size:13px;line-height:20px;"><a href="mailto:${esc(s.email)}" style="color:#111827;text-decoration:none;">${esc(s.email)}</a></td></tr>
+        </table></td></tr>
+      </table>
+    </td>
+    <td width="1" bgcolor="#E5E7EB" style="width:1px;background-color:#E5E7EB;font-size:0;line-height:0;">&nbsp;</td>
+    <td valign="top" style="padding:2px 0 0 22px;">
+      <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;">
+        <tr><td bgcolor="#FFFFFF" style="background-color:#FFFFFF;"><a href="https://shipcenter.pl" target="_blank" style="text-decoration:none;">${logo}</a></td></tr>
+        <tr><td style="${A}font-size:12px;line-height:19px;color:#4B5563;padding:12px 0 0 0;">ul. Gliwicka 51, 40-853 Katowice<br><a href="https://shipcenter.pl" target="_blank" style="color:#E94E1A;text-decoration:none;font-weight:bold;">shipcenter.pl</a></td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr><td colspan="3" style="padding:16px 0 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+  <tr><td colspan="3" style="border-top:1px solid #E5E7EB;padding:10px 0 0 0;${A}font-size:10px;line-height:14px;color:#9CA3AF;">
+    Ship Center Poland Sp. z o.o., ul. Gliwicka 51, 40-853 Katowice, Sąd Rejonowy Katowice-Wschód w Katowicach, VIII Wydział Gospodarczy KRS, KRS 0000624967, NIP 6342867610, REGON 364786381, kapitał zakładowy 105&nbsp;000,00&nbsp;zł.<br>
+    Korzystając z usług akceptujesz <a href="https://shipcenter.pl/regulamin" target="_blank" style="color:#6B7280;text-decoration:underline;">Regulamin</a> oraz <a href="https://shipcenter.pl/polityka-prywatnosci" target="_blank" style="color:#6B7280;text-decoration:underline;">Politykę prywatności</a>.
+  </td></tr>
+</table>`;
+}
+
+function linkify(escapedLine) {
+  return escapedLine
+    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" style="color:#E94E1A;font-weight:bold;text-decoration:underline;">$1</a>')
+    .replace(/(^|[\s(])([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, '$1<a href="mailto:$2" style="color:#E94E1A;text-decoration:underline;">$2</a>');
+}
+
+/* zwykły tekst wiadomości → HTML (akapity, listy, linki) + stopka */
+function emailHtml(text, l, preview = false) {
+  let body = String(text || '').replace(/\r/g, '');
+  let closing = 'Pozdrawiam';
+  const cut = body.search(/\n\s*\n(Pozdrawiam|Z pozdrowieniami|Pozdrawiamy)[^\n]*\n[\s\S]*$/);
+  if (cut >= 0) { closing = body.slice(cut).trim().split('\n')[0].trim(); body = body.slice(0, cut); }
+  const blocks = body.split(/\n\s*\n/);
+  const P = `margin:0 0 14px 0;${A}font-size:14px;line-height:22px;color:#111827;`;
+  const html = blocks.map(b => {
+    const lines = b.split('\n').filter(x => x.trim() !== '');
+    if (!lines.length) return '';
+    const out = []; let list = null, listType = '';
+    const flush = () => { if (list) { out.push(`<${listType} style="margin:0 0 14px 0;padding-left:22px;${A}font-size:14px;line-height:22px;color:#111827;">${list.join('')}</${listType}>`); list = null; } };
+    const para = [];
+    const flushPara = () => { if (para.length) { out.push(`<p style="${P}">${para.join('<br>')}</p>`); para.length = 0; } };
+    lines.forEach(ln => {
+      const bullet = ln.match(/^\s*[•\-–]\s+(.*)$/), num = ln.match(/^\s*\d+[.)]\s+(.*)$/);
+      if (bullet || num) {
+        flushPara();
+        const t = bullet ? 'ul' : 'ol';
+        if (!list || listType !== t) { flush(); list = []; listType = t; }
+        list.push(`<li style="margin:0 0 4px 0;">${linkify(esc((bullet || num)[1]))}</li>`);
+      } else { flush(); para.push(linkify(esc(ln))); }
+    });
+    flushPara(); flush();
+    return out.join('');
+  }).join('');
+  return `<div style="${A}font-size:14px;line-height:22px;color:#111827;max-width:600px;">${html}<p style="${P}margin-bottom:18px;">${esc(closing)}</p>${signatureHtml(senderOf(l), preview)}</div>`;
+}
+
+/* kopiowanie jako sformatowany e-mail (HTML + zwykły tekst) */
+async function copyEmailHtml(html, plain) {
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([plain], { type: 'text/plain' }) })]);
+      toast('Skopiowano e-mail z formatowaniem – wklej go w nowej wiadomości (Ctrl+V)');
+      return;
+    }
+    throw new Error('no ClipboardItem');
+  } catch (e) {
+    const box = document.createElement('div');
+    box.contentEditable = 'true';
+    box.style.cssText = 'position:fixed;left:-10000px;top:0;width:640px;background:#fff';
+    box.innerHTML = html;
+    document.body.appendChild(box);
+    const range = document.createRange(); range.selectNodeContents(box);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+    sel.removeAllRanges(); box.remove();
+    if (ok) toast('Skopiowano e-mail z formatowaniem – wklej go w nowej wiadomości (Ctrl+V)');
+    else copyText(plain);
+  }
+}
+
+/* blok podglądu e-maila do okien wysyłki */
+function emailPreviewBlock(id) {
+  return `<details class="adv" id="${id}-wrap"><summary>Podgląd e-maila ze stopką</summary><div id="${id}" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px;overflow-x:auto;color-scheme:light"></div></details>`;
+}
+
+/* ===== Dane firmy po NIP – automatycznie z rejestrów =====
+   Panel sam nie ma dostępu do internetu, więc rejestry otwiera przeglądarka aplikacji Claude
+   (host:claude_browser – działa, gdy panel jest otwarty w aplikacji Claude na komputerze):
+   1) Biała lista VAT (API Ministerstwa Finansów) – nazwa, adres, REGON, KRS, status VAT,
+   2) KRS (API Ministerstwa Sprawiedliwości) – forma prawna, adres, e-mail i www z KRS, zarząd,
+   3) wyszukiwarka firm biznes.gov.pl (CEIDG + KRS) – gdy firmy nie ma na Białej liście. */
+
+const BROWSER = 'host:claude_browser';
+const REG = { tabId: null, busy: {}, cache: {}, pending: {}, lastErr: '' };
+const regSleep = ms => new Promise(r => setTimeout(r, ms));
+const REG_FATAL = ['server_not_connected', 'not_granted', 'capability_disabled', 'capability_removed', 'not_in_manifest', 'cancelled', 'approval_required', 'blocked_by_policy'];
+
+function mcpText(res) {
+  if (!res) return '';
+  if (typeof res.payload === 'string') return res.payload;
+  const blocks = (res.content || []).filter(b => b && b.type === 'text' && typeof b.text === 'string').map(b => b.text);
+  if (blocks.length) return blocks.join('\n');
+  if (res.payload != null) { try { return JSON.stringify(res.payload); } catch (e) { } }
+  return '';
+}
+function mcpTabId(res) {
+  const p = res && (res.structuredContent || res.payload);
+  if (p && typeof p === 'object') { const v = p.tabId ?? p.tab_id ?? (p.tab && p.tab.id); if (v != null) return v; }
+  const m = mcpText(res).match(/tab\s*_?id["'\s:=]*["']?([A-Za-z0-9-]+)/i);
+  return m ? (/^\d+$/.test(m[1]) ? +m[1] : m[1]) : null;
+}
+async function browserOpen(url) {
+  if (REG.tabId != null) {
+    try { await S.mcp.callTool(BROWSER, 'navigate', { url, tabId: REG.tabId }, { cache: false }); return; }
+    catch (e) { if (REG_FATAL.includes(e && e.code)) throw e; REG.tabId = null; }
+  }
+  const r = await S.mcp.callTool(BROWSER, 'preview_start', { url }, { cache: false });
+  REG.tabId = mcpTabId(r);
+}
+async function browserText(url, { until, timeout = 15000 } = {}) {
+  await browserOpen(url);
+  const t0 = Date.now();
+  await regSleep(900);
+  for (;;) {
+    const r = await S.mcp.callTool(BROWSER, 'get_page_text', REG.tabId != null ? { tabId: REG.tabId } : {}, { cache: false });
+    const text = mcpText(r);
+    if (!until || until(text) || Date.now() - t0 > timeout) return text;
+    await regSleep(1500);
+  }
+}
+
+/* KRS: pełniejszy odczyt odpisu (adres, e-mail, www, zarząd) */
+function krsDetails(od) {
+  const d1 = (od.dane || {}).dzial1 || {}, d2 = (od.dane || {}).dzial2 || {};
+  const sa = d1.siedzibaIAdres || {};
+  const rep = (d2.reprezentacja || {}).sklad || [];
+  const people = rep.map(p => {
+    const im = p.imiona || {}, nz = p.nazwisko || {};
+    const name = [im.imie, im.imieDrugie, nz.nazwiskoICzlon, nz.nazwiskoIICzlon].filter(Boolean).join(' ');
+    return name ? name + (p.funkcjaWOrganie ? ' – ' + p.funkcjaWOrganie : '') : '';
+  }).filter(x => x && !/\*{3}/.test(x));
+  const cap = (d1.kapital || {}).wysokoscKapitaluZakladowego;
+  return {
+    email: String(sa.adresPocztyElektronicznej || '').toLowerCase(),
+    www: sa.adresStronyInternetowej || '',
+    representatives: people,
+    capital: cap ? [cap.wartosc, cap.waluta].filter(Boolean).join(' ') : ''
+  };
+}
+
+/* łączenie danych z kilku rejestrów (pierwsze niepuste wygrywa) */
+function mergeCompany(...parts) {
+  const list = parts.filter(Boolean);
+  if (!list.length) return null;
+  const out = {};
+  list.forEach(p => Object.entries(p).forEach(([k, v]) => {
+    if (k === 'source') return;
+    if (out[k] == null || out[k] === '' || (Array.isArray(out[k]) && !out[k].length)) out[k] = v;
+  }));
+  out.source = [...new Set(list.map(p => p.source).filter(Boolean))].join(' + ');
+  out.at = todayISO();
+  return out;
+}
+
+async function registryLookup(nip, onStep = () => { }) {
+  const d = nipDigits(nip);
+  if (REG.cache[d]) return REG.cache[d];
+  let wl = null, krs = null, ceidg = null;
+  onStep('Biała lista VAT');
+  try {
+    const t = await browserText(`https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}`, { until: x => /"result"|"code"|"message"/.test(x) });
+    wl = parseWhiteList(t);
+  } catch (e) { if (REG_FATAL.includes(e && e.code)) throw e; }
+  if (wl && wl.krs) {
+    onStep('KRS');
+    for (const rej of ['P', 'S']) {
+      try {
+        const t = await browserText(`https://api-krs.ms.gov.pl/api/krs/OdpisAktualny/${wl.krs}?rejestr=${rej}&format=json`, { until: x => /"odpis"|"kod"|"error"|"status"/i.test(x) });
+        krs = parseWhiteList(t);
+      } catch (e) { if (REG_FATAL.includes(e && e.code)) throw e; }
+      if (krs) break;
+    }
+  }
+  if (!krs && (!wl || !wl.form)) {
+    onStep('CEIDG / biznes.gov.pl');
+    try {
+      const t = await browserText(`https://www.biznes.gov.pl/pl/wyszukiwarka-firm/?searchType=advanced&nip=${d}`,
+        { until: x => x.includes(d) || /nie znaleziono|brak wynik/i.test(x), timeout: 20000 });
+      if (t && t.includes(d)) ceidg = await extractCompanyWithClaude(t);
+    } catch (e) { if (REG_FATAL.includes(e && e.code)) throw e; }
+  }
+  const c = mergeCompany(krs, wl, ceidg);
+  if (c && !c.nip) c.nip = d;
+  if (c) REG.cache[d] = c;
+  return c;
+}
+
+function regErrMsg(e) {
+  const code = e && e.code;
+  if (code === 'server_not_connected' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed')
+    return 'Automatyczne pobieranie działa, gdy panel jest otwarty w aplikacji Claude na komputerze. Tutaj użyj „Dane firmy z rejestru” w karcie kandydata.';
+  if (code === 'not_in_manifest' || code === 'approval_required' || code === 'cancelled')
+    return 'Brak zgody na użycie przeglądarki Claude. Zezwól w oknie, które się pojawi (albo w uprawnieniach panelu) i wpisz NIP ponownie.';
+  if (code === 'tool_error') return 'Przeglądarka nie otworzyła rejestru: ' + String(e.message || '').slice(0, 140);
+  return 'Nie udało się pobrać danych z rejestrów' + (code ? ' (' + code + ')' : '') + '.';
+}
+
+/* wpisuje dane z rejestru w puste pola formularza */
+function fillFromCompany(prefix, c) {
+  const set = (id, v) => { const el = $('#' + prefix + '-' + id); if (el && v && !el.value.trim()) { el.value = v; el.classList.add('autofilled'); } };
+  set('company', c.name);
+  set('phone', c.phone);
+  set('email', c.email);
+  set('name', c.owner);
+  const box = $('#' + prefix + '-companybox');
+  if (box) box.innerHTML = companyKv(c);
+}
+function companyKv(c) {
+  if (!c) return '';
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  return `<dl class="kv">${row('Nazwa', esc(c.name || ''))}${row('Adres', esc(c.address || ''))}${row('NIP', esc(nipFmt(c.nip || '')))}${row('REGON', esc(c.regon || ''))}${row('KRS', esc(c.krs || ''))}${row('Forma', esc(c.form || ''))}
+    ${c.statusVat ? `<dt>Status VAT</dt><dd><span class="pill ${c.statusVat === 'Czynny' ? 'good' : 'warn'}">${esc(c.statusVat)}</span></dd>` : ''}${row('Status', esc(c.status || ''))}${row('Od', esc(c.startDate || c.registrationLegalDate || ''))}${row('PKD', esc(c.pkd || ''))}
+    ${row('Telefon', esc(c.phone || ''))}${row('E-mail', esc(c.email || ''))}${row('WWW', esc(c.www || ''))}${row('Kapitał', esc(c.capital || ''))}
+    ${c.representatives && c.representatives.length ? `<dt>Reprezentacja</dt><dd>${c.representatives.map(esc).join('<br>')}</dd>` : ''}
+    ${row('Źródło', esc((c.source || '') + (c.at ? ' · ' + fdate(c.at) : '')))}</dl>`;
+}
+
+/* zapis danych firmy w istniejącym leadzie */
+function applyCompanyToLead(id, c) {
+  const cur = D().leads[id]; if (!cur || !c) return;
+  const p = { companyData: c, updatedTs: new Date().toISOString() };
+  if (!cur.company && c.name) p.company = c.name;
+  if (!cur.phone && c.phone) p.phone = c.phone;
+  if (!cur.email && c.email) p.email = c.email;
+  const hist = (cur.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy (' + c.source + '): ' + c.name)); p.history = hist;
+  patch('leads', id, p);
+}
+
+/* reakcja na wpisanie NIP-u (formularz nowego leada „lf” albo karta kandydata „le”) */
+async function autoNip(prefix, leadId, force = false) {
+  const inp = $('#' + prefix + '-nip'); if (!inp) return;
+  const d = nipDigits(inp.value);
+  const st = $('#' + prefix + '-nip-st');
+  const say = (t, cls = '') => { const el = $('#' + prefix + '-nip-st'); if (el) { el.className = 'hint ' + cls; el.textContent = t; } };
+  if (d.length !== 10) { if (st) say(''); return; }
+  if (!nipValid(d)) { say('Błędny NIP – sprawdź cyfry', 'overdue'); return; }
+  if (leadId && !force) { const l = D().leads[leadId]; if (l && l.companyData && nipDigits(l.companyData.nip) === d) { say('NIP poprawny · dane firmy pobrane'); return; } }
+  if (!S.mcp) { say('NIP poprawny. Dane firmy pobiorą się same, gdy panel jest otwarty w aplikacji Claude na komputerze.'); return; }
+  if (REG.busy[d]) return;
+  REG.busy[d] = true;
+  say('Pobieram dane firmy z rejestrów…');
+  try {
+    const c = await registryLookup(d, s => say('Pobieram dane firmy: ' + s + '…'));
+    if (nipDigits(($('#' + prefix + '-nip') || {}).value) !== d) return;
+    if (!c) { say('Nie znaleziono firmy z tym NIP-em w rejestrach (może to nowa działalność).', 'warn'); return; }
+    REG.pending[prefix] = c;
+    if (leadId) applyCompanyToLead(leadId, c);
+    else fillFromCompany(prefix, c);
+    say('Uzupełniono z rejestru: ' + c.name, 'good');
+  } catch (e) {
+    REG.lastErr = regErrMsg(e);
+    say(REG.lastErr, 'overdue');
+  } finally { REG.busy[d] = false; }
 }
 
 /* ===== Analiza lokalizacji: popyt, przepustowość, konkurencja, rachunek, raport ===== */
@@ -2601,7 +3092,7 @@ function viewLocations() {
 function newLocation(leadId = '') {
   const l = leadId ? D().leads[leadId] : null;
   const x = clone(LOC_DEFAULTS);
-  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
+  Object.assign(x, { id: uid('loc'), leadId, name: l ? `${l.city || 'Lokalizacja'} – ${l.name}` : 'Nowa lokalizacja', city: l ? l.city : '', address: l ? (l.pointAddress || '') : '', region: l ? l.region : '', createdAt: todayISO(), updatedTs: new Date().toISOString() });
   put('locations', x.id, x);
   go('lok-' + x.id);
 }
@@ -2624,7 +3115,8 @@ function viewLocationEditor(id) {
       <label class="field"><span>Kandydat (lead)</span><select id="lo-leadId" data-loc="leadId">${opt('', '— brak —', L.leadId)}${leadsArr().sort((p, q) => (p.name || '').localeCompare(q.name || '', 'pl')).map(l => opt(l.id, l.name + (l.city ? ' – ' + l.city : ''), L.leadId)).join('')}</select></label>
       <label class="field span2"><span>Adres lokalu</span><input type="text" id="lo-address" data-loc="address" value="${esc(L.address)}" placeholder="ul. …, kod, miasto"></label>
       <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" value="${esc(L.city)}"></label>
-      <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select></label>
+      <label class="field"><span>Kod pocztowy</span><input type="text" id="lo-postal" data-loc="postalCode" value="${esc(L.postalCode || '')}" placeholder="uzupełni się sam" inputmode="numeric">${L.postalCode ? `<span class="hint">${L.postalVerified ? 'potwierdzony w Mapach Google' : 'szacunek – sprawdź'}</span>` : ''}</label>
+      <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select>${L.region && L.auto && L.auto.status === 'done' ? '<span class="hint">uzupełnione automatycznie</span>' : ''}</label>
     </div></div>
     <div class="card"><div class="cardhead"><h2>Okolica i popyt</h2>${S.sample ? `<button class="btn sm ${L.auto && L.auto.status === 'done' ? '' : 'primary'}" data-act="loc-autofill" data-id="${x.id}" ${L.city ? '' : 'disabled title="Wpisz najpierw miasto"'}>${ICONS.spark}${L.auto && L.auto.status === 'done' ? 'Uzupełnij ponownie' : 'Uzupełnij automatycznie'}</button>` : ''}</div>
       ${autoInfo(L)}<div class="formgrid">
@@ -2646,6 +3138,7 @@ function viewLocationEditor(id) {
     </div></div>
     ${revenueCard(x, r)}
     <div class="card"><div class="cardhead"><h2>Konkurencja w okolicy</h2><p>tylko punkty Epaka.pl i Pakersi do ok. 3 km</p></div>
+      ${L.compAuto && L.compAuto.forAddress && L.compAuto.forAddress !== [L.address, L.city].filter(Boolean).join(', ') ? `<div class="callout bad" style="margin-bottom:12px">Adres zmienił się po sprawdzeniu konkurencji (sprawdzono dla: ${esc(L.compAuto.forAddress)}). Poproś o ponowne sprawdzenie dla nowego adresu.</div>` : ''}
       ${L.compAuto ? `<div class="callout ${(L.competitors || []).filter(c => (COMP_TYPES[c.type] || {}).w > 0 && +c.dist <= 3000).length ? '' : 'good'}" style="margin-bottom:12px"><b>Sprawdzono automatycznie ${fdt(L.compAuto.at)}</b> · źródło: ${esc(L.compAuto.source || '')}<br><span class="small">${esc(L.compAuto.note || '')}</span></div>` : ''}
       ${(L.competitors || []).map((c, i) => `<div class="comprow">
         <input type="text" id="lc-name-${i}" data-comp="${i}" data-k="name" value="${esc(c.name)}" placeholder="Nazwa / adres" aria-label="Nazwa" title="${esc([c.address, c.source].filter(Boolean).join(' · '))}">
@@ -2684,7 +3177,7 @@ function viewLocationEditor(id) {
       <div class="statline" style="margin-top:8px"><span>Nakłady na start</span><b>${zl(r.startup)}</b></div>
       <div class="statline"><span>Zwrot nakładów (bazowy)</span><b>${r.payback ? fmt(r.payback, 1) + ' mies.' : 'brak przy obecnych założeniach'}</b></div>
       <div class="statline"><span>Próg rentowności</span><b>${r.breakEven ? fmt(r.breakEven) + ' paczek' : '—'}</b></div></div>
-    <div class="card"><div class="cardhead"><h2>Mapa konkurencji</h2><p>odległości w skali, kierunki umowne</p></div>${compRadar(r)}</div>
+    <div class="card"><div class="cardhead"><h2>Mapa konkurencji</h2><p>${L.mapImg ? 'promień 3 km · ' + esc(L.mapImg.source || 'OpenStreetMap') : 'odległości w skali, kierunki umowne'}</p></div>${L.mapImg ? mapBlock(L) : compRadar(r)}</div>
   </div>`;
   return head + `<div class="split">${form}${results}</div>`;
 }
@@ -2726,6 +3219,8 @@ function onLocInput(el) {
     if (el.type === 'number') v = el.value === '' ? '' : +el.value;
     if (v === 'true') v = true; else if (v === 'false') v = false;
     nx[k] = v;
+    if ((k === 'address' || k === 'city') && x[k] !== v) { nx.postalVerified = false; }
+    if (k === 'postalCode') nx.postalVerified = false;
   } else if (el.dataset.locA) { nx.a = { ...(nx.a || {}), [el.dataset.locA]: +el.value || 0 }; }
   else if (el.dataset.comp != null) {
     const i = +el.dataset.comp; const comps = (nx.competitors || []).slice();
@@ -2781,7 +3276,7 @@ function reportHTML(x, r, standalone = true) {
   <p class="small muted">Przepustowość: ${r.people} os. przy obsłudze, ${fmt(+L.hours)} godz. dziennie, ${fmt(+L.days)} dni w tygodniu, zaplecze ${fmt(+L.storage)} m². Wąskie gardło: ${esc(r.bottleneck)}. Uwzględniono też wydania paczek (${fmt(+L.rev.pickups || 0)} miesięcznie).</p>
   <h2>Konkurencja</h2>
   ${L.compAuto ? `<p class="small" style="margin:0 0 8px">${esc(L.compAuto.note || '')} <span class="muted">(źródło: ${esc(L.compAuto.source || '')}, ${esc(fdate(L.compAuto.at))})</span></p>` : ''}
-  <div class="two"><div>${radar.svg}${radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${esc(cp.name || '—')}${cp.address ? `<div class="small muted">${esc(cp.address)}</div>` : ''}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : `<p class="muted">${L.compAuto ? 'Brak punktów Epaka.pl i Pakersi w promieniu 3 km.' : 'Nie wprowadzono punktów konkurencji.'}</p>`}
+  <div class="two"><div>${L.mapImg ? `<img src="${esc(L.mapImg.url)}" alt="Mapa konkurencji" style="width:100%;border-radius:8px;display:block">` : radar.svg + radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${cp.no ? `<b>${cp.no}.</b> ` : ''}${esc(cp.name || '—')}${cp.address ? `<div class="small muted">${esc(cp.address)}</div>` : ''}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : `<p class="muted">${L.compAuto ? 'Brak punktów Epaka.pl i Pakersi w promieniu 3 km.' : 'Nie wprowadzono punktów konkurencji.'}</p>`}
   <p class="small muted">Jako konkurencję liczymy punkty pośredników kurierskich Epaka.pl i Pakersi. Inny punkt sieci ShipCenter nie powstanie bliżej niż ${o.ochrona} km.</p></div></div>
   <h2>Szacowany przychód punktu</h2>
   <table>${r.fin.base.lines.map(ln => { const it = REV_ITEMS.find(i => i.k === ln.k); return `<tr><td>${esc(ln.n)}</td><td class="small muted">${fmt(ln.count)} / mies. × ${zl(+L.a[it.p], ln.k === 'pickups' ? 2 : 0)}</td><td class="r">${zl(ln.revenue)}</td></tr>`; }).join('')}<tr><td><b>Razem</b></td><td class="small muted">w skali roku ok. ${zl(r.fin.base.revenue * 12)}</td><td class="r"><b>${zl(r.fin.base.revenue)}</b></td></tr></table>
@@ -2929,13 +3424,16 @@ function openReportMailModal(id) {
         <label class="field full"><span>Temat</span><input type="text" id="rm-subj" value="${esc(out.subject)}"></label>
         <label class="field full"><span>Treść</span><textarea id="rm-body" rows="13">${esc(body)}</textarea></label>
       </div>
-      <div class="row"><button type="button" class="btn primary sm" id="rm-pdf">${ICONS.down}Pobierz PDF (załącznik)</button><button type="button" class="btn sm" id="rm-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="rm-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="rm-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
-      <p class="note">Dlaczego PDF, a nie HTML w treści: Gmail i Outlook wycinają style i wykresy z HTML-a, a załączniki .html bywają oznaczane jako podejrzane. PDF wygląda u kandydata tak samo jak w podglądzie. Panel nie wysyła maili sam – wyślij ze skrzynki ${esc(offer().email)}.</p>
+      <div class="row"><button type="button" class="btn primary sm" id="rm-pdf">${ICONS.down}Pobierz PDF (załącznik)</button><button type="button" class="btn primary sm" id="rm-copy-html">${ICONS.copy}Kopiuj e-mail z formatowaniem</button><button type="button" class="btn sm" id="rm-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="rm-copy-body">${ICONS.copy}Kopiuj sam tekst</button><a class="btn sm" id="rm-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
+      ${emailPreviewBlock('rm-prev')}
+      <p class="note">Pełny raport idzie jako PDF w załączniku (wygląda u kandydata tak samo jak w podglądzie). Treść maila skopiuj z formatowaniem – z klikalnymi linkami i firmową stopką. Panel nie wysyła maili sam – wyślij ze skrzynki ${esc(offer().email)}.</p>
     </div>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="rm-save">Zapisz jako wysłany</button></div>`, { wide: true });
   const href = () => `mailto:${encodeURIComponent($('#rm-to').value)}?subject=${encodeURIComponent($('#rm-subj').value)}&body=${encodeURIComponent($('#rm-body').value)}`;
   const upd = () => { $('#rm-open').href = href(); };
-  upd(); ['rm-to', 'rm-subj', 'rm-body'].forEach(i => { $('#' + i).oninput = upd; });
+  const prev = () => { const pv = $('#rm-prev'); if (pv) pv.innerHTML = emailHtml($('#rm-body').value, l, true); };
+  upd(); prev(); ['rm-to', 'rm-subj', 'rm-body'].forEach(i => { $('#' + i).oninput = () => { upd(); prev(); }; });
+  $('#rm-copy-html').onclick = () => copyEmailHtml(emailHtml($('#rm-body').value, l, false), $('#rm-body').value);
   $('#rm-copy-to').onclick = () => copyText($('#rm-to').value);
   $('#rm-copy-subj').onclick = () => copyText($('#rm-subj').value);
   $('#rm-copy-body').onclick = () => copyText($('#rm-body').value);
@@ -2978,7 +3476,7 @@ async function autoFillLocation(id, btn) {
   const key = [x.address, x.city].filter(Boolean).join(', ');
   AUTO_BUSY[id] = true; scheduleRender();
   const prompt = `Jesteś analitykiem lokalizacji sieci ShipCenter (punkty nadawcze paczek) w Polsce. Dla adresu "${key}"${x.region ? ' (województwo ' + x.region + ')' : ''} ustal dane o okolicy na podstawie swojej wiedzy: dane GUS o mieście i dzielnicach, charakter dzielnicy i ulicy (centrum, osiedle bloków, domy jednorodzinne, strefa przemysłowa, galeria, dworzec). Zwróć wyłącznie obiekt JSON z polami:
-{"city": "nazwa miasta", "region": "województwo małymi literami, np. śląskie", "cityPop": liczba mieszkańców miasta lub gminy, "cityAreaKm2": powierzchnia miasta w km2, "district": "dzielnica lub pusty tekst", "catchment": mieszkańcy w promieniu ok. 1,5 km od adresu (gęstość dzielnicy razy ok. 7 km2, nie więcej niż cityPop), "type": jedno z "ulica" | "osiedle" | "galeria" | "park" | "biznes" | "wezel" (ulica = ulica handlowa lub centrum, park = park handlowy lub przy markecie, biznes = strefa biznesowa lub przemysłowa, wezel = dworzec lub węzeł komunikacyjny), "traffic": szacowany ruch pieszy przy lokalu w osobach na dzień (deptak dużego miasta 5000-15000, ulica handlowa 2000-5000, osiedle 500-1500, strefa przemysłowa 200-600), "parking": "brak" | "ograniczony" | "dobry", "firms": szacowana liczba firm w promieniu 3 km regularnie wysyłających paczki (około 1-1,5% podmiotów REGON w tym obszarze, minimum 10), "confidence": "niska" | "średnia" | "wysoka", "notes": "2-3 zdania po polsku: skąd liczby i co jest niepewne, np. czy taka ulica istnieje w tym mieście"}
+{"city": "nazwa miasta", "region": "województwo małymi literami, np. śląskie", "postalCode": "kod pocztowy w formacie 00-000 dla tej ulicy i numeru (jeśli nie masz pewności – kod najbardziej prawdopodobny dla tej ulicy)", "cityPop": liczba mieszkańców miasta lub gminy, "cityAreaKm2": powierzchnia miasta w km2, "district": "dzielnica lub pusty tekst", "catchment": mieszkańcy w promieniu ok. 1,5 km od adresu (gęstość dzielnicy razy ok. 7 km2, nie więcej niż cityPop), "type": jedno z "ulica" | "osiedle" | "galeria" | "park" | "biznes" | "wezel" (ulica = ulica handlowa lub centrum, park = park handlowy lub przy markecie, biznes = strefa biznesowa lub przemysłowa, wezel = dworzec lub węzeł komunikacyjny), "traffic": szacowany ruch pieszy przy lokalu w osobach na dzień (deptak dużego miasta 5000-15000, ulica handlowa 2000-5000, osiedle 500-1500, strefa przemysłowa 200-600), "parking": "brak" | "ograniczony" | "dobry", "firms": szacowana liczba firm w promieniu 3 km regularnie wysyłających paczki (około 1-1,5% podmiotów REGON w tym obszarze, minimum 10), "confidence": "niska" | "średnia" | "wysoka", "notes": "2-3 zdania po polsku: skąd liczby i co jest niepewne, np. czy taka ulica istnieje w tym mieście"}
 Liczby podawaj jako liczby całkowite. Jeśli nie znasz ulicy, oprzyj się na mieście, napisz to w notes i ustaw confidence na "niska".`;
   try {
     const r = await S.sample.json(prompt, { modelTier: 'default' });
@@ -2992,10 +3490,12 @@ Liczby podawaj jako liczby całkowite. Jeśli nie znasz ulicy, oprzyj się na mi
     if (['brak', 'ograniczony', 'dobry'].includes(r.parking)) p.parking = r.parking;
     const firms = num(r.firms, 1, 20000); if (firms) p.firms = firms;
     const reg = String(r.region || '').toLowerCase().replace('województwo', '').trim();
-    if (REGIONS.includes(reg) && !cur.region) p.region = reg;
+    if (REGIONS.includes(reg)) p.region = reg;
+    const pc = String(r.postalCode || '').match(/\d{2}-\d{3}/);
+    if (pc && !cur.postalVerified) { p.postalCode = pc[0]; p.postalVerified = false; }
     if (r.city && !cur.city) p.city = String(r.city);
     p.auto = { status: 'done', at: nowLocal(), forAddress: key, confidence: ['niska', 'średnia', 'wysoka'].includes(r.confidence) ? r.confidence : 'średnia', notes: String(r.notes || '').slice(0, 600) + (r.district ? ` Dzielnica: ${r.district}.` : '') + (r.cityAreaKm2 ? ` Powierzchnia miasta ok. ${fmt(+r.cityAreaKm2)} km².` : ''), source: 'Źródło: wiedza Claude (dane GUS i charakter okolicy, bez wyszukiwania na żywo).' };
-    if (reg && cur.region && REGIONS.includes(reg) && reg !== cur.region) p.auto.notes += ` Uwaga: adres wskazuje na województwo ${reg}, a w analizie wpisano ${cur.region}.`;
+    if (reg && cur.region && REGIONS.includes(reg) && reg !== cur.region) p.auto.notes += ` Województwo zmieniono z „${cur.region}” na „${reg}” zgodnie z adresem.`;
     await patch('locations', id, p);
     toast('Uzupełniono dane o okolicy');
   } catch (e) {
@@ -3036,6 +3536,14 @@ function onRevInput(el, final) {
   if (final) { scheduleRender(); debounce('loc-save-' + id, () => { const cur = D().locations[id]; if (cur) put('locations', id, cur); }, 600); }
 }
 
+function mapBlock(L) {
+  const list = (L.competitors || []).filter(c => c.no).sort((a, b) => a.no - b.no);
+  const col = { pakersi: 'var(--s7)', epaka: 'var(--s1)', sc: 'var(--s8)' };
+  return `<img src="${esc(L.mapImg.url)}" alt="Mapa: lokal, promień 3 km i punkty konkurencji" style="width:100%;border-radius:10px;display:block;border:1px solid var(--line)">
+    ${list.length ? `<div class="stack" style="gap:6px;margin-top:10px">${list.map(c => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:50%;background:${col[c.type] || 'var(--muted)'};color:#fff;font-size:.75rem;font-weight:700;display:grid;place-items:center">${c.no}</span><span class="small"><b>${esc(c.name || '')}</b> · ${fmt(+c.dist)} m<br><span class="muted">${esc(c.address || '')}</span></span></div>`).join('')}</div>` : '<p class="note" style="margin-top:8px">Brak punktów Epaka.pl, Pakersi i ShipCenter w promieniu 3 km.</p>'}
+    <p class="tiny muted" style="margin-top:6px">Mapa z ${fdate(L.mapImg.at)} · © OpenStreetMap contributors</p>`;
+}
+
 /* ===== Import, eksport (CSV / XLSX), ustawienia, dane podglądowe ===== */
 
 const LEAD_FIELDS = [
@@ -3045,6 +3553,8 @@ const LEAD_FIELDS = [
   { k: 'phone', n: 'Telefon', keys: ['telefon', 'tel', 'phone', 'phone number', 'phone_number', 'numer telefonu', 'nr telefonu', 'komórka'] },
   { k: 'email', n: 'E-mail', keys: ['email', 'e-mail', 'mail', 'adres e-mail', 'adres email'] },
   { k: 'city', n: 'Miasto', keys: ['miasto', 'city', 'miejscowość', 'miejscowosc', 'lokalizacja', 'location'] },
+  { k: 'pointAddress', n: 'Adres planowanego punktu', keys: ['adres', 'adres punktu', 'adres lokalu', 'ulica', 'address', 'street'] },
+  { k: 'nip', n: 'NIP', keys: ['nip', 'tax id', 'vat id'] },
   { k: 'region', n: 'Województwo', keys: ['województwo', 'wojewodztwo', 'region', 'state', 'woj'] },
   { k: 'source', n: 'Źródło', keys: ['źródło', 'zrodlo', 'source', 'kanał', 'kanal', 'utm_source', 'platform', 'platforma'] },
   { k: 'owner', n: 'Opiekun', keys: ['opiekun', 'owner', 'handlowiec', 'przypisany', 'assigned'] },
@@ -3223,7 +3733,7 @@ async function runImport(btn) {
 function leadRowsForExport(list) {
   return list.map(l => ({
     'Kod': leadCode(l.id), 'Imię i nazwisko': l.name || '', 'Firma': l.company || '', 'Telefon': l.phone || '', 'E-mail': l.email || '',
-    'Miasto': l.city || '', 'Województwo': l.region || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
+    'Miasto': l.city || '', 'Adres punktu': l.pointAddress || '', 'Województwo': l.region || '', 'NIP': l.nip || '', 'Firma (rejestr)': (l.companyData || {}).name || '', 'Adres firmy': (l.companyData || {}).address || '', 'REGON': (l.companyData || {}).regon || '', 'KRS': (l.companyData || {}).krs || '', 'Źródło': SOURCE_MAP[l.source]?.n || l.source || '', 'Opiekun': memberName(l.ownerId),
     'Etap': STAGES[stageIdx(l)].n, 'Status kontaktu': STATUS_MAP[l.status]?.n || '', 'Powód utraty': l.lostReason || '',
     'Model': modelName(modelOf(l)), 'Pakiet': l.pkg ? l.pkg.toUpperCase() : '', 'Pierwsza rozmowa': l.firstCallAt || '', 'Prezentacja wysłana': l.presentationAt || '', 'Kapitał (zł)': l.capital ? +l.capital : '', 'Lokal': ({ ma: 'ma lokal', szuka: 'szuka', nie: 'brak' })[l.hasPremises] || '',
     'Kolejny kontakt': l.nextTask || '', 'Termin kontaktu': l.nextTaskDate || '', 'Godzina': l.nextTaskTime || '', 'Spotkanie': l.meetingAt ? l.meetingAt.replace('T', ' ') : '', 'Forma spotkania': l.meetingType || '',
@@ -3333,7 +3843,8 @@ function viewSettings() {
       ${f('email', 'E-mail działu franczyzy', 'email')}${f('telefon', 'Telefon', 'tel')}${f('www', 'Strona', 'text')}${f('adres', 'Adres centrali', 'text')}
       ${f('linkKalkulator', 'Link do kalkulatora franczyzy', 'url')}${f('smsPodpis', 'Podpis w SMS', 'text')}
       ${f('linkPrezentacja', 'Link do prezentacji – franczyza', 'url', 'np. PDF na Dysku Google; puste = prezentacja w załączniku')}${f('linkPrezentacjaShipPoint', 'Link do prezentacji – Ship Point', 'url')}
-      ${f('linkSpotkanie', 'Link do kalendarza spotkań', 'url', 'np. Calendly, Google Kalendarz')}${f('linkWebinar', 'Link do zapisów na webinar', 'url')}
+      ${f('linkUmowaFranczyza', 'Link do wzoru umowy franczyzowej z OWU (PDF)', 'url', 'Dysk Google: Udostępnij → „Każdy, kto ma link” → Kopiuj link')}${f('linkUmowaPartner', 'Link do wzoru umowy Partner / Ship Point (PDF)', 'url')}
+      ${f('linkSpotkanie', 'Link do kalendarza spotkań', 'url', 'np. Calendly, Google Kalendarz')}${f('linkMeet', 'Domyślny link Google Meet', 'url', 'gdy opiekun nie ma własnego pokoju Meet')}${f('linkWebinar', 'Link do zapisów na webinar', 'url')}
     </div>
     <div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="offer-reset">Przywróć wartości domyślne</button><span class="note">Zmiany zapisują się automatycznie po opuszczeniu pola.</span></div></div>`;
   const dataCard = `<div class="card"><div class="cardhead"><h2>Dane</h2></div>
@@ -3350,13 +3861,14 @@ function openMemberModal(m = null) {
       <label class="field"><span>Rola</span><select id="mf-role">${ROLES.map(r => opt(r, r, m.role)).join('')}</select></label>
       <label class="field"><span>Telefon</span><input type="tel" id="mf-phone" value="${esc(m.phone)}"></label>
       <label class="field"><span>E-mail</span><input type="email" id="mf-email" value="${esc(m.email)}"></label>
+      <label class="field full"><span>Stały link Google Meet (opcjonalnie)</span><input type="url" id="mf-meet" value="${esc(m.meetLink || '')}" placeholder="https://meet.google.com/abc-defg-hij"><span class="hint">Wstawi się sam przy spotkaniach online tej osoby. Stały pokój: utwórz w Kalendarzu Google wydarzenie cykliczne z Google Meet i skopiuj jego link.</span></label>
       <div class="field full"><span>Regiony (do automatycznego przypisywania leadów)</span><div class="row">${REGIONS.map((r, i) => `<label class="chk small"><input type="checkbox" id="mf-reg-${i}" value="${esc(r)}" ${(m.regions || []).includes(r) ? 'checked' : ''}>${esc(r)}</label>`).join('')}</div></div>
     </div></form>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="mf-save">Zapisz</button></div>`);
   const save = () => {
     const name = $('#mf-name').value.trim();
     if (!name) { toast('Wpisz imię i nazwisko.', 'bad'); return; }
-    put('team', m.id, { ...m, name, role: $('#mf-role').value, phone: $('#mf-phone').value.trim(), email: $('#mf-email').value.trim(), regions: REGIONS.filter((r, i) => $('#mf-reg-' + i).checked) });
+    put('team', m.id, { ...m, name, role: $('#mf-role').value, phone: $('#mf-phone').value.trim(), email: $('#mf-email').value.trim(), meetLink: $('#mf-meet').value.trim(), regions: REGIONS.filter((r, i) => $('#mf-reg-' + i).checked) });
     closeModal(); toast('Zapisano');
   };
   $('#mf-save').onclick = save;
@@ -3474,6 +3986,11 @@ function handleAction(act, el, e) {
     case 'contract-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Umowa podpisana (Autenti)', { by: myMemberId() || L.ownerId || '' })); patch('leads', id, { contractSignedAt: todayISO(), status: 'pozyskany', stageDates: { ...(L.stageDates || {}), umowa: (L.stageDates || {}).umowa || todayISO() }, history: hist, nextTask: '', nextTaskDate: '', updatedTs: new Date().toISOString() }); toast('Umowa podpisana – zaplanuj szkolenie w centrali'); } return;
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
+    case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'contract-pdf': downloadContract(el.dataset.file); return;
+    case 'meet-use': if (L) { const link = meetLinkFor(L); if (link) { patch('leads', id, { meetingPlace: link, updatedTs: new Date().toISOString() }); setTimeout(() => syncReminders(id, 'spotkanie'), 300); } } return;
+    case 'meet-confirm': if (L) openMailModal(L, 'email_potwierdzenie'); return;
+    case 'sms-remind': if (L) openSmsReminderModal(L, el.dataset.topic || 'spotkanie', el.dataset.sms || ''); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
     case 'sms-cancel': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'anulowany' }); return; }
     case 'me-bind': { if (!S.userId) { toast('Nie udało się ustalić Twojego konta – otwórz panel w claude.ai po zalogowaniu.', 'bad'); return; } Object.values(D().team).filter(m => m.userId === S.userId && m.id !== id).forEach(m => patch('team', m.id, { userId: '' })); patch('team', id, { userId: S.userId }); S.ui.cOwner = null; toast('Zapamiętano: to Ty'); return; }
@@ -3511,6 +4028,7 @@ function handleAction(act, el, e) {
     case 'tpl': S.msg.tpl = el.dataset.k; S.ui.aiText = ''; scheduleRender(); return;
     case 'copy-subject': copyText((S.ui.msgOut || {}).subject || ''); return;
     case 'copy-msg': copyText((S.ui.msgOut || {}).body || ''); return;
+    case 'copy-msg-html': { const b = (S.ui.msgOut || {}).body || ''; copyEmailHtml(emailHtml(b, S.msg.leadId ? D().leads[S.msg.leadId] : null, false), b); return; }
     case 'copy-ai': copyText(S.ui.aiText || ''); return;
     case 'ai-clear': S.ui.aiText = ''; scheduleRender(); return;
     case 'ai-rewrite': aiRewrite(el); return;
@@ -3561,6 +4079,7 @@ document.addEventListener('input', e => {
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
   if (el.dataset.rev) { onRevInput(el, false); return; }
+  if (el.dataset.nipAuto === 'lf') { debounce('nip-lf', () => autoNip('lf'), 500); return; }
   if (el.dataset.locComment) { const id = el.dataset.locComment; const v = el.value; debounce('loc-comment', () => patch('locations', id, { aiComment: v }), 900); return; }
 });
 

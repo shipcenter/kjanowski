@@ -9,7 +9,7 @@ Klucz API:
     – skrypt nie musi go znać, proxy dokleja go do zapytań;
   - lokalnie / na serwerze: zmienna GOOGLE_MAPS_API_KEY (np. z pliku .env, patrz .env.example).
 
-Konkurencja to wyłącznie punkty Epaka.pl i Pakersi (oraz inne punkty ShipCenter – ochrona 3 km).
+Konkurencja to wyłącznie punkty Epaka.pl i zwykłe punkty Pakersi (bez „Pakersi Przy Okazji”) oraz inne punkty ShipCenter – ochrona 3 km.
 Bez klucza Google skrypt korzysta z OpenStreetMap (dane częściowe).
 
 Wynik (JSON): współrzędne i adres, lista konkurencji z typem i odległością w metrach,
@@ -59,6 +59,10 @@ def addr_key(addr):
 def dedupe(comps, center_addr):
     cp = postal(center_addr)
     out, seen = [], set()
+    # „Pakersi Przy Okazji” (punkty partnerskie w sklepach) nie są konkurencją – pomijamy je
+    # razem z innymi wpisami pod tym samym adresem (np. DHL Service Point w tym samym sklepie)
+    pz = {addr_key(c.get('address')) for c in comps if 'przy okazji' in (c.get('name') or '').lower()}
+    comps = [c for c in comps if not (c['type'] == 'pakersi' and ('przy okazji' in (c.get('name') or '').lower() or addr_key(c.get('address')) in pz))]
     for c in sorted(comps, key=lambda c: c['dist']):
         pc = postal(c.get('address'))
         if cp and pc and pc[0] != cp[0]:
@@ -169,7 +173,8 @@ def analyze(address, radius=3000):
             if not typ:
                 continue
             comps.append({'name': name, 'type': typ, 'dist': int(round(dist / 10.0) * 10), 'strength': STRENGTH.get(typ, 3),
-                          'address': p.get('formattedAddress', ''), 'placeId': pid, 'source': 'Google Maps'})
+                          'address': p.get('formattedAddress', ''), 'placeId': pid, 'source': 'Google Maps',
+                          'lat': loc['latitude'], 'lng': loc['longitude']})
     comps = dedupe(comps, g['formattedAddress'])
     d = density(center)
     loc_type = 'galeria' if d['mall150'] else ('ulica' if d['poi300'] >= 15 else 'osiedle')
@@ -220,8 +225,9 @@ def analyze_osm(address, radius=3000):
                 continue
             a2 = p.get('address', {})
             addr = ', '.join(x for x in [' '.join(y for y in (a2.get('road', ''), a2.get('house_number', '')) if y), a2.get('city') or a2.get('town') or a2.get('village') or ''] if x)
-            comps.append({'name': name, 'type': typ, 'dist': int(round(dist / 10.0) * 10), 'strength': STRENGTH.get(typ, 3), 'address': addr, 'source': 'OpenStreetMap'})
-    comps.sort(key=lambda c: c['dist'])
+            comps.append({'name': name, 'type': typ, 'dist': int(round(dist / 10.0) * 10), 'strength': STRENGTH.get(typ, 3), 'address': addr, 'source': 'OpenStreetMap',
+                          'lat': float(p['lat']), 'lng': float(p['lon'])})
+    comps = dedupe(comps, g0.get('display_name', ''))
     return {'address': address, 'geo': {'lat': center[0], 'lng': center[1], 'formattedAddress': g0.get('display_name', ''), 'city': city, 'region': region},
             'radius': radius, 'competitors': comps, 'source': 'OpenStreetMap (Nominatim) – dane mogą być niepełne', 'at': time.strftime('%Y-%m-%dT%H:%M:%S')}
 

@@ -90,7 +90,7 @@ function handleAction(act, el, e) {
     }
     // lokalizacje
     case 'loc-del': { const x = D().locations[id]; if (x) confirmBox('Usunąć analizę?', `Usuniesz analizę <b>${esc(x.name)}</b>.`, 'Usuń', () => { remove('locations', id); go('lokalizacje'); }); return; }
-    case 'comp-add': { const x = D().locations[S.route.id]; if (!x) return; put('locations', x.id, { ...x, competitors: [...(x.competitors || []), { name: '', type: 'automat', dist: 300, strength: 3 }], updatedTs: new Date().toISOString() }); return; }
+    case 'comp-add': { const x = D().locations[S.route.id]; if (!x) return; put('locations', x.id, { ...x, competitors: [...(x.competitors || []), { name: '', type: 'epaka', dist: 500, strength: 3 }], updatedTs: new Date().toISOString() }); return; }
     case 'comp-del': { const x = D().locations[S.route.id]; if (!x) return; const c = (x.competitors || []).slice(); c.splice(+el.dataset.i, 1); put('locations', x.id, { ...x, competitors: c, updatedTs: new Date().toISOString() }); return; }
     case 'loc-ai': locAiComment(id, el); return;
     case 'loc-ai-clear': patch('locations', id, { aiComment: '' }); return;
@@ -98,6 +98,7 @@ function handleAction(act, el, e) {
     case 'report-xlsx': exportLocationXLSX(id); return;
     case 'report-pdf': downloadReportPdf(id, el); return;
     case 'loc-autofill': autoFillLocation(id, el); return;
+    case 'rev-auto': { const x = D().locations[id]; if (x) put('locations', id, { ...x, rev: { ...LOC_DEFAULTS.rev, ...(x.rev || {}), parcels: null }, updatedTs: new Date().toISOString() }); return; }
     case 'report-mail': openReportMailModal(id); return;
     case 'report-html': { const x = D().locations[id]; if (!x) return; const doc = reportHTML(x, analyzeLocation(x), true); offerDownload(`raport-lokalizacji-${slug(x.city || x.name)}.html`, doc, doc); return; }
     // zespół i ustawienia
@@ -126,12 +127,14 @@ document.addEventListener('input', e => {
   const el = e.target;
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
+  if (el.dataset.rev) { onRevInput(el, false); return; }
   if (el.dataset.locComment) { const id = el.dataset.locComment; const v = el.value; debounce('loc-comment', () => patch('locations', id, { aiComment: v }), 900); return; }
 });
 
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
+  if (el.dataset.rev) { onRevInput(el, true); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }
   if (el.closest && el.closest('#lead-edit')) { saveLeadEdit(); return; }
   if (el.dataset.msg) {

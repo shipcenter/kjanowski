@@ -406,3 +406,23 @@ details.adv[open] summary { margin-bottom: 10px; }
 .integr:last-child { border-bottom: none; }
 .integr .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-wash); color: var(--accent); display: grid; place-items: center; }
 .integr .ic svg { width: 18px; height: 18px; }
+
+/* Przychód punktu – suwaki jak w kalkulatorze shipcenter.pl */
+.revgrid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1180px) { .revgrid { grid-template-columns: minmax(0, 1fr); } }
+.revrow { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.revrow:first-child { padding-top: 0; }
+.revrow .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.revrow .badge { background: var(--accent-wash); color: var(--accent-ink); border-radius: 999px; padding: 3px 10px; font-weight: 600; font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.revrow input[type=range] { margin-top: 10px; }
+.revrow .mm { display: flex; justify-content: space-between; gap: 8px; font-size: .72rem; color: var(--muted); }
+.revbox { background: #111827; color: #f9fafb; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 110px; }
+.revbox .revlbl { font-size: .7rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #fb923c; }
+.revbox .revbig { font-size: 2.2rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.revbox .revbig small { font-size: .9rem; font-weight: 500; color: #9ca3af; }
+.revbox p { color: #d1d5db; font-size: .86rem; }
+.revbox b { color: #fff; }
+.revbox .rline { display: flex; flex-direction: column; gap: 5px; font-size: .86rem; }
+.revbox .rbar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+.revbox .rbar i { display: block; height: 100%; border-radius: 3px; background: #ea580c; }
+.revbox a { color: #fb923c; }

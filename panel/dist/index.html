@@ -411,6 +411,26 @@ details.adv[open] summary { margin-bottom: 10px; }
 .integr:last-child { border-bottom: none; }
 .integr .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-wash); color: var(--accent); display: grid; place-items: center; }
 .integr .ic svg { width: 18px; height: 18px; }
+
+/* Przychód punktu – suwaki jak w kalkulatorze shipcenter.pl */
+.revgrid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1180px) { .revgrid { grid-template-columns: minmax(0, 1fr); } }
+.revrow { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.revrow:first-child { padding-top: 0; }
+.revrow .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.revrow .badge { background: var(--accent-wash); color: var(--accent-ink); border-radius: 999px; padding: 3px 10px; font-weight: 600; font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.revrow input[type=range] { margin-top: 10px; }
+.revrow .mm { display: flex; justify-content: space-between; gap: 8px; font-size: .72rem; color: var(--muted); }
+.revbox { background: #111827; color: #f9fafb; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 110px; }
+.revbox .revlbl { font-size: .7rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #fb923c; }
+.revbox .revbig { font-size: 2.2rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.revbox .revbig small { font-size: .9rem; font-weight: 500; color: #9ca3af; }
+.revbox p { color: #d1d5db; font-size: .86rem; }
+.revbox b { color: #fff; }
+.revbox .rline { display: flex; flex-direction: column; gap: 5px; font-size: .86rem; }
+.revbox .rbar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+.revbox .rbar i { display: block; height: 100%; border-radius: 3px; background: #ea580c; }
+.revbox a { color: #fb923c; }
 </style>
 <header class="appbar">
   <div class="wrap">
@@ -2308,24 +2328,34 @@ const LOC_TYPES = {
   wezel: { n: 'Dworzec / węzeł komunikacyjny', ind: 1.1, biz: 0.9 }
 };
 const COMP_TYPES = {
-  multi: { n: 'Punkt nadań wielu przewoźników', w: 1.0 },
-  sc: { n: 'Inny punkt Ship Center', w: 1.2 },
-  poczta: { n: 'Placówka Poczty Polskiej', w: 0.5 },
-  kurier: { n: 'Oddział / terminal kuriera', w: 0.4 },
-  pudo: { n: 'Punkt odbioru w sklepie (Żabka, Orlen…)', w: 0.3 },
-  paczkopunkt: { n: 'PaczkoPunkt InPost', w: 0.3 },
-  automat: { n: 'Paczkomat / automat', w: 0.15 }
+  epaka: { n: 'Punkt Epaka.pl', w: 1.0 },
+  pakersi: { n: 'Punkt Pakersi', w: 1.0 },
+  sc: { n: 'Inny punkt ShipCenter', w: 1.2 },
+  // dawne typy – nie są liczone jako konkurencja
+  multi: { n: 'Inny punkt (nie liczony)', w: 0, legacy: true }, poczta: { n: 'Poczta (nie liczona)', w: 0, legacy: true }, kurier: { n: 'Oddział kuriera (nie liczony)', w: 0, legacy: true },
+  pudo: { n: 'Punkt odbioru (nie liczony)', w: 0, legacy: true }, paczkopunkt: { n: 'PaczkoPunkt (nie liczony)', w: 0, legacy: true }, automat: { n: 'Paczkomat (nie liczony)', w: 0, legacy: true }
 };
 const LOC_DEFAULTS = {
   name: '', leadId: '', address: '', city: '', region: '', cityPop: 60000, catchment: 12000, type: 'ulica', traffic: 2000, visibility: 3, parking: 'ograniczony',
   firms: 40, area: 30, storage: 8, rent: 2500, media: 450, stations: 1, staff: 0, ownerWorks: true, staffCost: 0, hours: 9, days: 5,
-  inpost: false, inpostParcels: 600, competitors: [],
-  a: { indivRate: 0.25, capture: 0.06, bizShare: 0.15, bizAvg: 60, margin: 9, avgValue: 22, inpostFee: 0.7, minPerParcel: 4, storagePerM2: 20, fitout: 15000, signage: 4000, depositMonths: 2, other: 400 }
+  competitors: [],
+  rev: { parcels: null, pickups: 300, stamps: 30, print: 20, packing: 80 },
+  a: { indivRate: 0.25, capture: 0.06, bizShare: 0.15, bizAvg: 60, minPerParcel: 4, storagePerM2: 20, fitout: 3000, other: 400,
+    pParcel: 25, pPickup: 1.2, pStamp: 47, pPrint: 120, pPacking: 25, mParcel: 36, mPickup: 90, mStamp: 50, mPrint: 40, mPacking: 50 }
 };
+/* Przychód jak w kalkulatorze shipcenter.pl/franczyza/prezentacja: liczba × średnia cena */
+const REV_ITEMS = [
+  { k: 'parcels', n: 'Przesyłki', d: 'Krajowe, zagraniczne i paletowe', p: 'pParcel', m: 'mParcel', max: 3000, step: 10 },
+  { k: 'pickups', n: 'Wydania paczek', d: 'Paczki odbierane przez klientów w punkcie', p: 'pPickup', m: 'mPickup', max: 1000, step: 10 },
+  { k: 'stamps', n: 'Pieczątki', d: 'Liczba sprzedanych pieczątek', p: 'pStamp', m: 'mStamp', max: 100, step: 1 },
+  { k: 'print', n: 'Poligrafia', d: 'Liczba zamówień poligraficznych', p: 'pPrint', m: 'mPrint', max: 120, step: 1 },
+  { k: 'packing', n: 'Pakowanie i materiały', d: 'Liczba usług lub zakupów materiałów', p: 'pPacking', m: 'mPacking', max: 300, step: 1 }
+];
+const COMP_CAP = { automat: 1.0, pudo: 1.0, paczkopunkt: 0.6, poczta: 1.2, kurier: 0.8 };
 const decay = d => d <= 300 ? 1 : d <= 800 ? 0.7 : d <= 1500 ? 0.45 : d <= 3000 ? 0.2 : 0;
 
 function analyzeLocation(x) {
-  const L = { ...LOC_DEFAULTS, ...x, a: { ...LOC_DEFAULTS.a, ...(x.a || {}) } };
+  const L = { ...LOC_DEFAULTS, ...x, a: { ...LOC_DEFAULTS.a, ...(x.a || {}) }, rev: { ...LOC_DEFAULTS.rev, ...(x.rev || {}) } };
   const a = L.a;
   const o = offer();
   const lt = LOC_TYPES[L.type] || LOC_TYPES.ulica;
@@ -2334,14 +2364,16 @@ function analyzeLocation(x) {
   const visF = 0.85 + 0.075 * ((+L.visibility || 3) - 1);
   const parkF = ({ brak: 0.9, ograniczony: 1.0, dobry: 1.1 })[L.parking] || 1;
   const comps = (L.competitors || []).filter(c => c && (+c.dist >= 0));
-  let ci = 0, scConflict = null;
+  let scConflict = null;
+  const byType = {};
   const compRows = comps.map(c => {
     const t = COMP_TYPES[c.type] || COMP_TYPES.multi;
     const contrib = t.w * decay(+c.dist || 0) * ((+c.strength || 3) / 3);
-    ci += contrib;
+    byType[c.type] = (byType[c.type] || 0) + contrib;
     if (c.type === 'sc' && +c.dist < o.ochrona * 1000) scConflict = c;
     return { ...c, tn: t.n, contrib };
   });
+  const ci = Object.entries(byType).reduce((s2, [k, v]) => s2 + (COMP_CAP[k] != null ? Math.min(COMP_CAP[k], v) : v), 0);
   const compF = 1 / (1 + 0.4 * ci);
   const indiv = pop * a.indivRate * a.capture * lt.ind * trafficF * visF * compF;
   const biz = (+L.firms || 0) * a.bizShare * a.bizAvg * lt.biz * parkF * Math.sqrt(compF);
@@ -2354,28 +2386,31 @@ function analyzeLocation(x) {
   const serviceCap = people * (+L.hours || 8) * daysM * perHour;
   const storageCap = (+L.storage || 0) * a.storagePerM2 * daysM;
   const capacity = Math.max(1, storageCap > 0 ? Math.min(serviceCap, storageCap) : serviceCap);
-  const inpostLoad = L.inpost ? (+L.inpostParcels || 0) * 0.4 : 0;
-  const util = (base + inpostLoad) / capacity;
-  const utilPeak = (demand.peak + inpostLoad) / capacity;
+  const P = L.rev.parcels != null && L.rev.parcels !== '' ? Math.max(0, +L.rev.parcels) : Math.round(base);
+  const pickupLoad = (+L.rev.pickups || 0) * 0.4;
+  const util = (P + pickupLoad) / capacity;
+  const utilPeak = (P * 1.35 + pickupLoad) / capacity;
   const bottleneck = storageCap > 0 && storageCap < serviceCap ? 'zaplecze (miejsce na paczki)' : 'obsługa przy ladzie';
-  // rachunek
+  // rachunek: przychód jak w kalkulatorze ShipCenter, koszt usług wg marż z założeń
   const scen = mult => {
-    const parcels = base * mult;
-    const revenue = parcels * a.margin + (L.inpost ? (+L.inpostParcels || 0) * Math.max(0, a.inpostFee - 0.1) : 0);
+    const lines = REV_ITEMS.map(it => { const n = (it.k === 'parcels' ? P : (+L.rev[it.k] || 0)) * mult; const rev = n * (+a[it.p] || 0); return { k: it.k, n: it.n, count: n, revenue: rev, cogs: rev * (1 - clamp((+a[it.m] || 0) / 100, 0, 1)) }; });
+    const parcels = lines[0].count;
+    const revenue = sum(lines, l => l.revenue), cogs = sum(lines, l => l.cogs);
     const fee = parcels >= o.progRabatu ? 0 : o.oplataMies;
-    const p24 = parcels * a.avgValue * o.prowizjaP24 / 100;
+    const p24 = lines[0].revenue * o.prowizjaP24 / 100;
     const staff = (+L.staff || 0) * (+L.staffCost || 0);
-    const costs = (+L.rent || 0) + (+L.media || 0) + staff + fee + p24 + a.other;
-    return { parcels, revenue, fee, p24, staff, costs, profit: revenue - costs };
+    const fixed = (+L.rent || 0) + (+L.media || 0) + staff + fee + p24 + (+a.other || 0);
+    return { parcels, lines, revenue, cogs, fee, p24, staff, fixed, costs: cogs + fixed, margin: revenue - cogs, profit: revenue - cogs - fixed };
   };
   const fin = { low: scen(0.7), base: scen(1), high: scen(1.3) };
-  const startup = o.licencja + a.fitout + a.signage + (+L.rent || 0) * a.depositMonths;
+  const startup = o.licencja + (+a.fitout || 0);
   const payback = fin.base.profit > 0 ? startup / fin.base.profit : null;
-  const fixed = (+L.rent || 0) + (+L.media || 0) + (+L.staff || 0) * (+L.staffCost || 0) + a.other + o.oplataMies;
-  const unit = a.margin - a.avgValue * o.prowizjaP24 / 100;
-  const breakEven = unit > 0 ? fixed / unit : null;
+  const fixedNoFee = (+L.rent || 0) + (+L.media || 0) + (+L.staff || 0) * (+L.staffCost || 0) + (+a.other || 0) + o.oplataMies;
+  const extrasMargin = sum(fin.base.lines.slice(1), l => l.revenue - l.cogs);
+  const unit = (+a.pParcel || 0) * ((+a.mParcel || 0) / 100) - (+a.pParcel || 0) * o.prowizjaP24 / 100;
+  const breakEven = unit > 0 ? Math.max(0, (fixedNoFee - extrasMargin) / unit) : null;
   // ocena
-  const sDemand = clamp(base / 800 * 100, 0, 100);
+  const sDemand = clamp(P / 800 * 100, 0, 100);
   const sComp = clamp(compF * 100, 0, 100);
   const siteProd = (lt.ind * 0.6 + lt.biz * 0.4) * trafficF * visF * parkF;
   const sSite = clamp((siteProd - 0.7) / 0.7 * 100, 0, 100);
@@ -2384,15 +2419,15 @@ function analyzeLocation(x) {
   let score = Math.round(0.3 * sDemand + 0.2 * sComp + 0.2 * sSite + 0.2 * sEcon + 0.1 * sCap);
   const flags = [];
   if (scConflict) { flags.push({ k: 'bad', t: `Inny punkt Ship Center w odległości ${fmt(+scConflict.dist)} m – narusza ochronę ${o.ochrona} km (OWU § 6 ust. 4).` }); score = Math.min(score, 35); }
-  if (base < o.minPaczek) flags.push({ k: 'bad', t: `Szacowany popyt (${fmt(base)} paczek) jest poniżej minimum ${o.minPaczek} paczek miesięcznie z umowy.` });
-  if (base >= o.progRabatu) flags.push({ k: 'good', t: `Popyt powyżej ${o.progRabatu} paczek – w scenariuszu bazowym opłata miesięczna ${o.oplataMies} zł spada do 0 zł.` });
+  if (P < o.minPaczek) flags.push({ k: 'bad', t: `Przyjęta liczba przesyłek (${fmt(P)}) jest poniżej minimum ${o.minPaczek} paczek miesięcznie z umowy.` });
+  if (P >= o.progRabatu) flags.push({ k: 'good', t: `Ponad ${o.progRabatu} przesyłek miesięcznie – opłata miesięczna ${o.oplataMies} zł spada do 0 zł.` });
   if (utilPeak > 1) flags.push({ k: 'warn', t: `W szczycie sezonu (listopad–grudzień) obciążenie sięga ${pct(utilPeak)} przepustowości – wąskie gardło: ${bottleneck}. Zaplanuj dodatkową osobę lub większe zaplecze.` });
   else if (util < 0.35) flags.push({ k: 'warn', t: `Wykorzystanie przepustowości tylko ${pct(util)} – lokal lub obsada może być przewymiarowana względem popytu.` });
   if (fin.base.profit < 0) flags.push({ k: 'warn', t: `W scenariuszu bazowym koszty przewyższają przychód o ${zl(-fin.base.profit)} miesięcznie. Próg rentowności: ok. ${fmt(breakEven)} paczek.` });
-  if (ci > 2) flags.push({ k: 'warn', t: `Wysoka presja konkurencji (indeks ${fmt(ci, 2)}) – kluczowe będzie pozyskanie klientów biznesowych.` });
+  if (ci > 1.2) flags.push({ k: 'warn', t: `Blisko działają punkty Epaka.pl / Pakersi (indeks ${fmt(ci, 2)}) – kluczowe będzie wyróżnienie się obsługą i pozyskanie klientów biznesowych.` });
   const grade = score >= 75 ? 'A' : score >= 60 ? 'B' : score >= 45 ? 'C' : 'D';
   const gradeText = { A: 'Rekomendowana', B: 'Dobra – warunkowo', C: 'Do weryfikacji', D: 'Nie rekomendowana' }[grade];
-  return { L, pop, trafficF, visF, parkF, lt, ci, compF, compRows, compCount: compRows.filter(c => +c.dist <= 3000).length, demand, capacity, serviceCap, storageCap, util, utilPeak, bottleneck, people, fin, startup, payback, breakEven, subs: { sDemand, sComp, sSite, sEcon, sCap }, score, grade, gradeText, flags, scConflict };
+  return { L, P, pop, trafficF, visF, parkF, lt, ci, compF, compRows, compCount: compRows.filter(c => +c.dist <= 3000).length, demand, capacity, serviceCap, storageCap, util, utilPeak, bottleneck, people, fin, startup, payback, breakEven, subs: { sDemand, sComp, sSite, sEcon, sCap }, score, grade, gradeText, flags, scConflict };
 }
 
 function viewLocations() {
@@ -2458,25 +2493,24 @@ function viewLocationEditor(id) {
       <label class="field"><span>Właściciel pracuje w punkcie</span><select id="lo-ownerWorks" data-loc="ownerWorks">${opt('true', 'tak', String(L.ownerWorks))}${opt('false', 'nie', String(L.ownerWorks))}</select></label>
       ${num('staffCost', 'Koszt pracownika / mies. (zł)', 100, 'całkowity koszt pracodawcy')}
       ${num('hours', 'Godziny otwarcia dziennie', 1, 'min. 7 godz. (OWU)', 1)}${num('days', 'Dni otwarcia w tygodniu', 1, 'min. 5 (OWU)', 1)}
-      <label class="field"><span>PaczkoPunkt InPost w lokalu</span><select id="lo-inpost" data-loc="inpost">${opt('false', 'nie', String(L.inpost))}${opt('true', 'tak', String(L.inpost))}</select></label>
-      ${L.inpost ? num('inpostParcels', 'Paczki InPost (przyjęcia + wydania) / mies.', 50) : ''}
     </div></div>
-    <div class="card"><div class="cardhead"><h2>Konkurencja w okolicy</h2><p>Wpisz punkty do ok. 3 km</p></div>
+    ${revenueCard(x, r)}
+    <div class="card"><div class="cardhead"><h2>Konkurencja w okolicy</h2><p>tylko punkty Epaka.pl i Pakersi do ok. 3 km</p></div>
       ${(L.competitors || []).map((c, i) => `<div class="comprow">
         <input type="text" id="lc-name-${i}" data-comp="${i}" data-k="name" value="${esc(c.name)}" placeholder="Nazwa / adres" aria-label="Nazwa">
-        <select id="lc-type-${i}" data-comp="${i}" data-k="type" aria-label="Typ">${Object.entries(COMP_TYPES).map(([k, t]) => opt(k, t.n, c.type)).join('')}</select>
+        <select id="lc-type-${i}" data-comp="${i}" data-k="type" aria-label="Typ">${Object.entries(COMP_TYPES).filter(([k, t]) => !t.legacy || k === c.type).map(([k, t]) => opt(k, t.n, c.type)).join('')}</select>
         <input type="number" id="lc-dist-${i}" data-comp="${i}" data-k="dist" value="${esc(c.dist)}" min="0" step="50" placeholder="m" aria-label="Odległość w metrach">
         <select id="lc-str-${i}" data-comp="${i}" data-k="strength" aria-label="Siła" title="Siła konkurenta">${[1, 2, 3, 4, 5].map(v => opt(v, 'siła ' + v, c.strength || 3)).join('')}</select>
         <button class="iconbtn" data-act="comp-del" data-i="${i}" aria-label="Usuń">${ICONS.x}</button></div>`).join('')}
-      <div class="row" style="margin-top:6px"><button class="btn sm" data-act="comp-add">${ICONS.plus}Dodaj punkt konkurencji</button>
-      <span class="note">Odległość w metrach. Siła: 1 – słaby (krótkie godziny, 1 przewoźnik), 5 – bardzo silny.</span></div></div>
+      <div class="row" style="margin-top:6px"><button class="btn sm" data-act="comp-add">${ICONS.plus}Dodaj punkt Epaka / Pakersi</button>
+      <span class="note">Odległość w metrach. Siła: 1 – słaby punkt (krótkie godziny, mało usług), 5 – bardzo silny. Paczkomaty, poczta i punkty odbioru nie są liczone jako konkurencja.</span></div></div>
     <details class="adv card"><summary>Założenia modelu (dla zaawansowanych)</summary><div class="formgrid">
       ${anum('indivRate', 'Nadania osób prywatnych (paczek/mieszkańca/mies.)', 0.01)}${anum('capture', 'Udział punktu w nadaniach prywatnych', 0.005, 'przed korektą o konkurencję')}
       ${anum('bizShare', 'Odsetek firm, które zaczną nadawać w punkcie', 0.01)}${anum('bizAvg', 'Średnio paczek na firmę / mies.', 5)}
-      ${anum('margin', 'Średni zarobek punktu na przesyłce (zł netto)', 0.5, 'dostosuj do aktualnego cennika')}${anum('avgValue', 'Średnia wartość transakcji (zł)', 1, 'do prowizji płatności online')}
-      ${anum('inpostFee', 'Przychód z paczki PaczkoPunktu (zł)', 0.05, 'przed opłatą 0,10 zł dla Ship Center')}${anum('minPerParcel', 'Czas obsługi nadania (min)', 0.5)}
-      ${anum('storagePerM2', 'Paczek dziennie na 1 m² zaplecza', 1)}${anum('fitout', 'Sprzęt (FLEX) i adaptacja lokalu (zł)', 500, 'przy wariancie SMART tylko adaptacja')}
-      ${anum('signage', 'Oznakowanie (zł)', 500)}${anum('depositMonths', 'Kaucja (krotność czynszu)', 1)}${anum('other', 'Inne koszty / mies. (zł)', 50, 'internet, materiały, księgowość')}
+      ${anum('minPerParcel', 'Czas obsługi nadania (min)', 0.5)}${anum('storagePerM2', 'Paczek dziennie na 1 m² zaplecza', 1)}
+      ${anum('fitout', 'Sprzęt i adaptacja lokalu (zł)', 500)}${anum('other', 'Inne koszty / mies. (zł)', 50, 'internet, księgowość')}
+      ${REV_ITEMS.map(it => anum(it.p, it.n + ' – średnia cena (zł)', it.k === 'pickups' ? 0.1 : 1)).join('')}
+      ${REV_ITEMS.map(it => anum(it.m, it.n + ' – marża punktu (%)', 1, 'część przychodu, która zostaje w punkcie po zakupie usługi')).join('')}
     </div></details>
   </div>`;
 
@@ -2494,7 +2528,7 @@ function viewLocationEditor(id) {
       <div class="statline"><span>Wykorzystanie / w szczycie sezonu</span><b>${pct(r.util)} / ${pct(r.utilPeak)}</b></div></div>
     <div class="card"><div class="cardhead"><h2>Rachunek miesięczny</h2><p>scenariusze</p></div>
       <div class="tablewrap"><table class="t"><thead><tr><th></th><th class="r">Pesym.</th><th class="r">Bazowy</th><th class="r">Optym.</th></tr></thead><tbody>
-      ${[['Paczki', 'parcels', v => fmt(v)], ['Przychód', 'revenue', zl], ['Koszty', 'costs', zl], ['Wynik', 'profit', v => `<b class="${v < 0 ? 'overdue' : ''}">${zl(v)}</b>`]].map(([n, k, f]) => `<tr><td>${n}</td>${['low', 'base', 'high'].map(s => `<td class="r">${f(r.fin[s][k])}</td>`).join('')}</tr>`).join('')}
+      ${[['Przesyłki', 'parcels', v => fmt(v)], ['Przychód', 'revenue', zl], ['Koszt usług', 'cogs', zl], ['Koszty stałe', 'fixed', zl], ['Wynik', 'profit', v => `<b class="${v < 0 ? 'overdue' : ''}">${zl(v)}</b>`]].map(([n, k, f]) => `<tr><td>${n}</td>${['low', 'base', 'high'].map(s => `<td class="r">${f(r.fin[s][k])}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div>
       <div class="statline" style="margin-top:8px"><span>Nakłady na start</span><b>${zl(r.startup)}</b></div>
       <div class="statline"><span>Zwrot nakładów (bazowy)</span><b>${r.payback ? fmt(r.payback, 1) + ' mies.' : 'brak przy obecnych założeniach'}</b></div>
@@ -2593,16 +2627,19 @@ function reportHTML(x, r, standalone = true) {
   ${x.aiComment ? `<h2>Komentarz analityka</h2><div class="comment">${esc(x.aiComment)}</div>` : ''}
   <h2>Popyt i przepustowość</h2>
   <table>${capRow('Popyt – osoby prywatne', r.demand.indiv, '#2a78d6')}${capRow('Popyt – firmy', r.demand.biz, '#1baf7a')}${capRow('Popyt łącznie (bazowy)', r.demand.base, '#13294b')}${capRow('Szczyt sezonu (XI–XII)', r.demand.peak, '#eb6834')}${capRow('Przepustowość', r.capacity, '#6f7c91')}</table>
-  <p class="small muted">Przepustowość: ${r.people} os. przy obsłudze, ${fmt(+L.hours)} godz. dziennie, ${fmt(+L.days)} dni w tygodniu, zaplecze ${fmt(+L.storage)} m². Wąskie gardło: ${esc(r.bottleneck)}.${L.inpost ? ` Uwzględniono obsługę PaczkoPunktu InPost (${fmt(+L.inpostParcels)} paczek/mies.).` : ''}</p>
+  <p class="small muted">Przepustowość: ${r.people} os. przy obsłudze, ${fmt(+L.hours)} godz. dziennie, ${fmt(+L.days)} dni w tygodniu, zaplecze ${fmt(+L.storage)} m². Wąskie gardło: ${esc(r.bottleneck)}. Uwzględniono też wydania paczek (${fmt(+L.rev.pickups || 0)} miesięcznie).</p>
   <h2>Konkurencja</h2>
   <div class="two"><div>${radar.svg}${radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${esc(cp.name || '—')}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nie wprowadzono punktów konkurencji.</p>'}
-  <p class="small muted">Punkt Ship Center obsługuje wielu przewoźników, palety i przesyłki zagraniczne – automaty i punkty odbioru w sklepach konkurują głównie o proste nadania prywatne. Inny punkt sieci nie powstanie bliżej niż ${o.ochrona} km.</p></div></div>
+  <p class="small muted">Jako konkurencję liczymy punkty pośredników kurierskich Epaka.pl i Pakersi. Inny punkt sieci ShipCenter nie powstanie bliżej niż ${o.ochrona} km.</p></div></div>
+  <h2>Szacowany przychód punktu</h2>
+  <table>${r.fin.base.lines.map(ln => { const it = REV_ITEMS.find(i => i.k === ln.k); return `<tr><td>${esc(ln.n)}</td><td class="small muted">${fmt(ln.count)} / mies. × ${zl(+L.a[it.p], ln.k === 'pickups' ? 2 : 0)}</td><td class="r">${zl(ln.revenue)}</td></tr>`; }).join('')}<tr><td><b>Razem</b></td><td class="small muted">w skali roku ok. ${zl(r.fin.base.revenue * 12)}</td><td class="r"><b>${zl(r.fin.base.revenue)}</b></td></tr></table>
+  <p class="small muted">Szacunkowy przychód ze sprzedaży przed odjęciem kosztów usług i prowadzenia punktu – liczony jak w kalkulatorze na shipcenter.pl. Wynik zależy od liczby i rodzaju zamówień i nie jest gwarantowany.</p>
   <h2>Rachunek miesięczny – scenariusze</h2>
   <table><thead><tr><th></th><th class="r">Pesymistyczny</th><th class="r">Bazowy</th><th class="r">Optymistyczny</th></tr></thead><tbody>
-  ${[['Nadane paczki', 'parcels', v => fmt(v)], ['Przychód z nadań', 'revenue', zl], ['Czynsz i media', null, () => zl((+L.rent || 0) + (+L.media || 0))], ['Wynagrodzenia', 'staff', zl], ['Opłata miesięczna Ship Center', 'fee', zl], ['Płatności online (' + fmt(o.prowizjaP24, 1) + '%)', 'p24', zl], ['Pozostałe koszty', null, () => zl(L.a.other)], ['Wynik przed podatkiem', 'profit', v => `<b>${zl(v)}</b>`]].map(([n, k, f]) => `<tr><td>${n}</td>${['low', 'base', 'high'].map(s => `<td class="r">${k ? f(r.fin[s][k]) : f()}</td>`).join('')}</tr>`).join('')}
+  ${[['Przesyłki', 'parcels', v => fmt(v)], ['Przychód ze sprzedaży', 'revenue', zl], ['Koszt usług (zakup przesyłek, druku, materiałów)', 'cogs', zl], ['Czynsz i media', null, () => zl((+L.rent || 0) + (+L.media || 0))], ['Wynagrodzenia', 'staff', zl], ['Opłata miesięczna Ship Center', 'fee', zl], ['Płatności online (' + fmt(o.prowizjaP24, 1) + '%)', 'p24', zl], ['Pozostałe koszty', null, () => zl(L.a.other)], ['Wynik przed podatkiem', 'profit', v => `<b>${zl(v)}</b>`]].map(([n, k, f]) => `<tr><td>${n}</td>${['low', 'base', 'high'].map(s => `<td class="r">${k ? f(r.fin[s][k]) : f()}</td>`).join('')}</tr>`).join('')}
   </tbody></table>
-  <p class="small muted">Wynagrodzenia obejmują zatrudnionych pracowników${L.ownerWorks ? '; praca właściciela nie jest wliczona w koszty' : ''}. Średni zarobek na przesyłce: ${zl(L.a.margin, 2)} netto (założenie).</p>
-  <div class="two"><div><h2>Nakłady na start</h2><table>${row('Pakiet startowy SMART', zl(o.licencja))}${row('Sprzęt (FLEX) i adaptacja lokalu', zl(L.a.fitout))}${row('Oznakowanie lokalu', zl(L.a.signage))}${row('Kaucja za najem', zl((+L.rent || 0) * L.a.depositMonths))}${row('<b>Razem</b>', `<b>${zl(r.startup)}</b>`)}</table>
+  <p class="small muted">Wynagrodzenia obejmują zatrudnionych pracowników${L.ownerWorks ? '; praca właściciela nie jest wliczona w koszty' : ''}. Marża punktu (założenie): przesyłki ${fmt(+L.a.mParcel)}%, pieczątki ${fmt(+L.a.mStamp)}%, poligrafia ${fmt(+L.a.mPrint)}%, pakowanie ${fmt(+L.a.mPacking)}%.</p>
+  <div class="two"><div><h2>Nakłady na start</h2><table>${row('Pakiet startowy SMART', zl(o.licencja))}${row('Sprzęt i adaptacja lokalu', zl(L.a.fitout))}${row('<b>Razem</b>', `<b>${zl(r.startup)}</b>`)}</table>
   <p class="small muted">Próg rentowności: ok. ${r.breakEven ? fmt(r.breakEven) : '—'} paczek miesięcznie.</p></div>
   <div><h2>Warunki współpracy</h2><table>${row('Pakiet SMART (jednorazowo)', zl(o.licencja) + ' netto')}${row('Opłata miesięczna', '0 zł przy ponad ' + o.progRabatu + ' paczkach, inaczej ' + zl(o.oplataMies) + ' netto')}${row('Sprzęt FLEX', 'rabat do ' + (o.flexRabat || 15) + '%')}${row('Płatności online', fmt(o.prowizjaP24, 1) + '% transakcji')}${row('Szkolenie', esc(o.szkolenie))}${row('Uruchomienie punktu', esc(o.uruchomienie))}${row('Ochrona terytorialna', o.ochrona + ' km')}</table></div></div>
   <h2>Kolejne kroki</h2><ol><li>Omówienie raportu i pytań – rozmowa z opiekunem.</li><li>Weryfikacja lokalu (umowa najmu, witryna, zaplecze).</li><li>Oferta i projekt umowy franczyzowej z OWU.</li><li>Podpisanie umowy, szkolenie wstępne, uruchomienie punktu.</li></ol>
@@ -2652,7 +2689,7 @@ async function locAiComment(id, btn) {
   const prompt = `Jesteś analitykiem sieci franczyzowej Ship Center (punkty nadawcze paczek obsługujące wielu przewoźników). Napisz po polsku zwięzły komentarz (120–180 słów, 2–3 akapity, bez nagłówków i list) do raportu lokalizacji dla kandydata na franczyzobiorcę. Opieraj się wyłącznie na danych poniżej; nie wymyślaj liczb; nie obiecuj zarobków – zaznacz, że to szacunek. Wskaż mocne strony, ryzyka i 2 konkretne rekomendacje (np. obsada w szczycie, pozyskanie firm, negocjacja czynszu). Pisz w formie neutralnej (bez zwracania się per Pan/Pani).
 
 Dane: ${reportSummaryText(x, r)}
-Typ lokalizacji: ${r.lt.n}; ruch pieszy ${x.traffic} os./dzień; widoczność ${x.visibility}/5; parking ${x.parking}; firmy wysyłające w 3 km: ${x.firms}; czynsz ${x.rent} zł; obsada: ${r.people} os.; zaplecze ${x.storage} m²; PaczkoPunkt: ${x.inpost ? 'tak' : 'nie'}.
+Typ lokalizacji: ${r.lt.n}; ruch pieszy ${x.traffic} os./dzień; widoczność ${x.visibility}/5; parking ${x.parking}; firmy wysyłające w 3 km: ${x.firms}; czynsz ${x.rent} zł; obsada: ${r.people} os.; zaplecze ${x.storage} m²; przychód bazowy ${Math.round(r.fin.base.revenue)} zł/mies. (przesyłki ${r.P}, wydania ${r.L.rev.pickups}, pieczątki ${r.L.rev.stamps}, poligrafia ${r.L.rev.print}, pakowanie ${r.L.rev.packing}).
 Konkurenci: ${r.compRows.map(c => `${c.tn} ${c.dist} m (siła ${c.strength || 3})`).join('; ') || 'brak danych'}.`;
   btn.disabled = true; btn.textContent = 'Claude pisze…';
   try {
@@ -2815,6 +2852,36 @@ Liczby podawaj jako liczby całkowite. Jeśli nie znasz ulicy, oprzyj się na mi
     else if (code === 'rate_limited') toast('Za dużo zapytań do Claude – spróbuj za chwilę.', 'bad');
     else patch('locations', id, { auto: { status: 'error', at: nowLocal(), forAddress: key, error: (e && e.message) || 'brak odpowiedzi' } });
   } finally { delete AUTO_BUSY[id]; scheduleRender(); }
+}
+
+/* ---------- karta „Przychód punktu” z suwakami ---------- */
+function revenueCard(x, r) {
+  const L = r.L, base = r.fin.base;
+  const maxRev = Math.max(1, ...base.lines.map(l => l.revenue));
+  const rows = REV_ITEMS.map((it, i) => {
+    const val = it.k === 'parcels' ? r.P : (+L.rev[it.k] || 0);
+    const auto = it.k === 'parcels' && (L.rev.parcels == null || L.rev.parcels === '');
+    return `<div class="revrow"><div class="top"><div><b>${it.n}</b><div class="small muted">${it.d} · średnio ${zl(+L.a[it.p], it.k === 'pickups' ? 2 : 0)}</div></div><span class="badge" id="rv-n-${it.k}">${fmt(val)} / mies.</span></div>
+      <input type="range" id="rv-${it.k}" data-rev="${it.k}" min="0" max="${Math.max(it.max, val)}" step="${it.step}" value="${val}" aria-label="${it.n} miesięcznie">
+      <div class="mm"><span>0</span>${it.k === 'parcels' ? `<span>${auto ? 'szacunek popytu z analizy' : `szacunek z analizy: ${fmt(r.demand.base)} · <a data-act="rev-auto" data-id="${x.id}" style="cursor:pointer">przywróć</a>`}</span>` : ''}<span>${fmt(Math.max(it.max, val))} / mies.</span></div></div>`;
+  }).join('');
+  const lines = base.lines.map(l => `<div class="rline"><div class="row between"><span>${esc(l.n)}</span><b id="rv-r-${l.k}">${zl(l.revenue)}</b></div><div class="rbar"><i id="rv-b-${l.k}" style="width:${l.revenue / maxRev * 100}%"></i></div></div>`).join('');
+  return `<div class="card"><div class="cardhead"><h2>Przychód punktu</h2><p>jak w kalkulatorze na shipcenter.pl</p></div>
+    <div class="revgrid"><div>${rows}</div>
+    <div class="revbox"><span class="revlbl">Szacowany przychód punktu</span><div class="revbig"><span id="rv-total">${zl(base.revenue)}</span> <small>/ mies.</small></div><p>W skali roku to około <b id="rv-year">${zl(base.revenue * 12)}</b>.</p>${lines}</div></div>
+    <p class="note" style="margin-top:10px">Szacunkowy przychód ze sprzedaży przed odjęciem kosztów usług i prowadzenia punktu. Wynik zależy od liczby i rodzaju zamówień i nie jest gwarantowany. Ceny średnie i marże zmienisz w „Założeniach modelu”.</p></div>`;
+}
+function onRevInput(el, final) {
+  const id = S.route.id; const x = D().locations[id]; if (!x) return;
+  const nx = clone(x); nx.rev = { ...LOC_DEFAULTS.rev, ...(nx.rev || {}), [el.dataset.rev]: +el.value }; nx.updatedTs = new Date().toISOString();
+  D().locations[id] = nx;
+  const r = analyzeLocation(nx);
+  const b = $('#rv-n-' + el.dataset.rev); if (b) b.textContent = fmt(+el.value) + ' / mies.';
+  const maxRev = Math.max(1, ...r.fin.base.lines.map(l => l.revenue));
+  r.fin.base.lines.forEach(l => { const v = $('#rv-r-' + l.k); if (v) v.textContent = zl(l.revenue); const bar = $('#rv-b-' + l.k); if (bar) bar.style.width = (l.revenue / maxRev * 100) + '%'; });
+  const t = $('#rv-total'); if (t) t.textContent = zl(r.fin.base.revenue);
+  const yv = $('#rv-year'); if (yv) yv.textContent = zl(r.fin.base.revenue * 12);
+  if (final) { scheduleRender(); debounce('loc-save-' + id, () => { const cur = D().locations[id]; if (cur) put('locations', id, cur); }, 600); }
 }
 
 /* ===== Import, eksport (CSV / XLSX), ustawienia, dane podglądowe ===== */
@@ -3055,7 +3122,7 @@ function exportXLSX(onlyLeads = false) {
     XLSX.utils.book_append_sheet(wb, sheetFrom(Object.values(D().sms || {}).sort((x, y) => (x.createdTs || '').localeCompare(y.createdTs || '')).map(x => ({ 'Data': (x.createdTs || '').slice(0, 16).replace('T', ' '), 'Kandydat': x.leadName, 'Telefon': x.phone, 'Treść': x.text, 'Status': (SMS_STATUS[x.status] || [x.status])[0], 'Opiekun': memberName(x.ownerId) }))), 'SMS');
     const adsAll = Object.values(D().ads || {}).sort((x, y) => (x.date || '').localeCompare(y.date || ''));
     if (adsAll.length) XLSX.utils.book_append_sheet(wb, sheetFrom(adsAll.map(x => ({ 'Data': x.date, 'Kampania': x.campaign || '', 'Koszt (zł)': +x.cost || 0, 'Wyświetlenia': +x.impressions || 0, 'Kliknięcia': +x.clicks || 0, 'Konwersje': +x.conversions || 0 }))), 'Google Ads');
-    XLSX.utils.book_append_sheet(wb, sheetFrom(Object.values(D().locations).map(x => { const r = analyzeLocation(x); return { 'Analiza': x.name, 'Adres': x.address, 'Miasto': x.city, 'Województwo': x.region, 'Kandydat': x.leadId && D().leads[x.leadId] ? D().leads[x.leadId].name : '', 'Ocena': r.score, 'Klasa': r.grade, 'Werdykt': r.gradeText, 'Popyt (paczek/mies.)': Math.round(r.demand.base), 'Przepustowość': Math.round(r.capacity), 'Wykorzystanie %': Math.round(r.util * 100), 'Konkurenci do 3 km': r.compCount, 'Indeks konkurencji': Math.round(r.ci * 100) / 100, 'Wynik bazowy (zł/mies.)': Math.round(r.fin.base.profit), 'Nakłady na start (zł)': Math.round(r.startup), 'Zwrot (mies.)': r.payback ? Math.round(r.payback * 10) / 10 : '' }; })), 'Lokalizacje');
+    XLSX.utils.book_append_sheet(wb, sheetFrom(Object.values(D().locations).map(x => { const r = analyzeLocation(x); return { 'Analiza': x.name, 'Adres': x.address, 'Miasto': x.city, 'Województwo': x.region, 'Kandydat': x.leadId && D().leads[x.leadId] ? D().leads[x.leadId].name : '', 'Ocena': r.score, 'Klasa': r.grade, 'Werdykt': r.gradeText, 'Popyt (paczek/mies.)': Math.round(r.demand.base), 'Przepustowość': Math.round(r.capacity), 'Wykorzystanie %': Math.round(r.util * 100), 'Konkurenci do 3 km': r.compCount, 'Indeks konkurencji': Math.round(r.ci * 100) / 100, 'Przychód bazowy (zł/mies.)': Math.round(r.fin.base.revenue), 'Wynik bazowy (zł/mies.)': Math.round(r.fin.base.profit), 'Nakłady na start (zł)': Math.round(r.startup), 'Zwrot (mies.)': r.payback ? Math.round(r.payback * 10) / 10 : '' }; })), 'Lokalizacje');
     XLSX.utils.book_append_sheet(wb, sheetFrom(team().map(m => ({ 'Osoba': m.name, 'Rola': m.role || '', 'Regiony': (m.regions || []).join(', '), 'Telefon': m.phone || '', 'E-mail': m.email || '', 'Aktywne leady': all.filter(l => l.ownerId === m.id && isOpen(l)).length }))), 'Zespół');
   }
   offerDownload(`${onlyLeads ? 'leady' : 'panel'}-ship-center-${todayISO()}.xlsx`, xlsxBytes(wb));
@@ -3069,7 +3136,8 @@ function exportLocationXLSX(id) {
     ['Popyt – osoby prywatne (paczek/mies.)', Math.round(r.demand.indiv)], ['Popyt – firmy', Math.round(r.demand.biz)], ['Popyt bazowy', Math.round(r.demand.base)], ['Popyt – zakres', `${Math.round(r.demand.low)}–${Math.round(r.demand.high)}`], ['Szczyt sezonu', Math.round(r.demand.peak)],
     ['Przepustowość', Math.round(r.capacity)], ['Wykorzystanie', Math.round(r.util * 100) / 100], ['Wąskie gardło', r.bottleneck], [],
     ['Scenariusz', 'Pesymistyczny', 'Bazowy', 'Optymistyczny'],
-    ...[['Paczki', 'parcels'], ['Przychód', 'revenue'], ['Koszty', 'costs'], ['Wynik', 'profit']].map(([n, k]) => [n, ...['low', 'base', 'high'].map(s => Math.round(r.fin[s][k]))]),
+    ...[['Przesyłki', 'parcels'], ['Przychód', 'revenue'], ['Koszt usług', 'cogs'], ['Koszty stałe', 'fixed'], ['Wynik', 'profit']].map(([n, k]) => [n, ...['low', 'base', 'high'].map(s => Math.round(r.fin[s][k]))]),
+    [], ['Przychód (bazowy)', 'Liczba / mies.', 'Kwota (zł)'], ...r.fin.base.lines.map(l => [l.n, Math.round(l.count), Math.round(l.revenue)]),
     [], ['Nakłady na start', Math.round(r.startup)], ['Zwrot (mies.)', r.payback ? Math.round(r.payback * 10) / 10 : '—'], ['Próg rentowności (paczek)', r.breakEven ? Math.round(r.breakEven) : '—'], ['Opłata licencyjna', o.licencja], [],
     ['Konkurencja', 'Typ', 'Odległość (m)', 'Siła'], ...r.compRows.map(c => [c.name || '', c.tn, +c.dist, c.strength || 3]), [],
     ['Wnioski'], ...r.flags.map(f => [f.t])
@@ -3202,7 +3270,7 @@ function buildDemo() {
   for (let k = 0; k < 75; k++) { const dt = isoDate(addDays(new Date(), -k)); const cost = Math.round(380 + rnd() * 260); const clicks = Math.round(cost / (3.5 + rnd() * 2)); d.ads['demo-' + dt] = { id: 'demo-' + dt, date: dt, campaign: 'Franczyza – Search (przykład)', cost, clicks, impressions: clicks * Math.round(14 + rnd() * 10), conversions: Math.round(rnd() * 3 * 10) / 10 }; }
   const l0 = Object.values(d.leads).find(l => stageIdx(l) === 3) || Object.values(d.leads)[0];
   const loc = { ...clone(LOC_DEFAULTS), id: 'demo-loc1', name: `${l0.city} – ul. Przykładowa 12`, leadId: l0.id, address: 'ul. Przykładowa 12', city: l0.city, region: l0.region, cityPop: 135000, catchment: 15000, traffic: 2600, visibility: 4, parking: 'ograniczony', firms: 55, rent: 2600, createdAt: t,
-    competitors: [{ name: 'Paczkomat przy markecie', type: 'automat', dist: 150, strength: 3 }, { name: 'Paczkomat – parking', type: 'automat', dist: 420, strength: 3 }, { name: 'Żabka', type: 'pudo', dist: 260, strength: 2 }, { name: 'Poczta Polska UP 3', type: 'poczta', dist: 900, strength: 3 }, { name: 'Punkt nadań „Paczka Expres”', type: 'multi', dist: 1700, strength: 4 }, { name: 'Orlen – stacja', type: 'pudo', dist: 1100, strength: 2 }] };
+    competitors: [{ name: 'Punkt Epaka – sklep papierniczy (przykład)', type: 'epaka', dist: 650, strength: 3 }, { name: 'Pakersi – ul. Przykładowa 3 (przykład)', type: 'pakersi', dist: 1900, strength: 4 }] };
   d.locations[loc.id] = loc;
   return d;
 }
@@ -3299,7 +3367,7 @@ function handleAction(act, el, e) {
     }
     // lokalizacje
     case 'loc-del': { const x = D().locations[id]; if (x) confirmBox('Usunąć analizę?', `Usuniesz analizę <b>${esc(x.name)}</b>.`, 'Usuń', () => { remove('locations', id); go('lokalizacje'); }); return; }
-    case 'comp-add': { const x = D().locations[S.route.id]; if (!x) return; put('locations', x.id, { ...x, competitors: [...(x.competitors || []), { name: '', type: 'automat', dist: 300, strength: 3 }], updatedTs: new Date().toISOString() }); return; }
+    case 'comp-add': { const x = D().locations[S.route.id]; if (!x) return; put('locations', x.id, { ...x, competitors: [...(x.competitors || []), { name: '', type: 'epaka', dist: 500, strength: 3 }], updatedTs: new Date().toISOString() }); return; }
     case 'comp-del': { const x = D().locations[S.route.id]; if (!x) return; const c = (x.competitors || []).slice(); c.splice(+el.dataset.i, 1); put('locations', x.id, { ...x, competitors: c, updatedTs: new Date().toISOString() }); return; }
     case 'loc-ai': locAiComment(id, el); return;
     case 'loc-ai-clear': patch('locations', id, { aiComment: '' }); return;
@@ -3307,6 +3375,7 @@ function handleAction(act, el, e) {
     case 'report-xlsx': exportLocationXLSX(id); return;
     case 'report-pdf': downloadReportPdf(id, el); return;
     case 'loc-autofill': autoFillLocation(id, el); return;
+    case 'rev-auto': { const x = D().locations[id]; if (x) put('locations', id, { ...x, rev: { ...LOC_DEFAULTS.rev, ...(x.rev || {}), parcels: null }, updatedTs: new Date().toISOString() }); return; }
     case 'report-mail': openReportMailModal(id); return;
     case 'report-html': { const x = D().locations[id]; if (!x) return; const doc = reportHTML(x, analyzeLocation(x), true); offerDownload(`raport-lokalizacji-${slug(x.city || x.name)}.html`, doc, doc); return; }
     // zespół i ustawienia
@@ -3335,12 +3404,14 @@ document.addEventListener('input', e => {
   const el = e.target;
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
+  if (el.dataset.rev) { onRevInput(el, false); return; }
   if (el.dataset.locComment) { const id = el.dataset.locComment; const v = el.value; debounce('loc-comment', () => patch('locations', id, { aiComment: v }), 900); return; }
 });
 
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
+  if (el.dataset.rev) { onRevInput(el, true); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }
   if (el.closest && el.closest('#lead-edit')) { saveLeadEdit(); return; }
   if (el.dataset.msg) {

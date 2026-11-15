@@ -204,7 +204,7 @@ function viewLead(id) {
 `}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail do klienta</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button>${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button><button class="btn" data-act="meet-quick" data-id="${l.id}">${ICONS.calendar}Umów spotkanie</button><button class="btn" data-act="script-open" data-id="${l.id}">${ICONS.file}Skrypt rozmowy</button>${l.phone ? `<a class="btn ghost" href="https://wa.me/${fmtPhone(l.phone).replace(/[^0-9]/g, '')}" target="_blank" rel="noopener" title="Otwórz rozmowę w WhatsApp">${ICONS.sms}WhatsApp</a>` : ''}${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
@@ -254,7 +254,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}${isAdmin() ? 'Usuń leada' : 'Poproś o usunięcie'}</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
+  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${msgs}${handoff}${locCard}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {
@@ -590,4 +590,117 @@ async function autoGeo(prefix) {
   const guess = regionFromPostal(pc);
   if (guess) set(guess, '', `Z kodu pocztowego: ${guess}`);
   else if (city.trim()) say('Wybierz województwo ręcznie (lub wpisz kod pocztowy).');
+}
+
+/* skrypt rozmowy pod ręką – dopasowany do etapu leada */
+const SCRIPT_BY_STAGE = ['skrypt_pierwsza', 'skrypt_prezentacja', 'skrypt_obiekcje', 'skrypt_domkniecie', 'skrypt_domkniecie'];
+function openScript(l, key) {
+  const keys = Object.keys(TEMPLATES).filter(k => TEMPLATES[k].kind === 'Skrypt');
+  key = key || SCRIPT_BY_STAGE[stageIdx(l)] || keys[0];
+  const out = TEMPLATES[key].f(msgContext(l, l.form));
+  openModal(`<div class="mh"><h2>Skrypt: ${esc(TEMPLATES[key].n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="row" style="margin-bottom:10px">${keys.map(k => `<button class="btn sm ${k === key ? 'primary' : 'ghost'}" data-script-k="${k}">${esc(TEMPLATES[k].n)}</button>`).join('')}</div>
+      <div style="white-space:pre-wrap;font-size:.95rem;line-height:1.6;max-height:62vh;overflow:auto;border-top:1px solid var(--line);padding-top:12px">${esc(out.body)}</div></div>
+    <div class="mf">${l.phone ? `<a class="phonechip" href="${esc(telHref(l.phone))}">${ICONS.tel}<span>${esc(fmtPhone(l.phone))}</span></a>` : ''}<button class="btn" data-act="modal-close">Zamknij</button><button class="btn primary" id="sk-log">${ICONS.tel}Zapisz rozmowę</button></div>`, { wide: true });
+  $$('[data-script-k]').forEach(b => b.onclick = () => openScript(D().leads[l.id] || l, b.dataset.scriptK));
+  $('#sk-log').onclick = () => { closeModal(); setTimeout(() => openCallModal(D().leads[l.id] || l), 120); };
+}
+
+/* szybkie umawianie spotkania: termin, forma, link Meet, potwierdzenie i przypomnienie SMS */
+function openMeetQuick(l) {
+  const t = l.meetingAt || (isoDate(addDays(new Date(), 2)) + 'T12:00');
+  const type = l.meetingType || 'online';
+  openModal(`<div class="mh"><h2>Umów spotkanie – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <label class="field"><span>Termin</span><input type="datetime-local" id="mq-at" value="${esc(t)}"></label>
+      <label class="field"><span>Forma</span><select id="mq-type">${opt('online', 'Online (wideo)', type)}${opt('telefon', 'Telefon', type)}${opt('centrala', 'Centrala – Katowice', type)}${opt('lokal', 'W planowanym lokalu', type)}${opt('punkt', 'W działającym punkcie', type)}</select></label>
+      <label class="field full"><span id="mq-pl-l">Miejsce / link</span><input type="text" id="mq-place" value="${esc(l.meetingPlace || '')}"></label>
+      <label class="chk full"><input type="checkbox" id="mq-mail" ${l.email ? 'checked' : 'disabled'}> Po zapisaniu przygotuj e-mail z potwierdzeniem${l.email ? '' : ' (brak e-maila)'}</label>
+      <label class="chk full"><input type="checkbox" id="mq-sms" ${l.phone ? 'checked' : 'disabled'}> Przypomnienie SMS dzień wcześniej o 18:00${l.phone ? '' : ' (brak telefonu)'}</label>
+    </div></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="mq-save">Zapisz spotkanie</button></div>`);
+  const updPlace = () => {
+    const ty = $('#mq-type').value, pl = $('#mq-place');
+    $('#mq-pl-l').textContent = ty === 'online' ? 'Link do spotkania (Google Meet)' : ty === 'centrala' ? 'Adres' : 'Miejsce / link';
+    if (ty === 'online' && !pl.value && meetLinkFor(l)) pl.value = meetLinkFor(l);
+    if (ty === 'centrala' && !pl.value) pl.value = offer().adres;
+    pl.placeholder = ty === 'online' ? 'https://meet.google.com/… (nowe: meet.google.com/new)' : 'adres';
+  };
+  updPlace(); $('#mq-type').onchange = updPlace;
+  $('#mq-save').onclick = () => {
+    const at = $('#mq-at').value; if (!at) { toast('Wybierz termin spotkania.', 'bad'); return; }
+    const cur = D().leads[l.id]; if (!cur) return closeModal();
+    const p = { meetingAt: at, meetingType: $('#mq-type').value, meetingPlace: $('#mq-place').value.trim(), updatedTs: new Date().toISOString() };
+    if (!['pozyskany', 'czeka_umowa'].includes(cur.status)) p.status = 'umowione';
+    if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Spotkanie'; p.nextTaskDate = at.slice(0, 10); p.nextTaskTime = at.slice(11, 16); }
+    const hist = (cur.history || []).slice(); hist.push(histEntry('system', `Umówiono spotkanie: ${fdt(at)} (${p.meetingType})`)); p.history = hist;
+    patch('leads', l.id, p);
+    const wantMail = $('#mq-mail').checked, wantSms = $('#mq-sms').checked;
+    closeModal(); toast('Spotkanie: ' + fdt(at));
+    setTimeout(() => {
+      const c2 = D().leads[l.id]; if (!c2) return;
+      syncReminders(l.id, 'spotkanie');
+      if (wantSms && !remindersFor(l.id, 'spotkanie').length) {
+        const sendAt = reminderSendAt(at, 'dzien');
+        if (sendAt > nowLocal()) {
+          const sid = uid('sms');
+          put('sms', sid, { leadId: l.id, leadName: c2.name || '', phone: fmtPhone(c2.phone), text: smsReminderText(c2, 'spotkanie'), ownerId: c2.ownerId || '', status: 'zaplanowany', kind: 'przypomnienie', topic: 'spotkanie', when: 'dzien', sendAt, eventAt: at, custom: false, createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+          if (smsGatewayOn()) deliverSms(sid);
+        }
+      }
+      if (wantMail) openMailModal(c2, 'email_potwierdzenie');
+    }, 250);
+  };
+}
+
+/* zdjęcia lokalu kandydata (opcjonalnie) – pliki w magazynie panelu */
+function photosCard(l) {
+  const ph = l.photos || [];
+  const can = !!S.assets;
+  return `<div class="card"><div class="cardhead"><h2>Zdjęcia lokalu</h2><p>${ph.length ? ph.length + ' ' + (ph.length === 1 ? 'zdjęcie' : ph.length < 5 ? 'zdjęcia' : 'zdjęć') : 'opcjonalnie'}</p></div>
+    ${ph.length ? `<div class="photogrid">${ph.map((p, i) => `<button class="photo" data-act="photo-open" data-id="${l.id}" data-i="${i}" title="${esc(p.name || '')}"><img src="/_blob/${esc(p.id)}" alt="${esc(p.name || 'zdjęcie lokalu')}" loading="lazy"></button>`).join('')}</div>` : '<p class="small muted">Zdjęcia lokalu, który kandydat ma na oku – witryna, wnętrze, okolica. Przydają się przy analizie lokalizacji.</p>'}
+    ${can ? `<label class="btn sm" style="margin-top:10px;cursor:pointer">${ICONS.camera}Dodaj zdjęcia<input type="file" accept="image/*" multiple hidden data-photo-up="${l.id}"></label>` : '<p class="tiny muted" style="margin-top:8px">Dodawanie zdjęć jest dostępne dla osób z prawem edycji panelu.</p>'}
+  </div>`;
+}
+async function shrinkImage(file, max = 2000) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    if (k === 1 && file.size < 2.5 * 1024 * 1024) return file;
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(res => c.toBlob(b => res(b || file), 'image/jpeg', 0.85));
+  } catch (e) { return file; }
+}
+async function uploadPhotos(leadId, files) {
+  if (!S.assets) { toast('Dodawanie zdjęć jest niedostępne w tym widoku.', 'bad'); return; }
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if (!list.length) return;
+  toast(`Wysyłam zdjęcia (${list.length})…`);
+  const added = [];
+  for (const f of list) {
+    try {
+      const blob = await shrinkImage(f);
+      const r = await S.assets.upload(blob);
+      added.push({ id: r.id, name: f.name, at: new Date().toISOString(), by: myMemberId() || '' });
+    } catch (e) { toast('Nie udało się dodać ' + f.name + ': ' + ((e && (e.message || e.code)) || 'błąd'), 'bad'); }
+  }
+  const cur = D().leads[leadId]; if (!cur || !added.length) return;
+  patch('leads', leadId, { photos: [...(cur.photos || []), ...added], updatedTs: new Date().toISOString() });
+  toast(`Dodano zdjęcia: ${added.length}`);
+}
+function openPhoto(l, i) {
+  const ph = l.photos || []; const p = ph[i]; if (!p) return;
+  openModal(`<div class="mh"><h2>${esc(p.name || 'Zdjęcie lokalu')} <span class="tiny muted">${i + 1}/${ph.length}</span></h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb" style="text-align:center"><img src="/_blob/${esc(p.id)}" alt="${esc(p.name || '')}" style="max-width:100%;max-height:70vh;border-radius:10px"></div>
+    <div class="mf">${ph.length > 1 ? `<button class="btn" id="ph-prev">← Poprzednie</button><button class="btn" id="ph-next">Następne →</button>` : ''}<button class="btn danger" id="ph-del">${ICONS.trash}Usuń zdjęcie</button><button class="btn primary" data-act="modal-close">Zamknij</button></div>`, { wide: true });
+  const go2 = d => openPhoto(D().leads[l.id] || l, (i + d + ph.length) % ph.length);
+  if ($('#ph-prev')) { $('#ph-prev').onclick = () => go2(-1); $('#ph-next').onclick = () => go2(1); }
+  $('#ph-del').onclick = () => confirmBox('Usunąć zdjęcie?', 'Zdjęcie zniknie z karty leada.', 'Usuń', async () => {
+    const cur = D().leads[l.id]; if (!cur) return;
+    patch('leads', l.id, { photos: (cur.photos || []).filter(x => x.id !== p.id), updatedTs: new Date().toISOString() });
+    if (S.assets && isAdmin()) { try { await S.assets.delete(p.id); } catch (e) { } }
+    closeModal(); toast('Usunięto zdjęcie');
+  });
 }

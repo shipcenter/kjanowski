@@ -1575,7 +1575,7 @@ function leadFormFields(l, prefix = 'lf') {
     ${prefix === 'le' && modelOf(l) === 'shippoint' ? '' : addressFields(l, prefix)}
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
-    <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
+    <label class="field"><span>Model współpracy</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
     ${prefix === 'le' ? '' : `<label class="field"><span>Pakiet (franczyza)</span><select id="${prefix}-pkg">${opt('', 'jeszcze nie wiadomo', l.pkg)}${Object.entries(PACKAGES).map(([k, n]) => opt(k, n, l.pkg)).join('')}</select></label>`}
 
     <label class="field"><span>Lokal</span><select id="${prefix}-premises">${opt('', 'nie wiadomo', l.hasPremises)}${opt('ma', 'ma lokal', l.hasPremises)}${opt('szuka', 'szuka lokalu', l.hasPremises)}${opt('nie', 'nie ma i nie szuka', l.hasPremises)}</select></label>

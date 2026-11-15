@@ -68,6 +68,10 @@ function priceSettingsCard() {
       <label class="chk small"><input type="checkbox" data-setting-chk="priceShowCostPreview" ${settings().priceShowCostPreview ? 'checked' : ''}> pokazuj koszt zakupu także w cenniku poglądowym (domyślnie tylko w pełnym, po NDA)</label>` : `<div class="formgrid" style="margin-top:8px"><label class="field"><span>Przykładowa cena dla klienta: narzut %</span><input type="number" min="0" max="300" step="5" data-setting="priceMarkup" value="${esc(settings().priceMarkup || '')}" placeholder="0 = nie pokazuj"><span class="hint">Doda w PDF kolumny „przykładowa cena dla klienta” i „marża”. Lepiej: dodaj do pliku kolumnę „Cena bazowa netto”.</span></label></div>`}
     ${groups.length ? `<details class="adv" style="margin-top:8px"><summary>Usługi w cenniku poglądowym (${groups.filter(g => sel.has(plKey(g))).length} z ${groups.length})</summary>
       <div class="row" style="gap:4px 14px;margin-top:8px">${groups.map(g => `<label class="chk small"><input type="checkbox" data-pl-prev="${esc(plKey(g))}" ${sel.has(plKey(g)) ? 'checked' : ''}> ${esc(g.s)}${g.t === 'Paleta' ? ' (paleta)' : g.t === 'Koperta/list' ? ' (koperta)' : ''}</label>`).join('')}</div></details>` : ''}
+    <div class="sep"></div><h3 style="margin-bottom:6px">Umowa o zachowaniu poufności (NDA)</h3>
+    <div class="formgrid"><label class="field"><span>Kara umowna za naruszenie (zł)</span><input type="number" min="0" step="1000" data-setting="ndaPenalty" value="${esc(settings().ndaPenalty || '')}" placeholder="0 = bez kary umownej"></label>
+      <label class="field"><span>Poufność po zakończeniu rozmów (lata)</span><input type="number" min="1" max="10" data-setting="ndaYears" value="${esc(settings().ndaYears || 3)}"></label></div>
+    <p class="tiny muted">Treść NDA generuje się z danymi kandydata (podgląd: przycisk „PDF” przy NDA w karcie leada). Przed pierwszym użyciem warto dać ją do przejrzenia prawnikowi.</p>
     ${countries.length ? `<details class="adv" style="margin-top:8px"><summary>Kraje w cenniku poglądowym (${countries.filter(c => csel.has(c)).length})</summary>
       <div class="row" style="gap:4px 14px;margin-top:8px">${countries.map(c => `<label class="chk small"><input type="checkbox" data-pl-country="${esc(c)}" ${csel.has(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('')}</div></details>` : ''}
   </div>`;
@@ -91,7 +95,7 @@ function priceCard(l) {
     <div class="stack" style="gap:10px">
       <div class="pstep ${sent.preview ? 'done' : ''}"><span class="lbl">1 · Poglądowy – wybrane usługi</span>${sent.preview ? `<span class="small ink2">wysłany ${fdate(sent.preview)}</span>` : '<span class="small ink2">Najpopularniejsze usługi, bez całej tabeli. Można wysłać od razu po rozmowie.</span>'}
         <div class="row"><button class="btn sm" data-act="pl-mail" data-id="${l.id}" data-lvl="preview">${ICONS.send}Wyślij cennik poglądowy</button><button class="btn sm ghost" data-act="pl-pdf" data-id="${l.id}" data-lvl="preview">${ICONS.file}PDF</button></div></div>
-      <div class="pstep ${nda ? 'done' : ''}"><span class="lbl">2 · Umowa o poufności (NDA)</span>${nda ? `<span class="small ink2">podpisana ${fdate(nda)}</span><button class="btn sm ghost" data-act="nda-clear" data-id="${l.id}">${ICONS.back}Cofnij</button>` : `<span class="small ink2">Pełny cennik udostępniamy po podpisaniu NDA (np. w Autenti).</span><button class="btn sm" data-act="nda-signed" data-id="${l.id}">${ICONS.check}NDA podpisana (dziś)</button>`}</div>
+      <div class="pstep ${nda ? 'done' : (l.nda && l.nda.status === 'wyslana' ? 'due' : '')}"><span class="lbl">2 · Umowa o poufności (NDA)</span>${ndaStep(l)}</div>
       <div class="pstep ${sent.full ? 'done' : ''}"><span class="lbl">3 · Pełny cennik</span>${sent.full ? `<span class="small ink2">wysłany ${fdate(sent.full)}</span>` : `<span class="small ink2">${nda ? 'Kandydat podpisał NDA – możesz wysłać pełny cennik.' : 'Dostępny po podpisaniu NDA.'}</span>`}
         <div class="row"><button class="btn sm" data-act="pl-mail" data-id="${l.id}" data-lvl="full" ${nda ? '' : 'disabled title="Najpierw NDA"'}>${ICONS.send}Wyślij pełny cennik</button><button class="btn sm ghost" data-act="pl-pdf" data-id="${l.id}" data-lvl="full" ${nda ? '' : 'disabled'}>${ICONS.file}PDF</button></div></div>
     </div>`}</div>`;
@@ -153,26 +157,25 @@ function plHtml(l, level) {
     <div class="foot">Ceny netto (bez VAT) według cennika z ${dk ? fdate(String(dk.uploadedAt).slice(0, 10)) : today}. Ceny mogą się zmieniać zgodnie z umową i OWU.${hasBase ? ' Cena dla klienta – cena bazowa sieci; marża = cena dla klienta minus koszt punktu.' : mk ? ` Przykładowa cena dla klienta – narzut ${mk}% (cenę sprzedaży punkt ustala według wytycznych sieci).` : ''}<br>Ship Center Poland Sp. z o.o., ul. Gliwicka 51, 40-853 Katowice · franczyza@shipcenter.pl</div></div>`;
   return { css, body };
 }
-async function plPdfBytes(l, level) {
+async function pdfFromHtml(css, body, sel, { footerLeft = '', breaks = 'h2, h3, tr, .foot', wm = '' } = {}) {
   await loadPdfLibs();
-  const { css, body } = plHtml(l, level);
   const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:820px;background:#fff;z-index:-1';
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:840px;background:#fff;z-index:-1';
   host.innerHTML = `<style>${css}</style>${body}`;
   document.body.appendChild(host);
   try {
-    const root = host.querySelector('.pl'); const scale = 2;
+    const root = host.querySelector(sel); const scale = 2;
     const canvas = await window.html2canvas(root, { scale, backgroundColor: '#ffffff', logging: false });
     const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
     const pageW = 210, pageH = 297, margin = 10;
     const pxPerMm = canvas.width / (pageW - 2 * margin);
     const pagePx = Math.floor((pageH - 2 * margin) * pxPerMm);
     const top0 = root.getBoundingClientRect().top;
-    const breaks = [...root.querySelectorAll('h2, h3, tr, .foot')].map(el => Math.round((el.getBoundingClientRect().top - top0) * scale)).filter(v => v > 0).sort((a, b) => a - b);
+    const br = [...root.querySelectorAll(breaks)].map(el => Math.round((el.getBoundingClientRect().top - top0) * scale)).filter(v => v > 0).sort((x, y) => x - y);
     let y = 0, first = true;
     while (y < canvas.height - 4) {
       let end = Math.min(y + pagePx, canvas.height);
-      if (end < canvas.height) { const cand = breaks.filter(b => b > y + pagePx * 0.5 && b <= end); if (cand.length) end = cand[cand.length - 1]; }
+      if (end < canvas.height) { const cand = br.filter(v => v > y + pagePx * 0.5 && v <= end); if (cand.length) end = cand[cand.length - 1]; }
       const slice = document.createElement('canvas'); slice.width = canvas.width; slice.height = end - y;
       const ctx = slice.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, slice.width, slice.height);
       ctx.drawImage(canvas, 0, y, canvas.width, end - y, 0, 0, canvas.width, end - y);
@@ -181,17 +184,19 @@ async function plPdfBytes(l, level) {
       first = false; y = end;
     }
     const n = pdf.getNumberOfPages();
-    const wm = stripPL(`POUFNE - ${l.name || 'kandydat'} - ${new Date().toLocaleDateString('pl-PL')}`);
     for (let i = 1; i <= n; i++) {
       pdf.setPage(i);
-      pdf.setTextColor(238, 238, 238); pdf.setFontSize(30);
-      pdf.text(wm, 30, 210, { angle: 35 }); pdf.text(wm, 40, 290, { angle: 35 });
+      if (wm) { pdf.setTextColor(238, 238, 238); pdf.setFontSize(30); pdf.text(wm, 30, 210, { angle: 35 }); pdf.text(wm, 40, 290, { angle: 35 }); }
       pdf.setFontSize(8); pdf.setTextColor(140);
       pdf.text(`${i} / ${n}`, pageW - margin, pageH - 4, { align: 'right' });
-      pdf.text(stripPL(`Poufne - przygotowano dla: ${l.name || ''}`), margin, pageH - 4);
+      if (footerLeft) pdf.text(footerLeft, margin, pageH - 4);
     }
     return pdf.output('arraybuffer');
   } finally { host.remove(); }
+}
+async function plPdfBytes(l, level) {
+  const { css, body } = plHtml(l, level);
+  return pdfFromHtml(css, body, '.pl', { wm: stripPL(`POUFNE - ${l.name || 'kandydat'} - ${new Date().toLocaleDateString('pl-PL')}`), footerLeft: stripPL(`Poufne - przygotowano dla: ${l.name || ''}`) });
 }
 const plFileName = (l, level) => `Cennik-${level === 'preview' ? 'poglad' : 'pelny'}-ShipCenter-${slug(l.name || 'kandydat')}.pdf`;
 async function plDownload(l, level) {
@@ -204,18 +209,21 @@ async function plMail(l, level) {
   let bytes;
   try { bytes = await plPdfBytes(l, level); } catch (e) { toast('Nie udało się przygotować PDF: ' + (e.message || e), 'bad'); return; }
   const ctx = msgContext(l, l.form);
+  const hasBase = plSections(level).some(sec => sec.rows.some(r => r.b != null));
+  let nda = null;
+  if (level === 'preview' && !l.ndaAt && l.phone) { try { nda = await ndaPrepare(l); } catch (e) { nda = null; } }
   const body = level === 'preview'
     ? `${powitanie(ctx)}
 
-zgodnie z rozmową przesyłam w załączniku poglądowy cennik ShipCenter – najpopularniejsze usługi (paczkomaty, Orlen Paczka, DPD Pickup, kurierzy, Pocztex) z cenami dla klientów i marżą, jaką punkt zarabia na każdej nadanej paczce.
+zgodnie z rozmową przesyłam w załączniku poglądowy cennik ShipCenter – najpopularniejsze usługi (paczkomaty, Orlen Paczka, DPD Pickup, kurierzy, Pocztex) ${hasBase ? 'z cenami dla klientów i marżą, jaką punkt zarabia na każdej nadanej paczce' : 'z cenami zakupu dla punktu – pozwoli to oszacować, ile punkt zarabia na każdej paczce'}.
 
-Pełny cennik wszystkich przewoźników i usług udostępniamy po podpisaniu krótkiej umowy o zachowaniu poufności – chętnie ją prześlę.
+Pełny cennik wszystkich przewoźników i usług udostępniamy po zaakceptowaniu krótkiej umowy o zachowaniu poufności.${nda ? '\n\n' + nda.instructions : ' Chętnie ją prześlę.'}
 
 Pozdrawiam
 `
     : `${powitanie(ctx)}
 
-dziękuję za podpisanie umowy o zachowaniu poufności. W załączniku przesyłam pełny cennik zakupu usług dla punktu ShipCenter.
+dziękuję za zaakceptowanie umowy o zachowaniu poufności. W załączniku przesyłam pełny cennik ShipCenter.
 
 Cennik jest poufny i przygotowany imiennie – proszę nie przekazywać go dalej. W razie pytań o konkretne usługi lub marże jestem do dyspozycji.
 
@@ -223,7 +231,7 @@ Pozdrawiam
 `;
   openCompose({
     leadId: l.id, subject: level === 'preview' ? 'Cennik poglądowy ShipCenter' : 'Pełny cennik ShipCenter – poufne', body,
-    attachments: [{ filename: plFileName(l, level), content_base64: toB64(bytes), content_type: 'application/pdf' }],
-    onSent: () => { const cur = D().leads[l.id]; if (cur) patch('leads', l.id, { priceSent: { ...(cur.priceSent || {}), [level]: todayISO() }, updatedTs: new Date().toISOString() }); }
+    attachments: [{ filename: plFileName(l, level), content_base64: toB64(bytes), content_type: 'application/pdf' }, ...(nda ? [nda.attachment] : [])],
+    onSent: () => { const cur = D().leads[l.id]; if (cur) patch('leads', l.id, { priceSent: { ...(cur.priceSent || {}), [level]: todayISO() }, updatedTs: new Date().toISOString() }); if (nda) nda.afterSend(); }
   });
 }

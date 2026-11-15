@@ -43,6 +43,10 @@ Jeśli certyfikat serwera poczty nie pasuje do nazwy `shipcenter.pl` (np. jest w
 
 W `.env` wpisz `GOOGLE_MAPS_API_KEY` – klucz Google Cloud z włączonym **Places API (New)** (ten sam, którego używacie do map). Panel podpowiada wtedy ulice z numerami i sam uzupełnia kod pocztowy oraz województwo.
 
+### Akceptacja NDA kodem SMS
+
+Strona `https://mcp.shipcenter.pl/nda/<token>` jest publiczna (bez klucza w adresie) – kandydat czyta umowę, zaznacza akceptację, dostaje kod SMS (SMSAPI) i potwierdza. Dowody (data, IP, przeglądarka, numer, SHA-256 treści) zapisują się w `DATA_DIR/nda.json` – **rób kopię zapasową tego katalogu**. Kopia treści idzie mailem do kandydata i do `MAIL_FROM`. Wymaga `PUBLIC_URL`, SMSAPI i SMTP.
+
 ### SMS (SMSAPI)
 
 1. Panel SMSAPI → **Ustawienia API → Tokeny API (OAuth) → Wygeneruj token** z uprawnieniem **SMS** (osobny token dla serwera, nie ten używany gdzie indziej).
@@ -86,6 +90,8 @@ curl http://127.0.0.1:8787/health      # {"ok":true}
     ProxyPass        /mcp/  http://127.0.0.1:8787/mcp/ timeout=120
     ProxyPassReverse /mcp/  http://127.0.0.1:8787/mcp/
     ProxyPass        /health http://127.0.0.1:8787/health
+    ProxyPass        /nda/   http://127.0.0.1:8787/nda/
+    ProxyPassReverse /nda/   http://127.0.0.1:8787/nda/
 
     # adres zawiera tajny klucz – nie zapisuj go w logach
     SetEnvIf Request_URI "^/mcp/" nolog
@@ -114,6 +120,8 @@ Moduły: `a2enmod proxy proxy_http ssl`. Sprawdzenie z zewnątrz: `curl https://
 | `mail_send` | wysyłka z `franczyza@shipcenter.pl` + kopia w „Wysłanych” |
 | `address_suggest` | podpowiedzi adresów przy wpisywaniu (Google Places) |
 | `address_details` | kod pocztowy, miejscowość, powiat i województwo wybranego adresu |
+| `nda_create` | umowa o zachowaniu poufności do akceptacji kodem SMS – zwraca link dla kandydata |
+| `nda_status` | czy i kiedy kandydat zaakceptował NDA (IP, skrót treści) |
 | `sms_send` | SMS przez SMSAPI – od razu albo o podanej godzinie (`date`) |
 | `sms_cancel` | anulowanie zaplanowanego SMS-a |
 

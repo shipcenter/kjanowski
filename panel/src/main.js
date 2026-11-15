@@ -48,6 +48,9 @@ function handleAction(act, el, e) {
     case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
     case 'pl-pdf': if (L) plDownload(L, el.dataset.lvl); return;
     case 'pl-mail': if (L) plMail(L, el.dataset.lvl); return;
+    case 'nda-send': if (L) ndaSendOnly(L); return;
+    case 'nda-pdf': if (L) { toast('Przygotowuję PDF…'); ndaPdfBytes(L).then(b => offerDownload(ndaFileName(L), new Uint8Array(b))).catch(e2 => toast('Nie udało się: ' + e2.message, 'bad')); } return;
+    case 'nda-confirm': if (L) ndaConfirmCode(L, ($('#nda-code') || {}).value); return;
     case 'nda-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Kandydat podpisał umowę o zachowaniu poufności (NDA)')); patch('leads', L.id, { ndaAt: todayISO(), history: hist, updatedTs: new Date().toISOString() }); toast('Zapisano: NDA podpisana'); } return;
     case 'nda-clear': if (L) patch('leads', L.id, { ndaAt: '', updatedTs: new Date().toISOString() }); return;
     case 'prem-add': if (L) openPremAdd(L); return;

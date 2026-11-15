@@ -9,6 +9,7 @@ import { cfg, assertConfig } from './config.js';
 import { fetchInquiries, listMessages, getMessage, getAttachment, sendMail, status } from './mail.js';
 import { smsSend, smsCancel, smsConfigured } from './sms.js';
 import { addressSuggest, addressDetails } from './places.js';
+import { ndaCreate, ndaStatus, ndaRoutes } from './nda.js';
 
 const json = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 const fail = e => ({ isError: true, content: [{ type: 'text', text: String((e && e.message) || e) }] });
@@ -104,6 +105,26 @@ export function buildServer() {
     annotations: RO
   }, wrap(a => addressDetails(a)));
 
+  s.registerTool('nda_create', {
+    title: 'Utwórz NDA do akceptacji SMS',
+    description: 'Tworzy umowę o zachowaniu poufności do akceptacji przez kandydata kodem SMS i zwraca link.',
+    inputSchema: {
+      lead_id: z.string().max(100).optional(),
+      title: z.string().max(200).optional(),
+      text: z.string().min(200).max(60000),
+      signer: z.object({ name: z.string().min(1).max(200), company: z.string().max(300).optional(), nip: z.string().max(20).optional(), phone: z.string().min(9).max(20), email: z.string().max(200).optional() }),
+      expires_days: z.number().int().min(1).max(60).optional()
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+  }, wrap(a => ndaCreate(a)));
+
+  s.registerTool('nda_status', {
+    title: 'Status NDA',
+    description: 'Czy kandydat zaakceptował umowę o zachowaniu poufności (data, IP, skrót treści).',
+    inputSchema: { token: z.string().min(10).max(100) },
+    annotations: RO
+  }, wrap(a => ndaStatus(a)));
+
   s.registerTool('sms_send', {
     title: 'Wyślij SMS',
     description: 'Wysyła SMS przez SMSAPI (od razu albo o podanej godzinie – parametr date w ISO 8601). Zwraca id SMS-a (do anulowania planowanego).',
@@ -157,6 +178,7 @@ export function buildApp() {
   };
   app.get('/mcp/:secret', notAllowed);
   app.delete('/mcp/:secret', notAllowed);
+  ndaRoutes(app, express);
   app.use((req, res) => res.status(404).end());
   return app;
 }

@@ -34,7 +34,7 @@ test('mail_send przez MCP: HTML ze stopką, załącznik, nadawca franczyza@', as
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(url)));
   const tools = (await client.listTools()).tools.map(t => t.name).sort();
-  assert.deepEqual(tools, ['address_details', 'address_suggest', 'inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'sms_cancel', 'sms_send']);
+  assert.deepEqual(tools, ['address_details', 'address_suggest', 'inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'nda_create', 'nda_status', 'sms_cancel', 'sms_send']);
   const res = await client.callTool({ name: 'mail_send', arguments: { to: 'kandydat@example.com', subject: 'Test – prezentacja', html: '<p>Dzień dobry</p><table><tr><td>Stopka ShipCenter</td></tr></table>', text: 'Dzień dobry', attachments: [{ filename: 'Umowa.pdf', content_base64: Buffer.from('%PDF-1.4 test').toString('base64'), content_type: 'application/pdf' }] } });
   assert.ok(!res.isError, JSON.stringify(res.content));
   const out = JSON.parse(res.content[0].text);
@@ -95,4 +95,32 @@ test('address_suggest i address_details (atrapa Google Places)', async () => {
   const d = await addressDetails({ placeId: 'P1' });
   api.close();
   assert.equal(d.postalCode, '42-622'); assert.equal(d.region, 'śląskie'); assert.equal(d.district, 'tarnogórski'); assert.equal(d.city, 'Świerklaniec'); assert.equal(d.street, 'Główna'); assert.equal(d.number, '22');
+});
+
+test('NDA: link, kod SMS, akceptacja, status', async () => {
+  const { createServer } = await import('node:http');
+  const os = await import('node:os'); const fs2 = await import('node:fs'); const path2 = await import('node:path');
+  const sms = [];
+  const api = createServer((req, res) => { let b = ''; req.on('data', c => b += c); req.on('end', () => { sms.push(Object.fromEntries(new URLSearchParams(b))); res.setHeader('Content-Type', 'application/json'); res.end('{"count":1,"list":[{"id":"S1"}]}'); }); });
+  api.listen(0, '127.0.0.1'); await once(api, 'listening');
+  const { cfg } = await import('../src/config.js');
+  Object.assign(cfg.smsapi, { token: 't', url: `http://127.0.0.1:${api.address().port}`, from: '' });
+  cfg.dataDir = fs2.mkdtempSync(path2.join(os.tmpdir(), 'nda-')); cfg.publicUrl = 'https://mcp.example';
+  cfg.smtp.host = '127.0.0.1'; cfg.smtp.port = 1; cfg.imap.port = 1;
+  const { ndaCreate, ndaStatus } = await import('../src/nda.js');
+  const { buildApp } = await import('../src/server.js?nda' + Date.now());
+  const http = buildApp().listen(0, '127.0.0.1'); await once(http, 'listening');
+  const base = `http://127.0.0.1:${http.address().port}`;
+  const text = 'UMOWA O ZACHOWANIU POUFNOŚCI\n\n' + 'Treść testowa umowy. '.repeat(20);
+  const c = ndaCreate({ lead_id: 'L1', text, signer: { name: 'Anna Test', phone: '600100200', email: '' } });
+  assert.match(c.url, /^https:\/\/mcp\.example\/nda\//);
+  const pg = await fetch(`${base}/nda/${c.token}`); assert.equal(pg.status, 200); assert.match(await pg.text(), /Anna Test/);
+  const noAcc = await fetch(`${base}/nda/${c.token}/sign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"code":"000000"}' }); assert.equal(noAcc.status, 400);
+  const r1 = await fetch(`${base}/nda/${c.token}/code`, { method: 'POST' }); assert.equal(r1.status, 200);
+  const code = sms[0].message.match(/(\d{6})/)[1]; assert.equal(sms[0].to, '48600100200');
+  const bad = await fetch(`${base}/nda/${c.token}/sign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code === '111111' ? '222222' : '111111', accepted: true }) }); assert.equal(bad.status, 400);
+  const ok = await fetch(`${base}/nda/${c.token}/sign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, accepted: true }) }); assert.equal(ok.status, 200);
+  const st = ndaStatus({ token: c.token }); assert.equal(st.status, 'podpisana'); assert.ok(st.signedAt); assert.equal(st.hash.length, 64);
+  assert.equal((await fetch(`${base}/nda/nieistnieje`)).status, 404);
+  await new Promise(r => setTimeout(r, 300)); http.close(); api.close();
 });

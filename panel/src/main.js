@@ -179,6 +179,7 @@ document.addEventListener('change', e => {
   if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
   if (el.dataset.prem) { const l = D().leads[S.route.id]; if (l) patch('leads', l.id, { premCrit: { ...(l.premCrit || {}), [el.dataset.prem]: +el.value || '' }, updatedTs: new Date().toISOString() }); return; }
   if (el.dataset.premSt != null) { const l = D().leads[S.route.id]; if (l) { const list = (l.premises || []).slice(); if (list[+el.dataset.premSt]) list[+el.dataset.premSt] = { ...list[+el.dataset.premSt], status: el.value }; patch('leads', l.id, { premises: list, updatedTs: new Date().toISOString() }); } return; }
+  if (el.dataset.settingChk) { saveSettings({ [el.dataset.settingChk]: el.checked }); return; }
   if (el.dataset.plImport) { const f = el.files && el.files[0]; if (f) plImport(el.dataset.plImport, f); el.value = ''; return; }
   if (el.dataset.plPrev) { plTogglePreview(el.dataset.plPrev, el.checked); return; }
   if (el.dataset.plCountry) { plToggleCountry(el.dataset.plCountry, el.checked); return; }

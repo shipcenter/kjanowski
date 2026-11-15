@@ -30,12 +30,13 @@ function plParseSheet(ws) {
   const head = (rows[0] || []).map(h => normKey(h));
   const idx = (...names) => head.findIndex(h => names.some(n => h.startsWith(n)));
   const ic = idx('przewoźnik', 'przewoznik', 'carrier'), is = idx('usługa', 'usluga', 'service'), it = idx('typ', 'type'),
-    ifr = idx('waga od'), ito = idx('waga do'), ip = idx('cena'), ik = idx('kraj', 'country');
-  if (ic < 0 || is < 0 || ip < 0) throw new Error('Nie rozpoznano kolumn – potrzebne: Przewoźnik, Usługa, Typ, Waga od, Waga do, Cena netto (opcjonalnie Kraj).');
+    ifr = idx('waga od'), ito = idx('waga do'), ik = idx('kraj', 'country'),
+    ip = head.findIndex(h => h.startsWith('cena') && !h.includes('bazow')), ib = head.findIndex(h => h.includes('bazow')), isrc = head.findIndex(h => h.startsWith('źródło') || h.startsWith('zrodlo'));
+  if (ic < 0 || is < 0 || ip < 0) throw new Error('Nie rozpoznano kolumn – potrzebne: Przewoźnik, Usługa, Typ, Waga od, Waga do, Cena netto Franczyzobiorca (opcjonalnie Cena bazowa netto, Źródło ceny, Kraj).');
   const num = v => { const n = typeof v === 'number' ? v : parseFloat(String(v || '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
   return rows.slice(1).filter(r => r && r[ic] && r[ip] != null && r[ip] !== '').map(r => ({
     c: String(r[ic]).trim(), s: String(r[is] || '').trim(), t: it >= 0 ? String(r[it] || '').trim() : '',
-    from: ifr >= 0 ? num(r[ifr]) : 0, to: ito >= 0 ? num(r[ito]) : 0, p: num(r[ip]), ...(ik >= 0 && r[ik] ? { k: String(r[ik]).trim() } : {})
+    from: ifr >= 0 ? num(r[ifr]) : 0, to: ito >= 0 ? num(r[ito]) : 0, p: num(r[ip]), ...(ib >= 0 && r[ib] != null && r[ib] !== '' ? { b: num(r[ib]) } : {}), ...(isrc >= 0 && r[isrc] ? { src: String(r[isrc]).trim() } : {}), ...(ik >= 0 && r[ik] ? { k: String(r[ik]).trim() } : {})
   }));
 }
 async function plImport(kind, file) {
@@ -62,8 +63,9 @@ function priceSettingsCard() {
     <label class="btn sm" style="cursor:pointer">${ICONS.up}${d ? 'Wgraj nowy' : 'Wgraj XLSX'}<input type="file" accept=".xlsx,.xls,.csv" hidden data-pl-import="${k}"></label></div>`;
   return `<div class="card"><div class="cardhead"><h2>Cennik franczyzowy</h2><p>ceny zakupu dla punktu – poufne</p></div>
     ${line('krajowy', dk)}${line('miedzynarodowy', di)}
-    <p class="tiny muted" style="margin-top:6px">Format pliku: Przewoźnik, Usługa, Typ, Waga od [kg], Waga do [kg], Cena netto (dla międzynarodowego dodatkowo kolumna Kraj). Ceny są tylko w bazie panelu.</p>
-    <div class="formgrid" style="margin-top:8px"><label class="field"><span>Przykładowa cena dla klienta: narzut %</span><input type="number" min="0" max="300" step="5" data-setting="priceMarkup" value="${esc(settings().priceMarkup || '')}" placeholder="0 = nie pokazuj"><span class="hint">Doda w PDF kolumny „przykładowa cena dla klienta” i „marża”.</span></label></div>
+    <p class="tiny muted" style="margin-top:6px">Format pliku: Przewoźnik, Usługa, Typ, Waga od [kg], Waga do [kg], Cena netto Franczyzobiorca, opcjonalnie Źródło ceny i Cena bazowa netto (dla międzynarodowego dodatkowo Kraj). Ceny są tylko w bazie panelu.</p>
+    ${dk && dk.rows.some(r => r.b != null) ? `<p class="small" style="margin-top:8px">Cennik zawiera <b>ceny bazowe dla klientów</b> – PDF pokazuje marżę punktu na każdej usłudze.</p>
+      <label class="chk small"><input type="checkbox" data-setting-chk="priceShowCostPreview" ${settings().priceShowCostPreview ? 'checked' : ''}> pokazuj koszt zakupu także w cenniku poglądowym (domyślnie tylko w pełnym, po NDA)</label>` : `<div class="formgrid" style="margin-top:8px"><label class="field"><span>Przykładowa cena dla klienta: narzut %</span><input type="number" min="0" max="300" step="5" data-setting="priceMarkup" value="${esc(settings().priceMarkup || '')}" placeholder="0 = nie pokazuj"><span class="hint">Doda w PDF kolumny „przykładowa cena dla klienta” i „marża”. Lepiej: dodaj do pliku kolumnę „Cena bazowa netto”.</span></label></div>`}
     ${groups.length ? `<details class="adv" style="margin-top:8px"><summary>Usługi w cenniku poglądowym (${groups.filter(g => sel.has(plKey(g))).length} z ${groups.length})</summary>
       <div class="row" style="gap:4px 14px;margin-top:8px">${groups.map(g => `<label class="chk small"><input type="checkbox" data-pl-prev="${esc(plKey(g))}" ${sel.has(plKey(g)) ? 'checked' : ''}> ${esc(g.s)}${g.t === 'Paleta' ? ' (paleta)' : g.t === 'Koperta/list' ? ' (koperta)' : ''}</label>`).join('')}</div></details>` : ''}
     ${countries.length ? `<details class="adv" style="margin-top:8px"><summary>Kraje w cenniku poglądowym (${countries.filter(c => csel.has(c)).length})</summary>
@@ -120,22 +122,35 @@ function plHtml(l, level) {
     .pl .top svg{width:170px;height:auto}.pl h1{font-size:20px;margin:0 0 4px}.pl .meta{font-size:11px;color:#4B5563;text-align:right;line-height:1.5}
     .pl .conf{background:#FFF7ED;border:1px solid #FED7AA;color:#9A3412;font-size:11px;padding:8px 10px;border-radius:6px;margin-bottom:14px}
     .pl h2{font-size:15px;margin:18px 0 6px;color:#E94E1A}.pl h3{font-size:12px;margin:12px 0 4px;color:#111827}
-    .pl table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}.pl col.a{width:46%}.pl col.b{width:28%}.pl col.c{width:26%}.pl.mk col.a{width:34%}.pl.mk col.b{width:20%}.pl.mk col.c{width:16%}.pl th{text-align:left;background:#F3F4F6;padding:5px 6px;font-weight:bold}
+    .pl table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}.pl col.a{width:34%}.pl col.b{width:18%}.pl th{text-align:left;background:#F3F4F6;padding:5px 6px;font-weight:bold}
     .pl td{padding:4px 6px;border-bottom:1px solid #E5E7EB}.pl td.n,.pl th.n{text-align:right;white-space:nowrap}
     .pl .foot{margin-top:16px;font-size:10px;color:#6B7280;line-height:1.5}`;
+  const hasBase = plSections(level).some(sec => sec.rows.some(r => r.b != null));
+  const showCost = level === 'full' || !hasBase || !!settings().priceShowCostPreview;
+  const cols = hasBase ? (showCost ? ['Cena dla klienta (netto)', 'Koszt punktu (netto)', 'Marża punktu'] : ['Cena dla klienta (netto)', 'Marża punktu'])
+    : (mk ? ['Cena netto dla punktu', 'Przykładowa cena dla klienta', 'Marża punktu'] : ['Cena netto dla punktu']);
+  const cells = r => {
+    if (hasBase) {
+      const base = r.b != null ? r.b : null, m = base != null ? Math.round((base - r.p) * 100) / 100 : null;
+      const mTxt = m == null ? '—' : `<b style="color:${m > 0 ? '#15803D' : '#6B7280'}">${zl2(m)}</b>${m > 0 && base ? ` <span style="color:#6B7280">(${Math.round(m / base * 100)}%)</span>` : ''}`;
+      return (base != null ? `<td class="n">${zl2(base)}</td>` : '<td class="n">—</td>') + (showCost ? `<td class="n">${zl2(r.p)}</td>` : '') + `<td class="n">${mTxt}</td>`;
+    }
+    const sale = Math.round(r.p * (1 + mk / 100) * 100) / 100;
+    return `<td class="n"><b>${zl2(r.p)}</b></td>` + (mk ? `<td class="n">${zl2(sale)}</td><td class="n">${zl2(sale - r.p)}</td>` : '');
+  };
   const secs = plSections(level).map(sec => {
     const groups = new Map();
     sec.rows.forEach(r => { const g = (sec.intl ? (r.k || 'Inne') + ' · ' : '') + r.c; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); });
-    const body = [...groups.entries()].map(([g, rows]) => `<h3>${esc(g)}</h3><table><colgroup><col class="a"><col class="b"><col class="c">${mk ? '<col><col>' : ''}</colgroup><tr><th>Usługa</th><th>Waga / gabaryt</th><th class="n">Cena netto dla punktu</th>${mk ? '<th class="n">Przykładowa cena dla klienta</th><th class="n">Marża punktu</th>' : ''}</tr>
-      ${rows.map(r => { const sale = Math.round(r.p * (1 + mk / 100) * 100) / 100; return `<tr><td>${esc(r.s)}${r.t && r.t !== 'Paczka' ? ' <span style="color:#6B7280">(' + esc(r.t.toLowerCase()) + ')</span>' : ''}</td><td>${esc(plRange(r))}</td><td class="n"><b>${zl2(r.p)}</b></td>${mk ? `<td class="n">${zl2(sale)}</td><td class="n">${zl2(sale - r.p)}</td>` : ''}</tr>`; }).join('')}</table>`).join('');
+    const body = [...groups.entries()].map(([g, rows]) => `<h3>${esc(g)}</h3><table><colgroup><col class="a"><col class="b">${cols.map(() => '<col>').join('')}</colgroup><tr><th>Usługa</th><th>Waga / gabaryt</th>${cols.map(c => `<th class="n">${c}</th>`).join('')}</tr>
+      ${rows.map(r => `<tr><td>${esc(r.s)}${r.t && r.t !== 'Paczka' ? ' <span style="color:#6B7280">(' + esc(r.t.toLowerCase()) + ')</span>' : ''}</td><td>${esc(plRange(r))}</td>${cells(r)}</tr>`).join('')}</table>`).join('');
     return `<h2>${esc(sec.title)}</h2>${body}`;
   }).join('');
   const dk = plDoc('krajowy');
-  const body = `<div class="pl ${mk ? 'mk' : ''}"><div class="top"><div>${LOGO_SVG}<h1 style="margin-top:10px">${level === 'preview' ? 'Cennik poglądowy' : 'Cennik franczyzowy'}</h1><div style="font-size:12px;color:#4B5563">${level === 'preview' ? 'wybrane, najpopularniejsze usługi' : 'pełny cennik zakupu dla punktu ShipCenter'}</div></div>
+  const body = `<div class="pl"><div class="top"><div>${LOGO_SVG}<h1 style="margin-top:10px">${level === 'preview' ? 'Cennik poglądowy' : 'Cennik franczyzowy'}</h1><div style="font-size:12px;color:#4B5563">${level === 'preview' ? 'wybrane, najpopularniejsze usługi' : 'pełny cennik zakupu dla punktu ShipCenter'}</div></div>
       <div class="meta">Przygotowano dla:<br><b>${esc(l.name || '')}</b>${l.company ? '<br>' + esc(l.company) : ''}<br>${today}</div></div>
-    <div class="conf"><b>Dokument poufny.</b> Ceny netto zakupu usług dla punktu ShipCenter – wyłącznie do wglądu ${esc(l.name || 'kandydata')}. Nie przekazuj dalej.${level === 'preview' ? ' Pełny cennik udostępniamy po podpisaniu umowy o zachowaniu poufności.' : ''}</div>
+    <div class="conf"><b>Dokument poufny.</b> ${hasBase ? 'Ceny dla klientów i marże punktu ShipCenter' : 'Ceny netto zakupu usług dla punktu ShipCenter'} – wyłącznie do wglądu ${esc(l.name || 'kandydata')}. Nie przekazuj dalej.${level === 'preview' ? ' Pełny cennik udostępniamy po podpisaniu umowy o zachowaniu poufności.' : ''}</div>
     ${secs}
-    <div class="foot">Ceny netto (bez VAT) według cennika z ${dk ? fdate(String(dk.uploadedAt).slice(0, 10)) : today}. Ceny mogą się zmieniać zgodnie z umową i OWU.${mk ? ` Przykładowa cena dla klienta – narzut ${mk}% (cenę sprzedaży punkt ustala według wytycznych sieci).` : ''}<br>Ship Center Poland Sp. z o.o., ul. Gliwicka 51, 40-853 Katowice · franczyza@shipcenter.pl</div></div>`;
+    <div class="foot">Ceny netto (bez VAT) według cennika z ${dk ? fdate(String(dk.uploadedAt).slice(0, 10)) : today}. Ceny mogą się zmieniać zgodnie z umową i OWU.${hasBase ? ' Cena dla klienta – cena bazowa sieci; marża = cena dla klienta minus koszt punktu.' : mk ? ` Przykładowa cena dla klienta – narzut ${mk}% (cenę sprzedaży punkt ustala według wytycznych sieci).` : ''}<br>Ship Center Poland Sp. z o.o., ul. Gliwicka 51, 40-853 Katowice · franczyza@shipcenter.pl</div></div>`;
   return { css, body };
 }
 async function plPdfBytes(l, level) {
@@ -192,7 +207,7 @@ async function plMail(l, level) {
   const body = level === 'preview'
     ? `${powitanie(ctx)}
 
-zgodnie z rozmową przesyłam w załączniku poglądowy cennik ShipCenter – ceny zakupu najpopularniejszych usług dla punktu (paczkomaty, Orlen Paczka, DPD Pickup, kurierzy, Pocztex). Pozwoli to oszacować, ile punkt zarabia na każdej nadanej paczce.
+zgodnie z rozmową przesyłam w załączniku poglądowy cennik ShipCenter – najpopularniejsze usługi (paczkomaty, Orlen Paczka, DPD Pickup, kurierzy, Pocztex) z cenami dla klientów i marżą, jaką punkt zarabia na każdej nadanej paczce.
 
 Pełny cennik wszystkich przewoźników i usług udostępniamy po podpisaniu krótkiej umowy o zachowaniu poufności – chętnie ją prześlę.
 

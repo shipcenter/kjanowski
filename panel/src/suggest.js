@@ -9,6 +9,7 @@ const normTxt = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀
 
 function geoLoad() {
   if (SUG.data) return Promise.resolve(SUG.data);
+  if (typeof GEO_DATA !== 'undefined' && GEO_DATA && GEO_DATA.e) { const j = GEO_DATA; j.n = j.e.map(e => normTxt(e[0])); SUG.data = j; return Promise.resolve(j); }
   if (!SUG.loading) SUG.loading = fetch(GEO_ASSET).then(r => r.ok ? r.json() : null).then(j => {
     if (!j) return null;
     j.n = j.e.map(e => normTxt(e[0]));
@@ -50,7 +51,7 @@ async function streetSuggestions(q, city) {
     try {
       const r = await S.sample.json(`Podaj do 6 istniejących nazw ulic w miejscowości ${city} (Polska), które zaczynają się od lub zawierają „${q.replace(/\d.*$/, '').trim()}”. Zwróć wyłącznie tablicę JSON z nazwami ulic, np. ["ul. Piłsudskiego", "al. Piłsudskiego"]. Jeśli nie znasz, zwróć [].`, { modelTier: 'quick' });
       const num = (q.match(/\d+[a-zA-Z]?(\/\d+)?\s*$/) || [''])[0];
-      return (Array.isArray(r) ? r : []).slice(0, 6).map(s => ({ kind: 'street', label: String(s) + (num ? ' ' + num : ''), sub: city + ' · podpowiedź Claude – sprawdź numer' }));
+      return (Array.isArray(r) ? r : []).slice(0, 6).map(s => ({ kind: 'street', label: String(s).replace(/^(ul\.|ulica)\s+/i, '') + (num ? ' ' + num : ''), sub: city }));
     } catch (e) { return []; }
   }
   return [];
@@ -93,12 +94,27 @@ async function sugInput(el) {
   const seq = ++SUG.seq;
   let items = [];
   if (kind === 'city') { await geoLoad(); items = citySuggestions(el.value); }
-  else if (kind === 'street') { const f = sugFields(ctx); const city = (document.getElementById(f.city) || {}).value || ''; items = await streetSuggestions(el.value, city.trim()); }
+  else if (kind === 'street') {
+    const f = sugFields(ctx); const city = ((document.getElementById(f.city) || {}).value || '').trim();
+    if (el.value.trim().length < 3) { sugHide(); return; }
+    const canGoogle = typeof mailOn === 'function' && mailOn();
+    if (!canGoogle && !city) { sugShow(el, [{ kind: 'info', label: 'Najpierw wpisz miejscowość', sub: 'podpowiem ulice w tej miejscowości' }]); return; }
+    if (!canGoogle && !S.sample) { sugShow(el, [{ kind: 'info', label: 'Podpowiedzi ulic są niedostępne w tym widoku', sub: 'pełne podpowiedzi Google ruszą po podłączeniu mostka pocztowego' }]); return; }
+    const key = normTxt(city + '|' + el.value.trim());
+    SUG.cache = SUG.cache || {};
+    if (SUG.cache[key]) items = SUG.cache[key];
+    else {
+      sugShow(el, [{ kind: 'info', label: 'Szukam ulic…', sub: canGoogle ? 'Google' : 'podpowiedź Claude' }]);
+      items = await streetSuggestions(el.value, city);
+      if (items.length) SUG.cache[key] = items;
+      else items = [{ kind: 'info', label: 'Brak podpowiedzi', sub: 'wpisz adres ręcznie' }];
+    }
+  }
   if (seq !== SUG.seq || document.activeElement !== el) return;
   sugShow(el, items);
 }
 async function sugPick(i) {
-  const it = SUG.items[i]; const el = document.getElementById(SUG.el); if (!it || !el) return sugHide();
+  const it = SUG.items[i]; const el = document.getElementById(SUG.el); if (!it || !el || it.kind === 'info') return sugHide();
   const ctx = el.dataset.suggestCtx, f = sugFields(ctx);
   sugHide();
   if (it.kind === 'city') {
@@ -119,7 +135,7 @@ async function sugPick(i) {
 }
 
 /* zdarzenia (podpinane w main.js) */
-function sugOnInput(el) { debounce('sug', () => sugInput(el), el.dataset.suggest === 'city' ? 120 : 450); }
+function sugOnInput(el) { debounce('sug', () => sugInput(el), el.dataset.suggest === 'city' ? 80 : 400); }
 function sugOnKey(e) {
   const b = document.getElementById('sugbox');
   if (!b || b.hidden || !SUG.items.length || !e.target.dataset || !e.target.dataset.suggest) return false;

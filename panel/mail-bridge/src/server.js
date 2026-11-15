@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { cfg, assertConfig } from './config.js';
 import { fetchInquiries, listMessages, getMessage, getAttachment, sendMail, status } from './mail.js';
 import { smsSend, smsCancel, smsConfigured } from './sms.js';
+import { addressSuggest, addressDetails } from './places.js';
 
 const json = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 const fail = e => ({ isError: true, content: [{ type: 'text', text: String((e && e.message) || e) }] });
@@ -88,6 +89,20 @@ export function buildServer() {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }, wrap(a => sendMail(a)));
+
+  s.registerTool('address_suggest', {
+    title: 'Podpowiedzi adresu',
+    description: 'Podpowiedzi adresów w Polsce (Google Places) dla wpisywanego tekstu, np. „Główna 22 Świerkl”.',
+    inputSchema: { input: z.string().min(1).max(200), session: z.string().max(100).optional() },
+    annotations: RO
+  }, wrap(a => addressSuggest(a)));
+
+  s.registerTool('address_details', {
+    title: 'Szczegóły adresu',
+    description: 'Ulica, numer, miejscowość, kod pocztowy, powiat i województwo dla wybranej podpowiedzi (placeId).',
+    inputSchema: { placeId: z.string().min(1).max(300), session: z.string().max(100).optional() },
+    annotations: RO
+  }, wrap(a => addressDetails(a)));
 
   s.registerTool('sms_send', {
     title: 'Wyślij SMS',

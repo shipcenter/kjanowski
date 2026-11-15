@@ -34,7 +34,7 @@ test('mail_send przez MCP: HTML ze stopką, załącznik, nadawca franczyza@', as
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(url)));
   const tools = (await client.listTools()).tools.map(t => t.name).sort();
-  assert.deepEqual(tools, ['inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'sms_cancel', 'sms_send']);
+  assert.deepEqual(tools, ['address_details', 'address_suggest', 'inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'sms_cancel', 'sms_send']);
   const res = await client.callTool({ name: 'mail_send', arguments: { to: 'kandydat@example.com', subject: 'Test – prezentacja', html: '<p>Dzień dobry</p><table><tr><td>Stopka ShipCenter</td></tr></table>', text: 'Dzień dobry', attachments: [{ filename: 'Umowa.pdf', content_base64: Buffer.from('%PDF-1.4 test').toString('base64'), content_type: 'application/pdf' }] } });
   assert.ok(!res.isError, JSON.stringify(res.content));
   const out = JSON.parse(res.content[0].text);
@@ -74,4 +74,25 @@ test('sms_send i sms_cancel przez SMSAPI (atrapa serwera)', async () => {
   assert.ok(+calls[1].p.date > Date.now() / 1000);
   assert.equal(calls[2].p.sch_del, 'SMS123');
   await assert.rejects(() => smsSend({ to: '123', message: 'x' }), /Nieprawidłowy numer/);
+});
+
+test('address_suggest i address_details (atrapa Google Places)', async () => {
+  const { createServer } = await import('node:http');
+  const api = createServer((req, res) => {
+    let b = ''; req.on('data', c => b += c); req.on('end', () => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.headers['x-goog-api-key'] !== 'k-test') { res.statusCode = 403; return res.end('{"error":{"message":"bad key"}}'); }
+      if (req.url.startsWith('/v1/places:autocomplete')) return res.end(JSON.stringify({ suggestions: [{ placePrediction: { placeId: 'P1', text: { text: 'Główna 22, Świerklaniec, Polska' }, structuredFormat: { mainText: { text: 'Główna 22' }, secondaryText: { text: 'Świerklaniec, Polska' } } } }] }));
+      res.end(JSON.stringify({ formattedAddress: 'Główna 22, 42-622 Świerklaniec, Polska', addressComponents: [{ longText: '22', types: ['street_number'] }, { longText: 'Główna', types: ['route'] }, { longText: 'Świerklaniec', types: ['locality'] }, { longText: 'Powiat tarnogórski', types: ['administrative_area_level_2'] }, { longText: 'Województwo śląskie', types: ['administrative_area_level_1'] }, { longText: '42-622', types: ['postal_code'] }], location: { latitude: 50.44, longitude: 18.93 } }));
+    });
+  });
+  api.listen(0, '127.0.0.1'); await once(api, 'listening');
+  const { cfg } = await import('../src/config.js');
+  cfg.places.key = 'k-test'; cfg.places.url = `http://127.0.0.1:${api.address().port}`;
+  const { addressSuggest, addressDetails } = await import('../src/places.js');
+  const s = await addressSuggest({ input: 'Główna 22 Świerkl' });
+  assert.equal(s.items[0].main, 'Główna 22'); assert.equal(s.items[0].placeId, 'P1');
+  const d = await addressDetails({ placeId: 'P1' });
+  api.close();
+  assert.equal(d.postalCode, '42-622'); assert.equal(d.region, 'śląskie'); assert.equal(d.district, 'tarnogórski'); assert.equal(d.city, 'Świerklaniec'); assert.equal(d.street, 'Główna'); assert.equal(d.number, '22');
 });

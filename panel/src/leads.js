@@ -96,9 +96,9 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
     <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
     ${prefix === 'le' ? '' : `<label class="field"><span>Pakiet (franczyza)</span><select id="${prefix}-pkg">${opt('', 'jeszcze nie wiadomo', l.pkg)}${Object.entries(PACKAGES).map(([k, n]) => opt(k, n, l.pkg)).join('')}</select></label>`}
-    <label class="field"><span>Kapitał deklarowany (zł)</span><input type="number" id="${prefix}-capital" min="0" step="1000" value="${esc(l.capital)}"></label>
+
     <label class="field"><span>Lokal</span><select id="${prefix}-premises">${opt('', 'nie wiadomo', l.hasPremises)}${opt('ma', 'ma lokal', l.hasPremises)}${opt('szuka', 'szuka lokalu', l.hasPremises)}${opt('nie', 'nie ma i nie szuka', l.hasPremises)}</select></label>
-    <label class="field"><span>Forma zwrotu w wiadomościach</span><select id="${prefix}-form">${opt('panstwo', 'Państwo (neutralnie)', l.form)}${opt('pan', 'Pan', l.form)}${opt('pani', 'Pani', l.form)}${opt('ty', 'Ty (bezpośrednio)', l.form)}</select></label>
+
   </div>`;
 }
 function readLeadForm(prefix = 'lf') {
@@ -251,7 +251,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}" title="Wymaga hasła administratora">${ICONS.trash}Usuń leada</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${priceCard(l)}${meeting}${modelOf(l) === 'shippoint' ? shipPointCard(l) + photosCard(l) : photosCard(l) + locCard + flex}</div></div>` + danger + `</div>`;
+  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${priceCard(l)}${meeting}${modelOf(l) === 'shippoint' ? shipPointCard(l) + photosCard(l) : photosCard(l) + locCard + premisesCard(l) + flex}</div></div>` + danger + `</div>`;
 }
 
 function suggestedTemplate(l) {
@@ -591,7 +591,12 @@ async function autoGeo(prefix) {
     if (changed && prefix === 'le') saveLeadEdit();
   };
   const seq = (GEO.seq[prefix] || 0) + 1; GEO.seq[prefix] = seq;
-  if (S.sample && city.trim()) {
+  if (city.trim()) {
+    await geoLoad();
+    const g = geoFind(city, '');
+    if (g && (!addr.trim() || pc)) { if (GEO.seq[prefix] === seq) set(g.region, '', `Województwo z bazy miejscowości: ${g.region}${g.city ? '' : ' (gm. ' + g.commune + ', pow. ' + g.district + ')'}`); if (!addr.trim()) return; }
+  }
+  if (S.sample && city.trim() && addr.trim() && !pc) {
     say('Ustalam województwo…');
     try {
       const r = await S.sample.json(`Polski adres: ${[addr.trim(), [pc, city.trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')}. Zwróć wyłącznie JSON: {"region": "województwo małymi literami, np. śląskie", "postalCode": "kod pocztowy 00-000 dla tej ulicy i numeru w tej miejscowości (najbardziej prawdopodobny, gdy nie masz pewności)", "city": "poprawna nazwa miejscowości"}. Uwzględnij podany kod pocztowy, jeśli jest.`, { modelTier: 'quick' });
@@ -721,9 +726,9 @@ function openPhoto(l, i) {
 }
 
 function addressFields(l, prefix, sp = false) {
-  return `<label class="field span2"><span>${sp ? 'Adres lokalu partnera' : 'Adres planowanego punktu (opcjonalnie)'}</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" value="${esc(l.pointAddress || '')}" placeholder="${sp ? 'ulica i numer lokalu, w którym działa' : 'ulica i numer, jeśli kandydat ma już lokal na oku'}"></label>
+  return `<label class="field span2"><span>${sp ? 'Adres lokalu partnera' : 'Adres planowanego punktu (opcjonalnie)'}</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" data-suggest="street" data-suggest-ctx="${prefix}" autocomplete="off" value="${esc(l.pointAddress || '')}" placeholder="${sp ? 'ulica i numer lokalu, w którym działa' : 'ulica i numer, jeśli kandydat ma już lokal na oku'}"></label>
     <label class="field"><span>Kod pocztowy</span><input type="text" id="${prefix}-pointPostal" data-geo="${prefix}" inputmode="numeric" maxlength="6" value="${esc(l.pointPostal || '')}" placeholder="00-000"></label>
-    <label class="field"><span>${sp ? 'Miejscowość' : 'Miasto planowanego punktu'}</span><input type="text" id="${prefix}-city" data-geo="${prefix}" value="${esc(l.city)}"></label>
+    <label class="field"><span>${sp ? 'Miejscowość' : 'Miasto planowanego punktu'}</span><input type="text" id="${prefix}-city" data-geo="${prefix}" data-suggest="city" data-suggest-ctx="${prefix}" autocomplete="off" value="${esc(l.city)}"></label>
     <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select><span class="hint" id="${prefix}-geo-st"></span></label>`;
 }
 
@@ -795,4 +800,73 @@ function openKrd(l) {
     patch('leads', l.id, { krd, history: hist, updatedTs: krd.at });
     closeModal(); toast('Zapisano wynik KRD');
   };
+}
+
+/* poszukiwanie lokalu dla kandydata: kryteria, gotowe wyszukiwania w portalach, lista propozycji */
+const PREM_STATUS = { nowy: ['do sprawdzenia', ''], obejrzany: ['obejrzany', 'warn'], wyslany: ['wysłany kandydatowi', 'good'], odrzucony: ['odrzucony', 'bad'] };
+const plSlug = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+function premCrit(l) { const c = l.premCrit || {}; return { aMin: +c.aMin || 25, aMax: +c.aMax || 45, rMax: +c.rMax || 4000, rTarget: +c.rTarget || 2500 }; }
+function premLinks(l) {
+  const c = premCrit(l), city = plSlug(l.city), woj = plSlug(l.region);
+  const g = geoFind(l.city, l.region || '');
+  const otoPath = g ? [plSlug(g.region), plSlug(g.district), plSlug(g.commune), plSlug(g.name)].join('/') : (woj && city ? `${woj}/${city}/${city}/${city}` : '');
+  const q = encodeURIComponent(`lokal do wynajęcia ${l.city || ''} parter witryna ${c.aMin}-${c.aMax} m2`);
+  return [
+    ['Otodom', otoPath ? `https://www.otodom.pl/pl/wyniki/wynajem/lokal/${otoPath}?areaMin=${c.aMin}&areaMax=${c.aMax}&priceMax=${c.rMax}` : `https://www.otodom.pl/pl/wyniki/wynajem/lokal/cala-polska?areaMin=${c.aMin}&areaMax=${c.aMax}&priceMax=${c.rMax}`],
+    ['OLX', `https://www.olx.pl/nieruchomosci/biura-lokale/wynajem/${city ? city + '/' : ''}?search%5Bfilter_float_price%3Ato%5D=${c.rMax}&search%5Bfilter_float_m%3Afrom%5D=${c.aMin}&search%5Bfilter_float_m%3Ato%5D=${c.aMax}`],
+    ['Google', `https://www.google.com/search?q=${q}`]
+  ];
+}
+function premisesCard(l) {
+  const c = premCrit(l), list = l.premises || [];
+  if (!SUG.data) geoLoad().then(d => { if (d) scheduleRender(); });
+  return `<div class="card"><div class="cardhead"><h2>Poszukiwanie lokalu</h2><p>${list.length ? list.length + ' propozycji' : 'parter z witryną'}</p></div>
+    ${!l.city ? '<p class="note">Wpisz miasto planowanego punktu w danych kandydata.</p>' : `
+    <div class="formgrid">
+      <label class="field"><span>Metraż od (m²)</span><input type="number" min="10" data-prem="aMin" value="${c.aMin}"></label>
+      <label class="field"><span>Metraż do (m²)</span><input type="number" min="10" data-prem="aMax" value="${c.aMax}"></label>
+      <label class="field"><span>Czynsz maks. (zł)</span><input type="number" min="0" step="100" data-prem="rMax" value="${c.rMax}"></label>
+      <label class="field"><span>Czynsz docelowy (zł)</span><input type="number" min="0" step="100" data-prem="rTarget" value="${c.rTarget}"></label>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="small muted">Szukaj w ${esc(l.city)}:</span>${premLinks(l).map(([n, u]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${ICONS.link}${n}</a>`).join('')}</div>
+    <p class="tiny muted" style="margin-top:4px">Lokal na parterze z witryną, ${c.aMin}–${c.aMax} m², czynsz do ${fmt(c.rMax)} zł (najlepiej ok. ${fmt(c.rTarget)} zł). W portalach zaznacz jeszcze „parter”, jeśli jest taki filtr.</p>
+    ${list.length ? `<div class="stack" style="gap:6px;margin-top:10px">${list.map((p, i) => { const st = PREM_STATUS[p.status] || PREM_STATUS.nowy; const over = +p.rent > c.rMax; return `<div class="contact-row"><span class="when">${p.rent ? fmt(+p.rent) + ' zł' : '—'}</span>
+      <div style="min-width:0"><b class="small">${esc(p.address || p.title || 'Lokal')}</b> <span class="pill ${st[1]}">${st[0]}</span>${over ? ' <span class="pill bad">powyżej limitu</span>' : ''}<div class="tiny muted">${[p.area ? p.area + ' m²' : '', p.floor, p.note].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <div class="ctl">${p.url ? `<a class="btn sm ghost" href="${esc(p.url)}" target="_blank" rel="noopener">${ICONS.link}</a>` : ''}<select data-prem-st="${i}" aria-label="Status">${Object.entries(PREM_STATUS).map(([k, [n]]) => opt(k, n, p.status || 'nowy')).join('')}</select><button class="iconbtn" data-act="prem-del" data-id="${l.id}" data-i="${i}" aria-label="Usuń">${ICONS.x}</button></div></div>`; }).join('')}</div>` : ''}
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-act="prem-add" data-id="${l.id}">${ICONS.plus}Dodaj lokal</button>${list.some(p => p.status !== 'odrzucony') ? `<button class="btn sm" data-act="prem-mail" data-id="${l.id}">${ICONS.send}Wyślij propozycje kandydatowi</button>` : ''}</div>`}
+  </div>`;
+}
+function openPremAdd(l) {
+  openModal(`<div class="mh"><h2>Dodaj lokal – ${esc(l.city || '')}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <label class="field full"><span>Link do ogłoszenia</span><input type="url" id="pa-url" placeholder="https://www.otodom.pl/pl/oferta/…"></label>
+      <label class="field span2"><span>Adres / tytuł</span><input type="text" id="pa-addr" placeholder="np. ul. Mariacka 10, Śródmieście"></label>
+      <label class="field"><span>Metraż (m²)</span><input type="number" id="pa-area" min="0"></label>
+      <label class="field"><span>Czynsz (zł/mies.)</span><input type="number" id="pa-rent" min="0" step="50"></label>
+      <label class="field"><span>Piętro / witryna</span><input type="text" id="pa-floor" placeholder="parter, witryna"></label>
+      <label class="field full"><span>Notatka</span><input type="text" id="pa-note" placeholder="np. przy przystanku, parking, do odświeżenia"></label>
+    </div></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="pa-save">Dodaj</button></div>`);
+  $('#pa-save').onclick = () => {
+    const cur = D().leads[l.id]; if (!cur) return closeModal();
+    const p = { url: $('#pa-url').value.trim(), address: $('#pa-addr').value.trim(), area: $('#pa-area').value, rent: $('#pa-rent').value, floor: $('#pa-floor').value.trim(), note: $('#pa-note').value.trim(), status: 'nowy', at: new Date().toISOString() };
+    if (!p.url && !p.address) { toast('Wpisz link albo adres lokalu.', 'bad'); return; }
+    patch('leads', l.id, { premises: [...(cur.premises || []), p], updatedTs: p.at }); closeModal(); toast('Dodano lokal');
+  };
+}
+function premMail(l) {
+  const list = (l.premises || []).filter(p => p.status !== 'odrzucony');
+  const ctx = msgContext(l, l.form);
+  const body = `${powitanie(ctx)}
+
+przygotowałem kilka propozycji lokali${l.city ? ' w miejscowości ' + l.city : ''}, które pasują pod punkt ShipCenter (parter, witryna, rozsądny czynsz):
+
+${list.map((p, i) => `${i + 1}. ${p.address || p.title || 'Lokal'}${p.area ? ', ' + p.area + ' m²' : ''}${p.rent ? ', czynsz ok. ' + fmt(+p.rent) + ' zł/mies.' : ''}${p.floor ? ', ' + p.floor : ''}${p.url ? '\n' + p.url : ''}`).join('\n')}
+
+Chętnie pomogę ocenić, który z nich da najlepszy ruch klientów – możemy też przygotować analizę lokalizacji dla wybranego adresu.
+
+Pozdrawiam
+`;
+  openCompose({ leadId: l.id, subject: `Propozycje lokali${l.city ? ' – ' + l.city : ''} – ShipCenter`, body,
+    onSent: () => { const cur = D().leads[l.id]; if (cur) patch('leads', l.id, { premises: (cur.premises || []).map(p => p.status === 'odrzucony' ? p : { ...p, status: 'wyslany' }), updatedTs: new Date().toISOString() }); } });
 }

@@ -479,6 +479,12 @@ details.adv[open] summary { margin-bottom: 10px; }
 .leadview .btn.primary.cta svg, .leadview .btn.danger svg { color: currentColor; }
 .leadview .btn:disabled svg { color: var(--muted); }
 .leadview .pkgswitch .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); color: var(--accent-ink); }
+
+/* podpowiedzi adresów */
+.sugbox { position: fixed; z-index: 2000; background: var(--surface, #fff); border: 1px solid var(--line-2, #d1d5db); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 4px; max-height: 320px; overflow: auto; }
+.sugitem { display: grid; gap: 1px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: .9rem; }
+.sugitem span { font-size: .75rem; color: var(--muted); }
+.sugitem:hover, .sugitem.on { background: color-mix(in srgb, var(--accent, #ea580c) 9%, transparent); }
 </style>
 <header class="appbar">
   <div class="wrap">
@@ -1571,9 +1577,9 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
     <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
     ${prefix === 'le' ? '' : `<label class="field"><span>Pakiet (franczyza)</span><select id="${prefix}-pkg">${opt('', 'jeszcze nie wiadomo', l.pkg)}${Object.entries(PACKAGES).map(([k, n]) => opt(k, n, l.pkg)).join('')}</select></label>`}
-    <label class="field"><span>Kapitał deklarowany (zł)</span><input type="number" id="${prefix}-capital" min="0" step="1000" value="${esc(l.capital)}"></label>
+
     <label class="field"><span>Lokal</span><select id="${prefix}-premises">${opt('', 'nie wiadomo', l.hasPremises)}${opt('ma', 'ma lokal', l.hasPremises)}${opt('szuka', 'szuka lokalu', l.hasPremises)}${opt('nie', 'nie ma i nie szuka', l.hasPremises)}</select></label>
-    <label class="field"><span>Forma zwrotu w wiadomościach</span><select id="${prefix}-form">${opt('panstwo', 'Państwo (neutralnie)', l.form)}${opt('pan', 'Pan', l.form)}${opt('pani', 'Pani', l.form)}${opt('ty', 'Ty (bezpośrednio)', l.form)}</select></label>
+
   </div>`;
 }
 function readLeadForm(prefix = 'lf') {
@@ -1726,7 +1732,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}" title="Wymaga hasła administratora">${ICONS.trash}Usuń leada</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${priceCard(l)}${meeting}${modelOf(l) === 'shippoint' ? shipPointCard(l) + photosCard(l) : photosCard(l) + locCard + flex}</div></div>` + danger + `</div>`;
+  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${priceCard(l)}${meeting}${modelOf(l) === 'shippoint' ? shipPointCard(l) + photosCard(l) : photosCard(l) + locCard + premisesCard(l) + flex}</div></div>` + danger + `</div>`;
 }
 
 function suggestedTemplate(l) {
@@ -2066,7 +2072,12 @@ async function autoGeo(prefix) {
     if (changed && prefix === 'le') saveLeadEdit();
   };
   const seq = (GEO.seq[prefix] || 0) + 1; GEO.seq[prefix] = seq;
-  if (S.sample && city.trim()) {
+  if (city.trim()) {
+    await geoLoad();
+    const g = geoFind(city, '');
+    if (g && (!addr.trim() || pc)) { if (GEO.seq[prefix] === seq) set(g.region, '', `Województwo z bazy miejscowości: ${g.region}${g.city ? '' : ' (gm. ' + g.commune + ', pow. ' + g.district + ')'}`); if (!addr.trim()) return; }
+  }
+  if (S.sample && city.trim() && addr.trim() && !pc) {
     say('Ustalam województwo…');
     try {
       const r = await S.sample.json(`Polski adres: ${[addr.trim(), [pc, city.trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')}. Zwróć wyłącznie JSON: {"region": "województwo małymi literami, np. śląskie", "postalCode": "kod pocztowy 00-000 dla tej ulicy i numeru w tej miejscowości (najbardziej prawdopodobny, gdy nie masz pewności)", "city": "poprawna nazwa miejscowości"}. Uwzględnij podany kod pocztowy, jeśli jest.`, { modelTier: 'quick' });
@@ -2196,9 +2207,9 @@ function openPhoto(l, i) {
 }
 
 function addressFields(l, prefix, sp = false) {
-  return `<label class="field span2"><span>${sp ? 'Adres lokalu partnera' : 'Adres planowanego punktu (opcjonalnie)'}</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" value="${esc(l.pointAddress || '')}" placeholder="${sp ? 'ulica i numer lokalu, w którym działa' : 'ulica i numer, jeśli kandydat ma już lokal na oku'}"></label>
+  return `<label class="field span2"><span>${sp ? 'Adres lokalu partnera' : 'Adres planowanego punktu (opcjonalnie)'}</span><input type="text" id="${prefix}-pointAddress" data-geo="${prefix}" data-suggest="street" data-suggest-ctx="${prefix}" autocomplete="off" value="${esc(l.pointAddress || '')}" placeholder="${sp ? 'ulica i numer lokalu, w którym działa' : 'ulica i numer, jeśli kandydat ma już lokal na oku'}"></label>
     <label class="field"><span>Kod pocztowy</span><input type="text" id="${prefix}-pointPostal" data-geo="${prefix}" inputmode="numeric" maxlength="6" value="${esc(l.pointPostal || '')}" placeholder="00-000"></label>
-    <label class="field"><span>${sp ? 'Miejscowość' : 'Miasto planowanego punktu'}</span><input type="text" id="${prefix}-city" data-geo="${prefix}" value="${esc(l.city)}"></label>
+    <label class="field"><span>${sp ? 'Miejscowość' : 'Miasto planowanego punktu'}</span><input type="text" id="${prefix}-city" data-geo="${prefix}" data-suggest="city" data-suggest-ctx="${prefix}" autocomplete="off" value="${esc(l.city)}"></label>
     <label class="field"><span>Województwo</span><select id="${prefix}-region">${regionOpts(l.region)}</select><span class="hint" id="${prefix}-geo-st"></span></label>`;
 }
 
@@ -2270,6 +2281,75 @@ function openKrd(l) {
     patch('leads', l.id, { krd, history: hist, updatedTs: krd.at });
     closeModal(); toast('Zapisano wynik KRD');
   };
+}
+
+/* poszukiwanie lokalu dla kandydata: kryteria, gotowe wyszukiwania w portalach, lista propozycji */
+const PREM_STATUS = { nowy: ['do sprawdzenia', ''], obejrzany: ['obejrzany', 'warn'], wyslany: ['wysłany kandydatowi', 'good'], odrzucony: ['odrzucony', 'bad'] };
+const plSlug = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+function premCrit(l) { const c = l.premCrit || {}; return { aMin: +c.aMin || 25, aMax: +c.aMax || 45, rMax: +c.rMax || 4000, rTarget: +c.rTarget || 2500 }; }
+function premLinks(l) {
+  const c = premCrit(l), city = plSlug(l.city), woj = plSlug(l.region);
+  const g = geoFind(l.city, l.region || '');
+  const otoPath = g ? [plSlug(g.region), plSlug(g.district), plSlug(g.commune), plSlug(g.name)].join('/') : (woj && city ? `${woj}/${city}/${city}/${city}` : '');
+  const q = encodeURIComponent(`lokal do wynajęcia ${l.city || ''} parter witryna ${c.aMin}-${c.aMax} m2`);
+  return [
+    ['Otodom', otoPath ? `https://www.otodom.pl/pl/wyniki/wynajem/lokal/${otoPath}?areaMin=${c.aMin}&areaMax=${c.aMax}&priceMax=${c.rMax}` : `https://www.otodom.pl/pl/wyniki/wynajem/lokal/cala-polska?areaMin=${c.aMin}&areaMax=${c.aMax}&priceMax=${c.rMax}`],
+    ['OLX', `https://www.olx.pl/nieruchomosci/biura-lokale/wynajem/${city ? city + '/' : ''}?search%5Bfilter_float_price%3Ato%5D=${c.rMax}&search%5Bfilter_float_m%3Afrom%5D=${c.aMin}&search%5Bfilter_float_m%3Ato%5D=${c.aMax}`],
+    ['Google', `https://www.google.com/search?q=${q}`]
+  ];
+}
+function premisesCard(l) {
+  const c = premCrit(l), list = l.premises || [];
+  if (!SUG.data) geoLoad().then(d => { if (d) scheduleRender(); });
+  return `<div class="card"><div class="cardhead"><h2>Poszukiwanie lokalu</h2><p>${list.length ? list.length + ' propozycji' : 'parter z witryną'}</p></div>
+    ${!l.city ? '<p class="note">Wpisz miasto planowanego punktu w danych kandydata.</p>' : `
+    <div class="formgrid">
+      <label class="field"><span>Metraż od (m²)</span><input type="number" min="10" data-prem="aMin" value="${c.aMin}"></label>
+      <label class="field"><span>Metraż do (m²)</span><input type="number" min="10" data-prem="aMax" value="${c.aMax}"></label>
+      <label class="field"><span>Czynsz maks. (zł)</span><input type="number" min="0" step="100" data-prem="rMax" value="${c.rMax}"></label>
+      <label class="field"><span>Czynsz docelowy (zł)</span><input type="number" min="0" step="100" data-prem="rTarget" value="${c.rTarget}"></label>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="small muted">Szukaj w ${esc(l.city)}:</span>${premLinks(l).map(([n, u]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${ICONS.link}${n}</a>`).join('')}</div>
+    <p class="tiny muted" style="margin-top:4px">Lokal na parterze z witryną, ${c.aMin}–${c.aMax} m², czynsz do ${fmt(c.rMax)} zł (najlepiej ok. ${fmt(c.rTarget)} zł). W portalach zaznacz jeszcze „parter”, jeśli jest taki filtr.</p>
+    ${list.length ? `<div class="stack" style="gap:6px;margin-top:10px">${list.map((p, i) => { const st = PREM_STATUS[p.status] || PREM_STATUS.nowy; const over = +p.rent > c.rMax; return `<div class="contact-row"><span class="when">${p.rent ? fmt(+p.rent) + ' zł' : '—'}</span>
+      <div style="min-width:0"><b class="small">${esc(p.address || p.title || 'Lokal')}</b> <span class="pill ${st[1]}">${st[0]}</span>${over ? ' <span class="pill bad">powyżej limitu</span>' : ''}<div class="tiny muted">${[p.area ? p.area + ' m²' : '', p.floor, p.note].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <div class="ctl">${p.url ? `<a class="btn sm ghost" href="${esc(p.url)}" target="_blank" rel="noopener">${ICONS.link}</a>` : ''}<select data-prem-st="${i}" aria-label="Status">${Object.entries(PREM_STATUS).map(([k, [n]]) => opt(k, n, p.status || 'nowy')).join('')}</select><button class="iconbtn" data-act="prem-del" data-id="${l.id}" data-i="${i}" aria-label="Usuń">${ICONS.x}</button></div></div>`; }).join('')}</div>` : ''}
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-act="prem-add" data-id="${l.id}">${ICONS.plus}Dodaj lokal</button>${list.some(p => p.status !== 'odrzucony') ? `<button class="btn sm" data-act="prem-mail" data-id="${l.id}">${ICONS.send}Wyślij propozycje kandydatowi</button>` : ''}</div>`}
+  </div>`;
+}
+function openPremAdd(l) {
+  openModal(`<div class="mh"><h2>Dodaj lokal – ${esc(l.city || '')}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><div class="formgrid">
+      <label class="field full"><span>Link do ogłoszenia</span><input type="url" id="pa-url" placeholder="https://www.otodom.pl/pl/oferta/…"></label>
+      <label class="field span2"><span>Adres / tytuł</span><input type="text" id="pa-addr" placeholder="np. ul. Mariacka 10, Śródmieście"></label>
+      <label class="field"><span>Metraż (m²)</span><input type="number" id="pa-area" min="0"></label>
+      <label class="field"><span>Czynsz (zł/mies.)</span><input type="number" id="pa-rent" min="0" step="50"></label>
+      <label class="field"><span>Piętro / witryna</span><input type="text" id="pa-floor" placeholder="parter, witryna"></label>
+      <label class="field full"><span>Notatka</span><input type="text" id="pa-note" placeholder="np. przy przystanku, parking, do odświeżenia"></label>
+    </div></div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="pa-save">Dodaj</button></div>`);
+  $('#pa-save').onclick = () => {
+    const cur = D().leads[l.id]; if (!cur) return closeModal();
+    const p = { url: $('#pa-url').value.trim(), address: $('#pa-addr').value.trim(), area: $('#pa-area').value, rent: $('#pa-rent').value, floor: $('#pa-floor').value.trim(), note: $('#pa-note').value.trim(), status: 'nowy', at: new Date().toISOString() };
+    if (!p.url && !p.address) { toast('Wpisz link albo adres lokalu.', 'bad'); return; }
+    patch('leads', l.id, { premises: [...(cur.premises || []), p], updatedTs: p.at }); closeModal(); toast('Dodano lokal');
+  };
+}
+function premMail(l) {
+  const list = (l.premises || []).filter(p => p.status !== 'odrzucony');
+  const ctx = msgContext(l, l.form);
+  const body = `${powitanie(ctx)}
+
+przygotowałem kilka propozycji lokali${l.city ? ' w miejscowości ' + l.city : ''}, które pasują pod punkt ShipCenter (parter, witryna, rozsądny czynsz):
+
+${list.map((p, i) => `${i + 1}. ${p.address || p.title || 'Lokal'}${p.area ? ', ' + p.area + ' m²' : ''}${p.rent ? ', czynsz ok. ' + fmt(+p.rent) + ' zł/mies.' : ''}${p.floor ? ', ' + p.floor : ''}${p.url ? '\n' + p.url : ''}`).join('\n')}
+
+Chętnie pomogę ocenić, który z nich da najlepszy ruch klientów – możemy też przygotować analizę lokalizacji dla wybranego adresu.
+
+Pozdrawiam
+`;
+  openCompose({ leadId: l.id, subject: `Propozycje lokali${l.city ? ' – ' + l.city : ''} – ShipCenter`, body,
+    onSent: () => { const cur = D().leads[l.id]; if (cur) patch('leads', l.id, { premises: (cur.premises || []).map(p => p.status === 'odrzucony' ? p : { ...p, status: 'wyslany' }), updatedTs: new Date().toISOString() }); } });
 }
 
 /* ===== Kontakty: przypomnienia o kolejnych kontaktach, rozmowy, SMS po rozmowie ===== */
@@ -4028,6 +4108,138 @@ Pozdrawiam
   });
 }
 
+/* ===== Podpowiedzi adresów przy wpisywaniu =====
+   Miejscowości: zbiór 44 tys. miejscowości (TERYT, CC BY) z województwem, powiatem i gminą – od razu, bez internetu.
+   Ulice: Google Places przez mostek „ShipCenter Poczta” (address_suggest / address_details),
+   a bez mostka – podpowiedź Claude (nazwy ulic w danej miejscowości). */
+
+const GEO_ASSET = '/_blob/5f462bdff9cfae9bbde779c3081a7ae1';
+const SUG = { data: null, loading: null, el: null, items: [], idx: -1, seq: 0, session: '' };
+const normTxt = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l');
+
+function geoLoad() {
+  if (SUG.data) return Promise.resolve(SUG.data);
+  if (!SUG.loading) SUG.loading = fetch(GEO_ASSET).then(r => r.ok ? r.json() : null).then(j => {
+    if (!j) return null;
+    j.n = j.e.map(e => normTxt(e[0]));
+    SUG.data = j; return j;
+  }).catch(() => null);
+  return SUG.loading;
+}
+function geoFind(name, region) {
+  const j = SUG.data; if (!j || !name) return null;
+  const n = normTxt(name.trim());
+  const hits = j.e.map((e, i) => [e, i]).filter(([e, i]) => j.n[i] === n && (!region || j.p[e[1]] === region));
+  if (!hits.length) return null;
+  hits.sort((a, b) => (b[0][4] === 1) - (a[0][4] === 1) || (b[0][4] === 2) - (a[0][4] === 2));
+  const e = hits[0][0];
+  return { name: e[0], region: j.p[e[1]], district: j.d[e[2]], commune: j.g[e[3]], city: e[4] === 1 };
+}
+function citySuggestions(q) {
+  const j = SUG.data; if (!j) return [];
+  const n = normTxt(q.trim()); if (n.length < 2) return [];
+  const out = [];
+  for (let i = 0; i < j.e.length && out.length < 400; i++) if (j.n[i].startsWith(n)) out.push(i);
+  out.sort((a, b) => {
+    const ea = j.e[a], eb = j.e[b];
+    const ra = (j.n[a] === n ? 0 : 1) * 10 + (ea[4] === 1 ? 0 : ea[4] === 2 ? 1 : 2), rb = (j.n[b] === n ? 0 : 1) * 10 + (eb[4] === 1 ? 0 : eb[4] === 2 ? 1 : 2);
+    return ra - rb || ea[0].length - eb[0].length || ea[0].localeCompare(eb[0], 'pl');
+  });
+  return out.slice(0, 8).map(i => { const e = j.e[i]; return { kind: 'city', label: e[0], sub: `${e[4] === 1 ? 'miasto' : 'gm. ' + j.g[e[3]]}, pow. ${j.d[e[2]]}, ${j.p[e[1]]}`, name: e[0], region: j.p[e[1]], district: j.d[e[2]], commune: j.g[e[3]] }; });
+}
+async function streetSuggestions(q, city) {
+  if (q.trim().length < 3) return [];
+  if (typeof mailOn === 'function' && mailOn()) {
+    try {
+      if (!SUG.session) SUG.session = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const r = await mailCall('address_suggest', { input: q + (city ? ', ' + city : ''), session: SUG.session });
+      return ((r && r.items) || []).slice(0, 6).map(x => ({ kind: 'place', label: x.main || x.text, sub: x.secondary || '', placeId: x.placeId }));
+    } catch (e) { /* mostek bez narzędzia adresowego – próbujemy dalej */ }
+  }
+  if (S.sample && city) {
+    try {
+      const r = await S.sample.json(`Podaj do 6 istniejących nazw ulic w miejscowości ${city} (Polska), które zaczynają się od lub zawierają „${q.replace(/\d.*$/, '').trim()}”. Zwróć wyłącznie tablicę JSON z nazwami ulic, np. ["ul. Piłsudskiego", "al. Piłsudskiego"]. Jeśli nie znasz, zwróć [].`, { modelTier: 'quick' });
+      const num = (q.match(/\d+[a-zA-Z]?(\/\d+)?\s*$/) || [''])[0];
+      return (Array.isArray(r) ? r : []).slice(0, 6).map(s => ({ kind: 'street', label: String(s) + (num ? ' ' + num : ''), sub: city + ' · podpowiedź Claude – sprawdź numer' }));
+    } catch (e) { return []; }
+  }
+  return [];
+}
+
+/* pola adresowe w danym kontekście: lf/le (lead), lo (analiza lokalizacji) */
+function sugFields(ctx) {
+  if (ctx === 'lo') return { street: 'lo-address', city: 'lo-city', postal: 'lo-postal', region: 'lo-region' };
+  return { street: ctx + '-pointAddress', city: ctx + '-city', postal: ctx + '-pointPostal', region: ctx + '-region' };
+}
+function setField(id, v, { onlyEmpty = false } = {}) {
+  const el = document.getElementById(id); if (!el || v == null || v === '') return;
+  if (onlyEmpty && el.value.trim()) return;
+  if (el.value === v) return;
+  el.value = v;
+  if (el.tagName === 'SELECT') { el.dataset.auto = '1'; el.dataset.prog = '1'; }
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function sugBox() {
+  let b = document.getElementById('sugbox');
+  if (!b) { b = document.createElement('div'); b.id = 'sugbox'; b.className = 'sugbox'; b.setAttribute('role', 'listbox'); document.body.appendChild(b); }
+  return b;
+}
+function sugHide() { const b = document.getElementById('sugbox'); if (b) b.hidden = true; SUG.items = []; SUG.idx = -1; SUG.el = null; }
+function sugShow(el, items) {
+  SUG.el = el.id; SUG.items = items; SUG.idx = -1;
+  const b = sugBox();
+  if (!items.length) { b.hidden = true; return; }
+  const r = el.getBoundingClientRect();
+  b.style.left = r.left + 'px'; b.style.top = (r.bottom + 4) + 'px'; b.style.width = Math.max(r.width, 280) + 'px';
+  b.innerHTML = items.map((it, i) => `<div class="sugitem" role="option" data-sug-i="${i}"><b>${esc(it.label)}</b>${it.sub ? `<span>${esc(it.sub)}</span>` : ''}</div>`).join('');
+  b.hidden = false;
+  b.querySelectorAll('[data-sug-i]').forEach(x => x.onmousedown = e => { e.preventDefault(); sugPick(+x.dataset.sugI); });
+}
+function sugMark() { const b = document.getElementById('sugbox'); if (!b) return; b.querySelectorAll('.sugitem').forEach((x, i) => x.classList.toggle('on', i === SUG.idx)); }
+
+async function sugInput(el) {
+  const kind = el.dataset.suggest, ctx = el.dataset.suggestCtx;
+  const seq = ++SUG.seq;
+  let items = [];
+  if (kind === 'city') { await geoLoad(); items = citySuggestions(el.value); }
+  else if (kind === 'street') { const f = sugFields(ctx); const city = (document.getElementById(f.city) || {}).value || ''; items = await streetSuggestions(el.value, city.trim()); }
+  if (seq !== SUG.seq || document.activeElement !== el) return;
+  sugShow(el, items);
+}
+async function sugPick(i) {
+  const it = SUG.items[i]; const el = document.getElementById(SUG.el); if (!it || !el) return sugHide();
+  const ctx = el.dataset.suggestCtx, f = sugFields(ctx);
+  sugHide();
+  if (it.kind === 'city') {
+    setField(f.city, it.name);
+    setField(f.region, it.region);
+  } else if (it.kind === 'place') {
+    try {
+      const d = await mailCall('address_details', { placeId: it.placeId, session: SUG.session });
+      SUG.session = '';
+      setField(f.street, [d.street, d.number].filter(Boolean).join(' ') || it.label);
+      if (d.city) setField(f.city, d.city);
+      if (d.postalCode) setField(f.postal, d.postalCode);
+      if (d.region) setField(f.region, d.region);
+    } catch (e) { setField(f.street, it.label); }
+  } else {
+    setField(f.street, it.label);
+  }
+}
+
+/* zdarzenia (podpinane w main.js) */
+function sugOnInput(el) { debounce('sug', () => sugInput(el), el.dataset.suggest === 'city' ? 120 : 450); }
+function sugOnKey(e) {
+  const b = document.getElementById('sugbox');
+  if (!b || b.hidden || !SUG.items.length || !e.target.dataset || !e.target.dataset.suggest) return false;
+  if (e.key === 'ArrowDown') { SUG.idx = (SUG.idx + 1) % SUG.items.length; sugMark(); e.preventDefault(); return true; }
+  if (e.key === 'ArrowUp') { SUG.idx = (SUG.idx - 1 + SUG.items.length) % SUG.items.length; sugMark(); e.preventDefault(); return true; }
+  if (e.key === 'Enter' && SUG.idx >= 0) { e.preventDefault(); sugPick(SUG.idx); return true; }
+  if (e.key === 'Escape') { sugHide(); return true; }
+  return false;
+}
+
 /* ===== Analiza lokalizacji: popyt, przepustowość, konkurencja, rachunek, raport ===== */
 
 const LOC_TYPES = {
@@ -4183,8 +4395,8 @@ function viewLocationEditor(id) {
     <div class="card"><div class="cardhead"><h2>Lokal i kandydat</h2></div><div class="formgrid">
       <label class="field span2"><span>Nazwa analizy</span><input type="text" id="lo-name" data-loc="name" value="${esc(L.name)}"></label>
       <label class="field"><span>Kandydat (lead)</span><select id="lo-leadId" data-loc="leadId">${opt('', '— brak —', L.leadId)}${leadsArr().sort((p, q) => (p.name || '').localeCompare(q.name || '', 'pl')).map(l => opt(l.id, l.name + (l.city ? ' – ' + l.city : ''), L.leadId)).join('')}</select></label>
-      <label class="field span2"><span>Adres lokalu</span><input type="text" id="lo-address" data-loc="address" value="${esc(L.address)}" placeholder="ul. …, kod, miasto"></label>
-      <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" value="${esc(L.city)}"></label>
+      <label class="field span2"><span>Adres lokalu</span><input type="text" id="lo-address" data-loc="address" data-suggest="street" data-suggest-ctx="lo" autocomplete="off" value="${esc(L.address)}" placeholder="ul. …, kod, miasto"></label>
+      <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" data-suggest="city" data-suggest-ctx="lo" autocomplete="off" value="${esc(L.city)}"></label>
       <label class="field"><span>Kod pocztowy</span><input type="text" id="lo-postal" data-loc="postalCode" value="${esc(L.postalCode || '')}" placeholder="uzupełni się sam" inputmode="numeric">${L.postalCode ? `<span class="hint">${L.postalVerified ? 'potwierdzony w Mapach Google' : 'szacunek – sprawdź'}</span>` : ''}</label>
       <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select>${L.region && L.auto && L.auto.status === 'done' ? '<span class="hint">uzupełnione automatycznie</span>' : ''}</label>
     </div></div>
@@ -4921,6 +5133,7 @@ function viewSettings() {
     </div>
     <div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="offer-reset">Przywróć wartości domyślne</button><span class="note">Zmiany zapisują się automatycznie po opuszczeniu pola.</span></div></div>`;
   const dataCard = `<div class="card"><div class="cardhead"><h2>Dane</h2></div>
+    <p class="tiny muted" style="margin-bottom:8px">Podpowiedzi miejscowości: zbiór „polskie-miejscowosci” (licencja CC BY 3.0, dane TERYT GUS). Podpowiedzi ulic: Google Places przez mostek pocztowy.</p>
     <div class="row"><button class="btn" data-act="export-xlsx">${ICONS.down}Eksport całego panelu (XLSX)</button><button class="btn" data-act="export-csv">${ICONS.down}Leady (CSV)</button><button class="btn" data-act="import-open">${ICONS.up}Import leadów</button>${!S.demo ? `<button class="btn ghost" data-act="demo-on">Podgląd na danych przykładowych</button>` : ''}</div>
     <p class="note" style="margin-top:8px">Dane panelu są wspólne dla wszystkich osób, którym udostępnisz stronę z prawem edycji (Contributor lub wyżej). Osoby z prawem podglądu widzą dane bez możliwości zmian. CSV używa średnika i kodowania UTF-8 – otwiera się poprawnie w polskim Excelu.</p></div>`;
   return head + `<div class="stack">${teamCard}${adminCard}${priceSettingsCard()}${integCard}${goalCard}${offerCard}${dataCard}</div>`;
@@ -5064,6 +5277,9 @@ function handleAction(act, el, e) {
     case 'pl-mail': if (L) plMail(L, el.dataset.lvl); return;
     case 'nda-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Kandydat podpisał umowę o zachowaniu poufności (NDA)')); patch('leads', L.id, { ndaAt: todayISO(), history: hist, updatedTs: new Date().toISOString() }); toast('Zapisano: NDA podpisana'); } return;
     case 'nda-clear': if (L) patch('leads', L.id, { ndaAt: '', updatedTs: new Date().toISOString() }); return;
+    case 'prem-add': if (L) openPremAdd(L); return;
+    case 'prem-mail': if (L) premMail(L); return;
+    case 'prem-del': if (L) { const list = (L.premises || []).slice(); list.splice(+el.dataset.i, 1); patch('leads', L.id, { premises: list, updatedTs: new Date().toISOString() }); } return;
     case 'krd-check': if (L) openKrd(L); return;
     case 'script-open': if (L) openScript(L); return;
     case 'meet-quick': if (L) openMeetQuick(L); return;
@@ -5172,6 +5388,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.dataset && el.dataset.suggest) sugOnInput(el);
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
   if (el.dataset.rev) { onRevInput(el, false); return; }
@@ -5185,7 +5402,10 @@ document.addEventListener('change', e => {
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
   if (el.dataset.geo) { const pf = el.dataset.geo; if (pf === 'le') saveLeadEdit(); debounce('geo-' + pf, () => autoGeo(pf), 250); return; }
+  if ((el.id === 'lf-region' || el.id === 'le-region') && el.dataset.prog) { delete el.dataset.prog; if (el.id === 'le-region') saveLeadEdit(); return; }
   if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
+  if (el.dataset.prem) { const l = D().leads[S.route.id]; if (l) patch('leads', l.id, { premCrit: { ...(l.premCrit || {}), [el.dataset.prem]: +el.value || '' }, updatedTs: new Date().toISOString() }); return; }
+  if (el.dataset.premSt != null) { const l = D().leads[S.route.id]; if (l) { const list = (l.premises || []).slice(); if (list[+el.dataset.premSt]) list[+el.dataset.premSt] = { ...list[+el.dataset.premSt], status: el.value }; patch('leads', l.id, { premises: list, updatedTs: new Date().toISOString() }); } return; }
   if (el.dataset.plImport) { const f = el.files && el.files[0]; if (f) plImport(el.dataset.plImport, f); el.value = ''; return; }
   if (el.dataset.plPrev) { plTogglePreview(el.dataset.plPrev, el.checked); return; }
   if (el.dataset.plCountry) { plToggleCountry(el.dataset.plCountry, el.checked); return; }
@@ -5222,7 +5442,9 @@ document.addEventListener('paste', e => {
   const el = e.target;
   if (el && el.dataset && el.dataset.nipPaste) { const text = (e.clipboardData || window.clipboardData).getData('text'); e.preventDefault(); onNipPaste(el, text); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+document.addEventListener('keydown', e => { if (sugOnKey(e)) return; if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+document.addEventListener('focusout', e => { const t = e.target; if (t && t.dataset && t.dataset.suggest) setTimeout(() => { if (document.activeElement !== t) sugHide(); }, 180); });
+window.addEventListener('scroll', () => { if (SUG.el) sugHide(); }, true);
 
 function afterRender() { }
 

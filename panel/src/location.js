@@ -153,8 +153,8 @@ function viewLocationEditor(id) {
     <div class="card"><div class="cardhead"><h2>Lokal i kandydat</h2></div><div class="formgrid">
       <label class="field span2"><span>Nazwa analizy</span><input type="text" id="lo-name" data-loc="name" value="${esc(L.name)}"></label>
       <label class="field"><span>Kandydat (lead)</span><select id="lo-leadId" data-loc="leadId">${opt('', '— brak —', L.leadId)}${leadsArr().sort((p, q) => (p.name || '').localeCompare(q.name || '', 'pl')).map(l => opt(l.id, l.name + (l.city ? ' – ' + l.city : ''), L.leadId)).join('')}</select></label>
-      <label class="field span2"><span>Adres lokalu</span><input type="text" id="lo-address" data-loc="address" value="${esc(L.address)}" placeholder="ul. …, kod, miasto"></label>
-      <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" value="${esc(L.city)}"></label>
+      <label class="field span2"><span>Adres lokalu</span><input type="text" id="lo-address" data-loc="address" data-suggest="street" data-suggest-ctx="lo" autocomplete="off" value="${esc(L.address)}" placeholder="ul. …, kod, miasto"></label>
+      <label class="field"><span>Miasto</span><input type="text" id="lo-city" data-loc="city" data-suggest="city" data-suggest-ctx="lo" autocomplete="off" value="${esc(L.city)}"></label>
       <label class="field"><span>Kod pocztowy</span><input type="text" id="lo-postal" data-loc="postalCode" value="${esc(L.postalCode || '')}" placeholder="uzupełni się sam" inputmode="numeric">${L.postalCode ? `<span class="hint">${L.postalVerified ? 'potwierdzony w Mapach Google' : 'szacunek – sprawdź'}</span>` : ''}</label>
       <label class="field"><span>Województwo</span><select id="lo-region" data-loc="region">${regionOpts(L.region)}</select>${L.region && L.auto && L.auto.status === 'done' ? '<span class="hint">uzupełnione automatycznie</span>' : ''}</label>
     </div></div>

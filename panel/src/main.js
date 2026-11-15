@@ -50,6 +50,9 @@ function handleAction(act, el, e) {
     case 'pl-mail': if (L) plMail(L, el.dataset.lvl); return;
     case 'nda-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Kandydat podpisał umowę o zachowaniu poufności (NDA)')); patch('leads', L.id, { ndaAt: todayISO(), history: hist, updatedTs: new Date().toISOString() }); toast('Zapisano: NDA podpisana'); } return;
     case 'nda-clear': if (L) patch('leads', L.id, { ndaAt: '', updatedTs: new Date().toISOString() }); return;
+    case 'prem-add': if (L) openPremAdd(L); return;
+    case 'prem-mail': if (L) premMail(L); return;
+    case 'prem-del': if (L) { const list = (L.premises || []).slice(); list.splice(+el.dataset.i, 1); patch('leads', L.id, { premises: list, updatedTs: new Date().toISOString() }); } return;
     case 'krd-check': if (L) openKrd(L); return;
     case 'script-open': if (L) openScript(L); return;
     case 'meet-quick': if (L) openMeetQuick(L); return;
@@ -158,6 +161,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.dataset && el.dataset.suggest) sugOnInput(el);
   if (el.dataset.f === 'q') { S.f.q = el.value; debounce('q', () => scheduleRender(), 250); return; }
   if (el.dataset.loc != null || el.dataset.locA || el.dataset.comp != null) { if (el.tagName !== 'SELECT') onLocInput(el); return; }
   if (el.dataset.rev) { onRevInput(el, false); return; }
@@ -171,7 +175,10 @@ document.addEventListener('change', e => {
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
   if (el.dataset.geo) { const pf = el.dataset.geo; if (pf === 'le') saveLeadEdit(); debounce('geo-' + pf, () => autoGeo(pf), 250); return; }
+  if ((el.id === 'lf-region' || el.id === 'le-region') && el.dataset.prog) { delete el.dataset.prog; if (el.id === 'le-region') saveLeadEdit(); return; }
   if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
+  if (el.dataset.prem) { const l = D().leads[S.route.id]; if (l) patch('leads', l.id, { premCrit: { ...(l.premCrit || {}), [el.dataset.prem]: +el.value || '' }, updatedTs: new Date().toISOString() }); return; }
+  if (el.dataset.premSt != null) { const l = D().leads[S.route.id]; if (l) { const list = (l.premises || []).slice(); if (list[+el.dataset.premSt]) list[+el.dataset.premSt] = { ...list[+el.dataset.premSt], status: el.value }; patch('leads', l.id, { premises: list, updatedTs: new Date().toISOString() }); } return; }
   if (el.dataset.plImport) { const f = el.files && el.files[0]; if (f) plImport(el.dataset.plImport, f); el.value = ''; return; }
   if (el.dataset.plPrev) { plTogglePreview(el.dataset.plPrev, el.checked); return; }
   if (el.dataset.plCountry) { plToggleCountry(el.dataset.plCountry, el.checked); return; }
@@ -208,7 +215,9 @@ document.addEventListener('paste', e => {
   const el = e.target;
   if (el && el.dataset && el.dataset.nipPaste) { const text = (e.clipboardData || window.clipboardData).getData('text'); e.preventDefault(); onNipPaste(el, text); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+document.addEventListener('keydown', e => { if (sugOnKey(e)) return; if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+document.addEventListener('focusout', e => { const t = e.target; if (t && t.dataset && t.dataset.suggest) setTimeout(() => { if (document.activeElement !== t) sugHide(); }, 180); });
+window.addEventListener('scroll', () => { if (SUG.el) sugHide(); }, true);
 
 function afterRender() { }
 

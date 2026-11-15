@@ -27,6 +27,10 @@ export const cfg = {
   sentFolder: env('SENT_FOLDER'),
   tlsRejectUnauthorized: bool('TLS_REJECT_UNAUTHORIZED', true),
   maxSendPerHour: int('MAX_SEND_PER_HOUR', 80),
+  places: {
+    key: env('GOOGLE_MAPS_API_KEY'),
+    url: env('GOOGLE_PLACES_URL', 'https://places.googleapis.com').replace(/\/+$/, '')
+  },
   smsapi: {
     token: env('SMSAPI_TOKEN'),
     from: env('SMSAPI_FROM'),

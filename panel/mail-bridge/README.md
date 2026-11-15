@@ -39,6 +39,10 @@ Jeśli certyfikat serwera poczty nie pasuje do nazwy `shipcenter.pl` (np. jest w
 
 > **Repozytorium jest publiczne.** Plik `.env` z hasłami trzymaj tylko na serwerze – nigdy go nie commituj.
 
+### Podpowiedzi adresów (Google Places)
+
+W `.env` wpisz `GOOGLE_MAPS_API_KEY` – klucz Google Cloud z włączonym **Places API (New)** (ten sam, którego używacie do map). Panel podpowiada wtedy ulice z numerami i sam uzupełnia kod pocztowy oraz województwo.
+
 ### SMS (SMSAPI)
 
 1. Panel SMSAPI → **Ustawienia API → Tokeny API (OAuth) → Wygeneruj token** z uprawnieniem **SMS** (osobny token dla serwera, nie ten używany gdzie indziej).
@@ -108,6 +112,8 @@ Moduły: `a2enmod proxy proxy_http ssl`. Sprawdzenie z zewnątrz: `curl https://
 | `mail_get` | treść wiadomości + lista załączników |
 | `mail_attachment` | pobranie załącznika (base64) |
 | `mail_send` | wysyłka z `franczyza@shipcenter.pl` + kopia w „Wysłanych” |
+| `address_suggest` | podpowiedzi adresów przy wpisywaniu (Google Places) |
+| `address_details` | kod pocztowy, miejscowość, powiat i województwo wybranego adresu |
 | `sms_send` | SMS przez SMSAPI – od razu albo o podanej godzinie (`date`) |
 | `sms_cancel` | anulowanie zaplanowanego SMS-a |
 

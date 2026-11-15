@@ -474,3 +474,9 @@ details.adv[open] summary { margin-bottom: 10px; }
 .leadview .btn.primary.cta svg, .leadview .btn.danger svg { color: currentColor; }
 .leadview .btn:disabled svg { color: var(--muted); }
 .leadview .pkgswitch .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); color: var(--accent-ink); }
+
+/* podpowiedzi adresów */
+.sugbox { position: fixed; z-index: 2000; background: var(--surface, #fff); border: 1px solid var(--line-2, #d1d5db); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 4px; max-height: 320px; overflow: auto; }
+.sugitem { display: grid; gap: 1px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: .9rem; }
+.sugitem span { font-size: .75rem; color: var(--muted); }
+.sugitem:hover, .sugitem.on { background: color-mix(in srgb, var(--accent, #ea580c) 9%, transparent); }

@@ -426,3 +426,7 @@ details.adv[open] summary { margin-bottom: 10px; }
 .revbox .rbar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; }
 .revbox .rbar i { display: block; height: 100%; border-radius: 3px; background: #ea580c; }
 .revbox a { color: #fb923c; }
+
+/* Logo */
+.brand-logo { height: 26px; width: auto; display: block; color: var(--hdr-ink); flex: none; }
+@media (max-width: 520px) { .brand-logo { height: 22px; } }

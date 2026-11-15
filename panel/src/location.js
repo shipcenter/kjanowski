@@ -283,7 +283,7 @@ function reportHTML(x, r, standalone = true) {
   .rpt h2{font-family:Poppins,Arial,sans-serif;font-size:16px;margin:26px 0 8px;padding-bottom:4px;border-bottom:2px solid #111827;color:#0f1b2d}
   .rpt ol{padding-left:20px}
   .rpt .top{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #ea580c;padding-bottom:12px;gap:12px;flex-wrap:wrap}
-  .rpt .brand{font-family:Poppins,Arial,sans-serif;font-weight:700;font-size:22px;color:#111827;letter-spacing:-.03em}.rpt .brand b{color:#ea580c;font-weight:700}
+  .rpt .brand{line-height:0}.rpt .brand svg{height:30px;width:auto;display:block}
   .rpt .code{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6f7c91;letter-spacing:.06em;text-transform:uppercase}
   .rpt .hero{display:flex;gap:20px;align-items:center;margin-top:18px;flex-wrap:wrap}
   .rpt .score{width:96px;height:96px;border-radius:50%;border:7px solid ${gradeCol};display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
@@ -299,7 +299,7 @@ function reportHTML(x, r, standalone = true) {
   .rpt .foot{margin-top:28px;padding-top:12px;border-top:1px solid #dce2eb;font-size:11px;color:#6f7c91}`;
   const capRow = (n, v, colr) => { const mx = Math.max(r.capacity, r.demand.high, r.demand.peak) * 1.05; return `<tr><td style="width:34%">${n}</td><td><div class="bar"><i style="width:${clamp(v / mx * 100, 0, 100)}%;background:${colr}"></i></div></td><td class="r" style="width:16%">${fmt(v)}</td></tr>`; };
   const body = `<div class="rpt"><div class="pg">
-  <div class="top"><div><div class="brand">Ship<b>Center</b></div><div class="code">Raport potencjału lokalizacji · ${esc(fdate(todayISO()))}</div></div><div class="code" style="text-align:right">Przygotowano dla:<br><b style="color:#0f1b2d;font-size:13px;text-transform:none;letter-spacing:0">${esc(l ? l.name : PH('kandydat'))}</b></div></div>
+  <div class="top"><div><div class="brand">${LOGO_SVG}</div><div class="code">Raport potencjału lokalizacji · ${esc(fdate(todayISO()))}</div></div><div class="code" style="text-align:right">Przygotowano dla:<br><b style="color:#0f1b2d;font-size:13px;text-transform:none;letter-spacing:0">${esc(l ? l.name : PH('kandydat'))}</b></div></div>
   <div class="hero"><div class="score"><b>${r.score}</b><span>/ 100</span></div><div><div class="code">Klasa ${r.grade}</div><h1>${esc(r.gradeText)}</h1><div>${esc(L.address || '')}${L.address && L.city ? ', ' : ''}${esc(L.city || '')}${L.region ? ' · woj. ' + esc(L.region) : ''}</div><div class="muted small">${esc(r.lt.n)} · ${fmt(+L.traffic)} osób dziennie przy lokalu · parking: ${esc(L.parking)}</div></div></div>
   <div class="kpis"><div class="k"><div class="l">Szacowany popyt</div><div class="v">${fmt(r.demand.base)}</div><div class="small muted">paczek / mies. (${fmt(r.demand.low)}–${fmt(r.demand.high)})</div></div>
   <div class="k"><div class="l">Przepustowość punktu</div><div class="v">${fmt(r.capacity)}</div><div class="small muted">wykorzystanie ${pct(r.util)}</div></div>

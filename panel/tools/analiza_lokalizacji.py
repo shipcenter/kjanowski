@@ -9,54 +9,36 @@ Klucz API:
     – skrypt nie musi go znać, proxy dokleja go do zapytań;
   - lokalnie / na serwerze: zmienna GOOGLE_MAPS_API_KEY (np. z pliku .env, patrz .env.example).
 
+Konkurencja to wyłącznie punkty Epaka.pl i Pakersi (oraz inne punkty ShipCenter – ochrona 3 km).
+Bez klucza Google skrypt korzysta z OpenStreetMap (dane częściowe).
+
 Wynik (JSON): współrzędne i adres, lista konkurencji z typem i odległością w metrach,
 gęstość punktów handlowych wokół lokalu oraz podpowiedzi pól do analizy w panelu.
 Liczby mieszkańców Places API nie podaje – uzupełnia się je osobno.
 """
-import json, math, os, sys, time, urllib.request, urllib.error, argparse
+import json, math, os, sys, time, urllib.request, urllib.error, urllib.parse, argparse
 
 API = 'https://places.googleapis.com/v1/places:'
 FIELDS = 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.businessStatus'
 
-# Zapytania o konkurencję: (fraza, czy wymagać słowa z frazy w nazwie, słowa-klucze)
+# Konkurencja ShipCenter: wyłącznie punkty Epaka.pl i Pakersi (+ inne punkty ShipCenter – ochrona 3 km)
 QUERIES = [
-    ('Epaka punkt', ['epaka']),
-    ('Furgonetka punkt', ['furgonetka']),
-    ('ShipCenter punkt kurierski', ['shipcenter', 'ship center']),
-    ('punkt nadawczy paczek', ['paczk', 'kurier', 'przesył', 'nadaw', 'parcel', 'pack', 'shipping', 'epaka', 'furgonetka']),
-    ('punkt kurierski', ['paczk', 'kurier', 'przesył', 'nadaw', 'parcel', 'pack', 'shipping']),
-    ('Paczkomat InPost', ['paczkomat', 'inpost']),
-    ('PaczkoPunkt InPost', ['paczkopunkt', 'inpost']),
-    ('Poczta Polska', ['poczta', 'pocztex', 'urząd pocztowy']),
-    ('DPD Pickup', ['dpd']),
-    ('DHL POP', ['dhl']),
-    ('Orlen Paczka', ['orlen']),
-    ('Żabka', ['żabka', 'zabka']),
-    ('Allegro One Box', ['one box', 'allegro']),
-    ('GLS ParcelShop', ['gls']),
-    ('UPS Access Point', ['ups']),
+    ('Epaka', ['epaka']),
+    ('Pakersi', ['pakersi']),
+    ('ShipCenter', ['shipcenter', 'ship center']),
 ]
-STRENGTH = {'sc': 5, 'multi': 4, 'poczta': 3, 'kurier': 3, 'automat': 3, 'paczkopunkt': 2, 'pudo': 2}
+STRENGTH = {'sc': 5, 'epaka': 3, 'pakersi': 3}
 
 
-def classify(name, types):
+def classify(name, types=None):
     n = (name or '').lower()
-    t = set(types or [])
     if 'shipcenter' in n or 'ship center' in n:
         return 'sc'
-    if any(k in n for k in ('paczkomat', 'parcel locker', 'one box', 'automat', 'dhl box', 'boxmachine')) or 'parcel_locker' in t:
-        return 'automat'
-    if 'paczkopunkt' in n:
-        return 'paczkopunkt'
-    if any(k in n for k in ('epaka', 'furgonetka', 'punkt nadawczy', 'punkt nadania', 'punkt kurierski', 'przesyłki kurierskie')):
-        return 'multi'
-    if any(k in n for k in ('poczta', 'pocztex', 'urząd pocztowy')) or 'post_office' in t:
-        return 'poczta'
-    if any(k in n for k in ('oddział', 'terminal', 'magazyn', 'depot', 'sortownia')):
-        return 'kurier'
-    if any(k in n for k in ('pickup', 'dhl pop', 'dhl servicepoint', 'gls', 'ups access', 'żabka', 'zabka', 'orlen', 'ruch', 'dpd')):
-        return 'pudo'
-    return 'multi'
+    if 'pakersi' in n:
+        return 'pakersi'
+    if 'epaka' in n:
+        return 'epaka'
+    return None
 
 
 def haversine(a, b):
@@ -139,7 +121,7 @@ def analyze(address, radius=3000):
     restriction = rect(center, radius)
     seen, comps = set(), []
     for query, words in QUERIES:
-        pages = 3 if 'Paczkomat' in query else 1
+        pages = 1
         for p in text_search(query, restriction=restriction, pages=pages):
             pid = p.get('id')
             name = (p.get('displayName') or {}).get('text', '')
@@ -155,6 +137,8 @@ def analyze(address, radius=3000):
                 continue
             seen.add(pid)
             typ = classify(name, p.get('types'))
+            if not typ:
+                continue
             comps.append({'name': name, 'type': typ, 'dist': int(round(dist / 10.0) * 10), 'strength': STRENGTH.get(typ, 3),
                           'address': p.get('formattedAddress', ''), 'placeId': pid, 'source': 'Google Maps'})
     comps.sort(key=lambda c: c['dist'])
@@ -166,13 +150,70 @@ def analyze(address, radius=3000):
             'source': 'Google Maps (Places API)', 'at': time.strftime('%Y-%m-%dT%H:%M:%S')}
 
 
+# ---------- OpenStreetMap (Nominatim) – bez klucza, dane częściowe ----------
+NOMINATIM = 'https://nominatim.openstreetmap.org/search'
+UA = 'location-analysis-script/1.0'
+
+
+def nominatim(params):
+    q = urllib.parse.urlencode({**params, 'format': 'jsonv2', 'countrycodes': 'pl', 'addressdetails': 1})
+    req = urllib.request.Request(NOMINATIM + '?' + q, headers={'User-Agent': UA, 'Accept-Language': 'pl'})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        out = json.loads(resp.read().decode())
+    time.sleep(1.1)  # zasady Nominatim: max 1 zapytanie na sekundę
+    return out
+
+
+def analyze_osm(address, radius=3000):
+    res = nominatim({'q': address, 'limit': 1})
+    if not res:
+        raise SystemExit(f'Nie znaleziono adresu w OpenStreetMap: {address}')
+    g0 = res[0]
+    center = (float(g0['lat']), float(g0['lon']))
+    ad = g0.get('address', {})
+    city = ad.get('city') or ad.get('town') or ad.get('village') or ad.get('municipality') or ''
+    region = (ad.get('state') or '').lower().replace('województwo', '').strip()
+    box = rect(center, radius)['rectangle']
+    viewbox = f"{box['low']['longitude']},{box['high']['latitude']},{box['high']['longitude']},{box['low']['latitude']}"
+    seen, comps = set(), []
+    for query, words in QUERIES:
+        for p in nominatim({'q': query, 'viewbox': viewbox, 'bounded': 1, 'limit': 50}):
+            key = (p.get('osm_type'), p.get('osm_id'))
+            name = p.get('name') or p.get('display_name', '').split(',')[0]
+            if key in seen or not any(w in (name or '').lower() for w in words):
+                continue
+            dist = haversine(center, (float(p['lat']), float(p['lon'])))
+            if dist > radius:
+                continue
+            seen.add(key)
+            typ = classify(name)
+            if not typ:
+                continue
+            a2 = p.get('address', {})
+            addr = ', '.join(x for x in [' '.join(y for y in (a2.get('road', ''), a2.get('house_number', '')) if y), a2.get('city') or a2.get('town') or a2.get('village') or ''] if x)
+            comps.append({'name': name, 'type': typ, 'dist': int(round(dist / 10.0) * 10), 'strength': STRENGTH.get(typ, 3), 'address': addr, 'source': 'OpenStreetMap'})
+    comps.sort(key=lambda c: c['dist'])
+    return {'address': address, 'geo': {'lat': center[0], 'lng': center[1], 'formattedAddress': g0.get('display_name', ''), 'city': city, 'region': region},
+            'radius': radius, 'competitors': comps, 'source': 'OpenStreetMap (Nominatim) – dane mogą być niepełne', 'at': time.strftime('%Y-%m-%dT%H:%M:%S')}
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='Analiza lokalizacji ShipCenter (Google Maps)')
     ap.add_argument('adres')
     ap.add_argument('--promien', type=int, default=3000)
     ap.add_argument('--json', help='zapisz wynik do pliku')
+    ap.add_argument('--zrodlo', choices=['auto', 'google', 'osm'], default='auto', help='google = Places API (wymaga klucza), osm = OpenStreetMap')
     a = ap.parse_args()
-    out = analyze(a.adres, a.promien)
+    if a.zrodlo == 'osm':
+        out = analyze_osm(a.adres, a.promien)
+    else:
+        try:
+            out = analyze(a.adres, a.promien)
+        except SystemExit as e:
+            if a.zrodlo == 'google' or 'HTTP 403' not in str(e):
+                raise
+            print('Brak klucza Google – używam OpenStreetMap.', file=sys.stderr)
+            out = analyze_osm(a.adres, a.promien)
     txt = json.dumps(out, ensure_ascii=False, indent=2)
     if a.json:
         open(a.json, 'w', encoding='utf8').write(txt)

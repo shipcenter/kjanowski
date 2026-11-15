@@ -177,6 +177,7 @@ function viewLocationEditor(id) {
     </div></div>
     ${revenueCard(x, r)}
     <div class="card"><div class="cardhead"><h2>Konkurencja w okolicy</h2><p>tylko punkty Epaka.pl i Pakersi do ok. 3 km</p></div>
+      ${L.compAuto ? `<div class="callout ${(L.competitors || []).filter(c => (COMP_TYPES[c.type] || {}).w > 0 && +c.dist <= 3000).length ? '' : 'good'}" style="margin-bottom:12px"><b>Sprawdzono automatycznie ${fdt(L.compAuto.at)}</b> · źródło: ${esc(L.compAuto.source || '')}<br><span class="small">${esc(L.compAuto.note || '')}</span></div>` : ''}
       ${(L.competitors || []).map((c, i) => `<div class="comprow">
         <input type="text" id="lc-name-${i}" data-comp="${i}" data-k="name" value="${esc(c.name)}" placeholder="Nazwa / adres" aria-label="Nazwa">
         <select id="lc-type-${i}" data-comp="${i}" data-k="type" aria-label="Typ">${Object.entries(COMP_TYPES).filter(([k, t]) => !t.legacy || k === c.type).map(([k, t]) => opt(k, t.n, c.type)).join('')}</select>
@@ -310,7 +311,8 @@ function reportHTML(x, r, standalone = true) {
   <table>${capRow('Popyt – osoby prywatne', r.demand.indiv, '#2a78d6')}${capRow('Popyt – firmy', r.demand.biz, '#1baf7a')}${capRow('Popyt łącznie (bazowy)', r.demand.base, '#13294b')}${capRow('Szczyt sezonu (XI–XII)', r.demand.peak, '#eb6834')}${capRow('Przepustowość', r.capacity, '#6f7c91')}</table>
   <p class="small muted">Przepustowość: ${r.people} os. przy obsłudze, ${fmt(+L.hours)} godz. dziennie, ${fmt(+L.days)} dni w tygodniu, zaplecze ${fmt(+L.storage)} m². Wąskie gardło: ${esc(r.bottleneck)}. Uwzględniono też wydania paczek (${fmt(+L.rev.pickups || 0)} miesięcznie).</p>
   <h2>Konkurencja</h2>
-  <div class="two"><div>${radar.svg}${radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${esc(cp.name || '—')}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nie wprowadzono punktów konkurencji.</p>'}
+  ${L.compAuto ? `<p class="small" style="margin:0 0 8px">${esc(L.compAuto.note || '')} <span class="muted">(źródło: ${esc(L.compAuto.source || '')}, ${esc(fdate(L.compAuto.at))})</span></p>` : ''}
+  <div class="two"><div>${radar.svg}${radar.legend}</div><div>${r.compRows.length ? `<table><thead><tr><th>Punkt</th><th>Typ</th><th class="r">Odległość</th></tr></thead><tbody>${r.compRows.slice().sort((p, q) => (+p.dist) - (+q.dist)).map(cp => `<tr><td>${esc(cp.name || '—')}</td><td class="small">${esc(cp.tn)}</td><td class="r">${fmt(+cp.dist)} m</td></tr>`).join('')}</tbody></table>` : `<p class="muted">${L.compAuto ? 'Brak punktów Epaka.pl i Pakersi w promieniu 3 km.' : 'Nie wprowadzono punktów konkurencji.'}</p>`}
   <p class="small muted">Jako konkurencję liczymy punkty pośredników kurierskich Epaka.pl i Pakersi. Inny punkt sieci ShipCenter nie powstanie bliżej niż ${o.ochrona} km.</p></div></div>
   <h2>Szacowany przychód punktu</h2>
   <table>${r.fin.base.lines.map(ln => { const it = REV_ITEMS.find(i => i.k === ln.k); return `<tr><td>${esc(ln.n)}</td><td class="small muted">${fmt(ln.count)} / mies. × ${zl(+L.a[it.p], ln.k === 'pickups' ? 2 : 0)}</td><td class="r">${zl(ln.revenue)}</td></tr>`; }).join('')}<tr><td><b>Razem</b></td><td class="small muted">w skali roku ok. ${zl(r.fin.base.revenue * 12)}</td><td class="r"><b>${zl(r.fin.base.revenue)}</b></td></tr></table>

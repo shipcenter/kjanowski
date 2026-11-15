@@ -54,6 +54,7 @@ function handleAction(act, el, e) {
     case 'mail-filter': MAIL.filter = el.dataset.k; scheduleRender(); return;
     case 'flex-mail': if (L) openCompose({ leadId: L.id, subject: 'Konfiguracja pakietu FLEX – ShipCenter', body: flexEmailBody(L) }); return;
     case 'smart-reset': if (L) { patch('leads', L.id, { smartPrice: '', updatedTs: new Date().toISOString() }); } return;
+    case 'smart-mail': if (L) openCompose({ leadId: L.id, subject: 'Pakiet SMART – podsumowanie oferty ShipCenter', body: smartEmailBody(L) }); return;
     case 'flex-clear': if (L) patch('leads', L.id, { flexItems: [], updatedTs: new Date().toISOString() }); return;
     case 'contract-pdf': downloadContract(el.dataset.file); return;
     case 'meet-use': if (L) { const link = meetLinkFor(L); if (link) { patch('leads', id, { meetingPlace: link, updatedTs: new Date().toISOString() }); setTimeout(() => syncReminders(id, 'spotkanie'), 300); } } return;

@@ -245,7 +245,7 @@ function viewLead(id) {
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="loc-new" data-lead="${l.id}">${ICONS.pin}Nowa analiza dla leada</button></div></div>`;
 
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}Usuń leada</button></div>`;
-  const flex = l.pkg === 'flex' && modelOf(l) === 'franczyza' ? flexCard(l) : '';
+  const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
   return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
 }
 
@@ -419,15 +419,13 @@ function flexCard(l) {
   const sel = new Set(l.flexItems || []);
   const c = flexCalc(l.flexItems || [], l.smartPrice);
   const zl = v => Number(v).toLocaleString('pl-PL', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2, useGrouping: 'always' }) + '\u00a0zł';
-  const list = +offer().licencja || 0;
-  const custom = +l.smartPrice > 0 && +l.smartPrice !== list;
   return `<div class="card"><div class="cardhead"><h2>Konfiguracja FLEX</h2><p>${c.n ? c.n + ' ' + (c.n === 1 ? 'produkt' : c.n < 5 ? 'produkty' : 'produktów') : 'bez sprzętu'}</p></div>
     <div class="flexwrap"><div class="stack" style="gap:14px">
     ${FLEX_GROUPS.map(g => `<div><div class="row between" style="margin-bottom:6px"><span class="eyebrow">${esc(g.n)}</span>${g.one ? '<span class="tiny muted">jeden wariant</span>' : ''}</div>
       <div class="flexitems">${g.items.map(it => `<label class="flexitem ${sel.has(it.id) ? 'on' : ''}"><input type="checkbox" data-flex="${it.id}" ${sel.has(it.id) ? 'checked' : ''}><span style="min-width:0"><b class="small">${esc(it.n)}</b><span class="tiny muted" style="display:block">${esc(it.d)}</span></span><span class="small mono" style="white-space:nowrap">${zl(it.p)}</span></label>`).join('')}</div></div>`).join('')}
     </div>
     <div class="flexsum">
-      <label class="field"><span>Cena pakietu SMART (licencja)${custom ? ' · <b>indywidualna</b>' : ''}</span><input type="number" id="ld-smart" data-lead-field="smartPrice" min="0" step="1" value="${esc(l.smartPrice || '')}" placeholder="${list}"><span class="hint">${custom ? `Cennik: ${zl(list)} · <button type="button" class="btn sm ghost" style="padding:0 4px;min-height:0" data-act="smart-reset" data-id="${l.id}">przywróć cenę z cennika</button>` : 'Puste = cena z cennika. Wpisz kwotę, jeśli ustaliliście z kandydatem inną.'}</span></label>
+      ${smartPriceField(l)}
       <dl class="kv flexkv"><dt>Pakiet SMART</dt><dd class="mono">${zl(c.smart)}</dd><dt>Sprzęt przed rabatem</dt><dd class="mono">${zl(c.gross)}</dd><dt>Rabat FLEX ${c.pct}%</dt><dd class="mono">${c.disc ? '−' + zl(c.disc) : zl(0)}</dd><dt>Sprzęt po rabacie</dt><dd class="mono">${zl(c.after)}</dd></dl>
       <div class="flextotal"><span class="tiny muted">Razem netto</span><b>${zl(c.net)}</b><span class="tiny muted">brutto (23% VAT): ${zl(c.brutto)}</span></div>
       <div class="flextiers">${FLEX_TIERS.map(t => `<span class="${c.n >= t.min ? 'on' : ''}">${t.min}${t.max < 99 ? '–' + t.max : '+'} · ${t.pct}%</span>`).join('')}</div>
@@ -457,6 +455,41 @@ Rabat FLEX ${c.pct}%: ${c.disc ? '−' + zl(c.disc) : '0 zł'}
 Razem: ${zl(c.net)} netto (${zl(c.brutto)} brutto)
 
 Konfigurację można w każdej chwili zmienić – wystarczy odpisać na tę wiadomość. Pełny kalkulator: ${offer().linkKalkulator || 'https://shipcenter.pl/franczyza/kalkulator'}
+
+Pozdrawiam
+`;
+}
+
+const zlFmt = v => Number(v).toLocaleString('pl-PL', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2, useGrouping: 'always' }) + '\u00a0zł';
+function smartPriceField(l) {
+  const zl = zlFmt;
+  const list = +offer().licencja || 0;
+  const custom = +l.smartPrice > 0 && +l.smartPrice !== list;
+  return `<label class="field"><span>Cena pakietu SMART (licencja)${custom ? ' · <b>indywidualna</b>' : ''}</span><input type="number" id="ld-smart" data-lead-field="smartPrice" min="0" step="1" value="${esc(l.smartPrice || '')}" placeholder="${list}"><span class="hint">${custom ? `Cennik: ${zl(list)} · <button type="button" class="btn sm ghost" style="padding:0 4px;min-height:0" data-act="smart-reset" data-id="${l.id}">przywróć cenę z cennika</button>` : 'Puste = cena z cennika. Wpisz kwotę, jeśli ustaliliście z kandydatem inną.'}</span></label>`;
+}
+/* podsumowanie pakietu SMART (kandydat ma własne wyposażenie) */
+function smartCard(l) {
+  const o = offer(); const smart = smartPriceOf(l); const zl = zlFmt;
+  return `<div class="card"><div class="cardhead"><h2>Pakiet SMART</h2><p>własne wyposażenie, bez zakupu sprzętu</p></div>
+    <div class="flexsum" style="position:static;max-width:520px">
+      ${smartPriceField(l)}
+      <dl class="kv flexkv"><dt>Pakiet SMART (licencja)</dt><dd class="mono">${zl(smart)}</dd><dt>Sprzęt</dt><dd class="mono">${zl(0)}</dd></dl>
+      <div class="flextotal"><span class="tiny muted">Razem netto – jednorazowo</span><b>${zl(smart)}</b><span class="tiny muted">brutto (23% VAT): ${zl(Math.round(smart * 123) / 100)}</span></div>
+      <p class="tiny muted">Opłata miesięczna ${zl(+o.oplataMies || 0)} netto, 0 zł w miesiącu z ponad ${o.progRabatu || 600} paczkami. Sprzęt musi spełniać standard ShipCenter.</p>
+      <div class="row"><button class="btn sm primary" data-act="smart-mail" data-id="${l.id}">${ICONS.email}Wyślij podsumowanie klientowi</button></div>
+    </div></div>`;
+}
+function smartEmailBody(l) {
+  const o = offer(); const smart = smartPriceOf(l); const ctx = msgContext(l, l.form);
+  const zl = v => Number(v).toLocaleString('pl-PL', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2, useGrouping: 'always' }) + ' zł';
+  return `${powitanie(ctx)}
+
+zgodnie z rozmową przesyłam podsumowanie pakietu SMART – ${ctx.g('korzysta Pan', 'korzysta Pani', 'korzystają Państwo', 'korzystasz')} z własnego wyposażenia, więc bez zakupu sprzętu:
+
+Pakiet SMART (licencja): ${zl(smart)} netto (${zl(Math.round(smart * 123) / 100)} brutto) – jednorazowo
+Opłata miesięczna: ${zl(+o.oplataMies || 0)} netto, 0 zł w miesiącu z ponad ${o.progRabatu || 600} paczkami
+
+Warunek: sprzęt (komputer, drukarka laserowa i termiczna, skaner) musi spełniać standard ShipCenter – chętnie pomożemy to sprawdzić. Gdyby jednak potrzebny był sprzęt, zestaw można dobrać w kalkulatorze: ${o.linkKalkulator || 'https://shipcenter.pl/franczyza/kalkulator'}
 
 Pozdrawiam
 `;

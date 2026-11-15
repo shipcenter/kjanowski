@@ -41,6 +41,35 @@ def classify(name, types=None):
     return None
 
 
+import re as _re
+
+
+def postal(addr):
+    m = _re.search(r'\b(\d{2})-\d{3}\b', addr or '')
+    return m.group(1) if m else None
+
+
+def addr_key(addr):
+    a = (addr or '').lower()
+    a = _re.sub(r'\b\d{2}-\d{3}\b', '', a)
+    parts = [x.strip() for x in a.split(',') if _re.search(r'\d', x)]
+    return _re.sub(r'[^a-ząćęłńóśźż0-9]', '', parts[0]) if parts else a
+
+
+def dedupe(comps, center_addr):
+    cp = postal(center_addr)
+    out, seen = [], set()
+    for c in sorted(comps, key=lambda c: c['dist']):
+        pc = postal(c.get('address'))
+        if cp and pc and pc[0] != cp[0]:
+            continue  # pinezka niezgodna z adresem (inny region kodu pocztowego)
+        k = (c['type'], addr_key(c.get('address')))
+        if k in seen:
+            continue
+        seen.add(k); out.append(c)
+    return out
+
+
 def haversine(a, b):
     r = 6371000.0
     p1, p2 = math.radians(a[0]), math.radians(b[0])
@@ -141,7 +170,7 @@ def analyze(address, radius=3000):
                 continue
             comps.append({'name': name, 'type': typ, 'dist': int(round(dist / 10.0) * 10), 'strength': STRENGTH.get(typ, 3),
                           'address': p.get('formattedAddress', ''), 'placeId': pid, 'source': 'Google Maps'})
-    comps.sort(key=lambda c: c['dist'])
+    comps = dedupe(comps, g['formattedAddress'])
     d = density(center)
     loc_type = 'galeria' if d['mall150'] else ('ulica' if d['poi300'] >= 15 else 'osiedle')
     traffic = max(500, min(5000, 500 + d['poi300'] * 150))

@@ -466,3 +466,11 @@ details.adv[open] summary { margin-bottom: 10px; }
 /* konfiguracja FLEX w prawej kolumnie: sprzęt nad podsumowaniem */
 .flexcard .flexwrap { grid-template-columns: 1fr; }
 .flexcard .flexsum { position: static; }
+
+/* widok leada: spokojne przyciski z kolorową ikoną; wyróżniony tylko „Zapisz rozmowę / kontakt” */
+.leadview .btn svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.leadview .btn.primary:not(.cta) { background: var(--surface); border-color: var(--line-2); color: var(--ink); box-shadow: none; font-weight: 600; }
+.leadview .btn.primary:not(.cta):hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.leadview .btn.primary.cta svg, .leadview .btn.danger svg { color: currentColor; }
+.leadview .btn:disabled svg { color: var(--muted); }
+.leadview .pkgswitch .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); color: var(--accent-ink); }

@@ -101,7 +101,7 @@ function viewMail(leadId) {
 
 /* karta „Korespondencja e-mail” w widoku leada */
 function leadMailCard(l) {
-  const btns = `<button class="btn sm primary" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail</button><a class="btn sm" href="#poczta-${l.id}">Koresponduj z klientem</a>`;
+  const btns = `<button class="btn sm" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail</button><a class="btn sm" href="#poczta-${l.id}">${ICONS.inbox}Koresponduj z klientem</a>`;
   if (!mailOn()) return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2><p>${l.email ? esc(l.email) : 'brak e-maila'}</p></div><div class="row">${btns}</div><p class="tiny muted" style="margin-top:8px">Po podłączeniu poczty zobaczysz tu maile od kandydata i odpowiesz prosto z panelu.</p></div>`;
   if (!l.email) return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2></div><p class="note">Uzupełnij adres e-mail kandydata, żeby zobaczyć korespondencję.</p></div>`;
   const c = mailListFor('addr:' + l.email.toLowerCase().trim());

@@ -471,6 +471,14 @@ details.adv[open] summary { margin-bottom: 10px; }
 /* konfiguracja FLEX w prawej kolumnie: sprzęt nad podsumowaniem */
 .flexcard .flexwrap { grid-template-columns: 1fr; }
 .flexcard .flexsum { position: static; }
+
+/* widok leada: spokojne przyciski z kolorową ikoną; wyróżniony tylko „Zapisz rozmowę / kontakt” */
+.leadview .btn svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.leadview .btn.primary:not(.cta) { background: var(--surface); border-color: var(--line-2); color: var(--ink); box-shadow: none; font-weight: 600; }
+.leadview .btn.primary:not(.cta):hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.leadview .btn.primary.cta svg, .leadview .btn.danger svg { color: currentColor; }
+.leadview .btn:disabled svg { color: var(--muted); }
+.leadview .pkgswitch .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); color: var(--accent-ink); }
 </style>
 <header class="appbar">
   <div class="wrap">
@@ -613,6 +621,10 @@ const ICONS = {
   down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
@@ -1650,13 +1662,13 @@ function viewLead(id) {
   const smsList = smsListFor(l.id);
   const next = `<div class="card"><div class="cardhead"><h2>Przebieg kontaktu</h2><p>${l.firstCallAt ? 'pierwsza rozmowa ' + fdate(l.firstCallAt) : 'czeka na pierwszą rozmowę'}</p></div>
     <div class="progress3">
-      <div class="pstep ${l.firstCallAt ? 'done' : 'due'}"><span class="lbl">1 · Pierwsza rozmowa</span>${l.firstCallAt ? `<span class="val">${fdate(l.firstCallAt)}</span>` : `<span class="small ink2">Zadzwoń, porozmawiaj i zapisz notatkę. Po rozmowie można wysłać SMS z podziękowaniem.</span><button class="btn sm primary" data-act="call-log" data-id="${l.id}">Zapisz pierwszą rozmowę</button>`}</div>
+      <div class="pstep ${l.firstCallAt ? 'done' : 'due'}"><span class="lbl">1 · Pierwsza rozmowa</span>${l.firstCallAt ? `<span class="val">${fdate(l.firstCallAt)}</span>` : `<span class="small ink2">Zadzwoń, porozmawiaj i zapisz notatkę. Po rozmowie można wysłać SMS z podziękowaniem.</span><button class="btn sm primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz pierwszą rozmowę</button>`}</div>
       <div class="pstep ${l.presentationAt ? 'done' : ''}"><span class="lbl">2 · Prezentacja${modelOf(l) === 'franczyza' ? ' i kalkulator' : ''}</span>
         ${l.presentationAt ? `<span class="val">prezentacja ${fdate(l.presentationAt)}</span>${l.presentationLastAt && l.presentationLastAt !== l.presentationAt ? `<span class="tiny muted">ponownie ${fdate(l.presentationLastAt)}${l.presentationSends > 2 ? ' · razem ' + l.presentationSends + '×' : ''}</span>` : ''}` : `<span class="small ink2">Wyślij kandydatowi maila z prezentacją${modelOf(l) === 'franczyza' ? ' albo z linkiem do kalkulatora' : ''}.</span>`}
         ${l.calcSentAt ? `<span class="small">kalkulator ${fdate(l.calcLastAt || l.calcSentAt)}</span>` : ''}
         <button class="btn sm ${l.presentationAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_prezentacja">${ICONS.email}${l.presentationAt ? 'Wyślij ponownie prezentację' : 'Mail z prezentacją'}</button>
         ${modelOf(l) === 'franczyza' ? `<button class="btn sm" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_kalkulator">${ICONS.email}${l.calcSentAt ? 'Wyślij ponownie kalkulator' : 'Mail z kalkulatorem'}</button>` : ''}
-        ${l.presentationAt ? `<button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij datę prezentacji</button>` : `<details><summary class="small muted" style="cursor:pointer">Zaznacz bez maila</summary><div class="stack" style="gap:6px;margin-top:6px"><button class="btn sm ghost" data-act="pres-sent" data-id="${l.id}">Prezentacja wysłana dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label></div></details>`}
+        ${l.presentationAt ? `<button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">${ICONS.back}Cofnij datę prezentacji</button>` : `<details><summary class="small muted" style="cursor:pointer">Zaznacz bez maila</summary><div class="stack" style="gap:6px;margin-top:6px"><button class="btn sm ghost" data-act="pres-sent" data-id="${l.id}">${ICONS.check}Prezentacja wysłana dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label></div></details>`}
       </div>
       ${isWon(l) ? trainingStep(l) : `      <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
         <input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg" placeholder="Co zrobić, np. telefon po prezentacji" aria-label="Kolejny kontakt – co zrobić">
@@ -1667,7 +1679,7 @@ function viewLead(id) {
 `}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button><button class="btn" data-act="meet-quick" data-id="${l.id}">${ICONS.calendar}Umów spotkanie</button><button class="btn" data-act="script-open" data-id="${l.id}">${ICONS.file}Skrypt rozmowy</button>${l.phone ? `<a class="btn ghost" href="https://wa.me/${fmtPhone(l.phone).replace(/[^0-9]/g, '')}" target="_blank" rel="noopener" title="Otwórz rozmowę w WhatsApp">${ICONS.sms}WhatsApp</a>` : ''}${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary cta" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button><button class="btn" data-act="meet-quick" data-id="${l.id}">${ICONS.calendar}Umów spotkanie</button><button class="btn" data-act="script-open" data-id="${l.id}">${ICONS.file}Skrypt rozmowy</button>${l.phone ? `<a class="btn ghost" href="https://wa.me/${fmtPhone(l.phone).replace(/[^0-9]/g, '')}" target="_blank" rel="noopener" title="Otwórz rozmowę w WhatsApp">${ICONS.sms}WhatsApp</a>` : ''}${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
@@ -1677,7 +1689,7 @@ function viewLead(id) {
     <label class="field"><span>Forma</span><select id="ld-meettype" data-lead-field="meetingType">${opt('', '—', l.meetingType)}${opt('online', 'Online (wideo)', l.meetingType)}${opt('telefon', 'Telefon', l.meetingType)}${opt('centrala', 'Centrala – Katowice', l.meetingType)}${opt('lokal', 'W planowanym lokalu', l.meetingType)}${opt('punkt', 'W działającym punkcie', l.meetingType)}</select></label>
     <label class="field full"><span>${l.meetingType === 'online' ? 'Link do spotkania (Google Meet)' : 'Miejsce / link'}</span><input type="text" id="ld-meetplace" data-lead-field="meetingPlace" value="${esc(l.meetingPlace)}" placeholder="${l.meetingType === 'online' ? 'https://meet.google.com/…' : 'Adres lub link do spotkania'}"></label></div>
     ${l.meetingType === 'online' ? meetHelper(l) : ''}
-    <div class="row" style="margin-top:10px"><button class="btn sm" data-act="meeting-log" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>Spotkanie odbyte – zapisz</button>
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-act="meeting-log" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>${ICONS.check}Spotkanie odbyte – zapisz</button>
     <button class="btn sm ${l.meetingType === 'online' && l.meetingPlace ? 'primary' : 'ghost'}" data-act="meet-confirm" data-id="${l.id}" ${l.meetingAt ? '' : 'disabled'}>${ICONS.email}${l.meetingType === 'online' ? 'Wyślij klientowi link i potwierdzenie' : 'Potwierdzenie spotkania'}</button></div>
     ${l.meetingAt ? remindersBlock(l, 'spotkanie') : ''}</div>`;
 
@@ -1717,7 +1729,7 @@ function viewLead(id) {
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}" title="Wymaga hasła administratora">${ICONS.trash}Usuń leada</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}${flex}</div></div>` + danger;
+  return `<div class="leadview">` + head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}${flex}</div></div>` + danger + `</div>`;
 }
 
 function suggestedTemplate(l) {
@@ -1845,7 +1857,7 @@ function meetHelper(l) {
   const isMeet = /meet\.google\.com\//.test(l.meetingPlace || '');
   return `<div class="callout" style="margin-top:10px"><div class="stack" style="gap:6px">
     ${l.meetingPlace && isMeet ? `<span class="small">Link Google Meet jest gotowy – wyślij go klientowi przyciskiem poniżej.</span>` : link ? `<span class="small">Twój stały pokój Google Meet: <span class="mono">${esc(link)}</span></span>` : `<span class="small">Utwórz spotkanie w Google Meet, skopiuj link i wklej go w polu wyżej. Możesz też w „Zespół i ustawienia” wpisać swój stały link Meet – wtedy wstawi się sam.</span>`}
-    <div class="row">${link && l.meetingPlace !== link ? `<button class="btn sm primary" data-act="meet-use" data-id="${l.id}">Wstaw link Meet</button>` : ''}<a class="btn sm" href="https://meet.google.com/new" target="_blank" rel="noopener">Nowe spotkanie Google Meet</a>${l.meetingPlace && isMeet ? `<a class="btn sm ghost" href="${esc(l.meetingPlace)}" target="_blank" rel="noopener">Otwórz Meet</a>` : ''}</div>
+    <div class="row">${link && l.meetingPlace !== link ? `<button class="btn sm primary" data-act="meet-use" data-id="${l.id}">${ICONS.link}Wstaw link Meet</button>` : ''}<a class="btn sm" href="https://meet.google.com/new" target="_blank" rel="noopener">${ICONS.webinar || ICONS.calendar}Nowe spotkanie Google Meet</a>${l.meetingPlace && isMeet ? `<a class="btn sm ghost" href="${esc(l.meetingPlace)}" target="_blank" rel="noopener">${ICONS.link}Otwórz Meet</a>` : ''}</div>
   </div></div>`;
 }
 function trainingStep(l) {
@@ -1855,7 +1867,7 @@ function trainingStep(l) {
   return `<div class="pstep ${cls}"><span class="lbl">3 · Szkolenie w centrali</span>
     ${start ? `<span class="val">${fdate(start)} – ${fdate(end)}</span><span class="small ink2">3 dni robocze · ${esc(l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice')}</span>` : '<span class="small ink2">Umowa podpisana. Zaplanuj 3-dniowe szkolenie wstępne w centrali (w ciągu 30 dni od podpisania umowy).</span>'}
     <label class="field"><span>${start ? 'Zmień datę rozpoczęcia' : 'Data rozpoczęcia szkolenia'}</span><input type="date" id="ld-train" data-train="${l.id}" value="${esc(start)}"></label>
-    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>${remindersBlock(l, 'szkolenie')}` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
+    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>${remindersBlock(l, 'szkolenie')}` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">${ICONS.calendar}Zaplanuj od najbliższego poniedziałku</button>`}
   </div>`;
 }
 function setTraining(l, start) {
@@ -1879,9 +1891,9 @@ function contractCard(l) {
       ${step('1 · Do wglądu', l.contractPreviewAt, `<span class="small ink2">${l.contractPreviewAt ? 'Kandydat dostał wzór umowy do zapoznania się.' : 'Dla kandydata, który chce przeczytać umowę przed decyzją.'}</span><button class="btn sm ${l.contractPreviewAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_umowa_wglad">${ICONS.email}${l.contractPreviewAt ? 'Wyślij ponownie do wglądu' : 'Wyślij umowę do wglądu'}</button>`)}
       ${step('2 · Do podpisu w Autenti', l.contractSentAt, `${l.contractSentAt ? '<span class="small ink2">Status: czeka na podpisanie umowy.</span>' : '<span class="small ink2">Po wysłaniu dokumentu w Autenti zaznacz to tutaj.</span>'}
         <label class="field"><span>Link do dokumentu w Autenti (opcjonalnie)</span><input type="url" id="ld-autenti" data-lead-field="autentiLink" value="${esc(l.autentiLink || '')}" placeholder="https://…autenti…"></label>
-        ${l.autentiLink ? `<a class="btn sm" href="${esc(l.autentiLink)}" target="_blank" rel="noopener">Otwórz w Autenti</a>` : ''}
-        ${l.contractSentAt ? '' : `<button class="btn sm primary" data-act="contract-sent" data-id="${l.id}">Wysłano do podpisu (dziś)</button>`}`, l.contractPreviewAt ? 'due' : '')}
-      ${step('3 · Podpisana', won ? ((l.stageDates || {}).umowa || l.contractSignedAt) : '', won ? '<span class="small ink2">Status: Pozyskany – umowa podpisana.</span>' : `<span class="small ink2">Gdy wszystkie strony podpiszą umowę w Autenti.</span><button class="btn sm ${l.contractSentAt ? 'primary' : ''}" data-act="contract-signed" data-id="${l.id}">Umowa podpisana</button>`, l.contractSentAt ? 'due' : '')}
+        ${l.autentiLink ? `<a class="btn sm" href="${esc(l.autentiLink)}" target="_blank" rel="noopener">${ICONS.link}Otwórz w Autenti</a>` : ''}
+        ${l.contractSentAt ? '' : `<button class="btn sm primary" data-act="contract-sent" data-id="${l.id}">${ICONS.send}Wysłano do podpisu (dziś)</button>`}`, l.contractPreviewAt ? 'due' : '')}
+      ${step('3 · Podpisana', won ? ((l.stageDates || {}).umowa || l.contractSignedAt) : '', won ? '<span class="small ink2">Status: Pozyskany – umowa podpisana.</span>' : `<span class="small ink2">Gdy wszystkie strony podpiszą umowę w Autenti.</span><button class="btn sm ${l.contractSentAt ? 'primary' : ''}" data-act="contract-signed" data-id="${l.id}">${ICONS.check}Umowa podpisana</button>`, l.contractSentAt ? 'due' : '')}
     </div></div>`;
 }
 
@@ -1901,7 +1913,7 @@ function flexCard(l) {
       <div class="flextotal"><span class="tiny muted">Razem netto</span><b>${zl(c.net)}</b><span class="tiny muted">brutto (23% VAT): ${zl(c.brutto)}</span></div>
       <div class="flextiers">${FLEX_TIERS.map(t => `<span class="${c.n >= t.min ? 'on' : ''}">${t.min}${t.max < 99 ? '–' + t.max : '+'} · ${t.pct}%</span>`).join('')}</div>
       <p class="tiny muted">${c.next ? `Dodaj jeszcze ${c.next.need} ${c.next.need === 1 ? 'produkt' : 'produkty'}, aby uzyskać rabat ${c.next.pct}%.` : c.n ? 'Maksymalny rabat FLEX.' : 'Rabat liczony od liczby różnych produktów.'}</p>
-      <div class="row"><button class="btn sm primary" data-act="flex-mail" data-id="${l.id}" ${c.n ? '' : 'disabled'}>${ICONS.email}Wyślij konfigurację klientowi</button>${c.n ? `<button class="btn sm ghost" data-act="flex-clear" data-id="${l.id}">Wyczyść</button>` : ''}</div>
+      <div class="row"><button class="btn sm primary" data-act="flex-mail" data-id="${l.id}" ${c.n ? '' : 'disabled'}>${ICONS.send}Wyślij konfigurację klientowi</button>${c.n ? `<button class="btn sm ghost" data-act="flex-clear" data-id="${l.id}">${ICONS.x}Wyczyść</button>` : ''}</div>
     </div></div></div>`;
 }
 function toggleFlex(id, item, on) {
@@ -1947,7 +1959,7 @@ function smartCard(l) {
       <dl class="kv flexkv"><dt>Pakiet SMART (licencja)</dt><dd class="mono">${zl(smart)}</dd><dt>Sprzęt</dt><dd class="mono">${zl(0)}</dd></dl>
       <div class="flextotal"><span class="tiny muted">Razem netto – jednorazowo</span><b>${zl(smart)}</b><span class="tiny muted">brutto (23% VAT): ${zl(Math.round(smart * 123) / 100)}</span></div>
       <p class="tiny muted">Opłata miesięczna ${zl(+o.oplataMies || 0)} netto, 0 zł w miesiącu z ponad ${o.progRabatu || 600} paczkami. Sprzęt musi spełniać standard ShipCenter.</p>
-      <div class="row"><button class="btn sm primary" data-act="smart-mail" data-id="${l.id}">${ICONS.email}Wyślij podsumowanie klientowi</button></div>
+      <div class="row"><button class="btn sm primary" data-act="smart-mail" data-id="${l.id}">${ICONS.send}Wyślij podsumowanie klientowi</button></div>
     </div></div>`;
 }
 function smartEmailBody(l) {
@@ -1971,7 +1983,7 @@ function pkgSwitch(l) {
   if (modelOf(l) !== 'franczyza') return '';
   const total = l.pkg === 'flex' ? flexCalc(l.flexItems || [], l.smartPrice).net : l.pkg === 'smart' ? smartPriceOf(l) : 0;
   return `<div class="pkgswitch" role="group" aria-label="Pakiet"><span class="small muted">Pakiet:</span>
-    ${Object.entries(PACKAGES).map(([k, n]) => `<button class="btn sm ${l.pkg === k ? 'primary' : ''}" data-act="set-pkg" data-id="${l.id}" data-pkg="${k}" aria-pressed="${l.pkg === k}">${esc(n)}</button>`).join('')}
+    ${Object.entries(PACKAGES).map(([k, n]) => `<button class="btn sm ${l.pkg === k ? 'primary' : ''}" data-act="set-pkg" data-id="${l.id}" data-pkg="${k}" aria-pressed="${l.pkg === k}">${l.pkg === k ? ICONS.check : ''}${esc(n)}</button>`).join('')}
     ${l.pkg ? `<span class="small"><b>${zlFmt(total)}</b> <span class="muted">netto${l.pkg === 'flex' ? ' ze sprzętem' : ''}${+l.smartPrice > 0 && +l.smartPrice !== +offer().licencja ? ' · cena indywidualna' : ''}</span></span>` : '<span class="tiny muted">jeszcze nie wybrano</span>'}</div>`;
 }
 
@@ -3544,7 +3556,7 @@ function viewMail(leadId) {
 
 /* karta „Korespondencja e-mail” w widoku leada */
 function leadMailCard(l) {
-  const btns = `<button class="btn sm primary" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail</button><a class="btn sm" href="#poczta-${l.id}">Koresponduj z klientem</a>`;
+  const btns = `<button class="btn sm" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail</button><a class="btn sm" href="#poczta-${l.id}">${ICONS.inbox}Koresponduj z klientem</a>`;
   if (!mailOn()) return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2><p>${l.email ? esc(l.email) : 'brak e-maila'}</p></div><div class="row">${btns}</div><p class="tiny muted" style="margin-top:8px">Po podłączeniu poczty zobaczysz tu maile od kandydata i odpowiesz prosto z panelu.</p></div>`;
   if (!l.email) return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2></div><p class="note">Uzupełnij adres e-mail kandydata, żeby zobaczyć korespondencję.</p></div>`;
   const c = mailListFor('addr:' + l.email.toLowerCase().trim());

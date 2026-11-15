@@ -729,13 +729,21 @@ function addressFields(l, prefix, sp = false) {
 
 /* Ship Point – czym partner zajmuje się obecnie (Ship Point to dodatek do istniejącego lokalu) */
 const SP_BIZ = [['nieruchomosci', 'Biuro nieruchomości'], ['ubezpieczenia', 'Ubezpieczenia / finanse / kredyty'], ['komputery', 'Sklep komputerowy / GSM / serwis'], ['ksero', 'Ksero / drukarnia / poligrafia'], ['rachunkowe', 'Biuro rachunkowe / usługi biurowe'], ['handel', 'Sklep (spożywczy, kiosk, chemia, AGD)'], ['kwiaciarnia', 'Kwiaciarnia / upominki / papiernik'], ['uslugi', 'Usługi (krawiec, szewc, pralnia, foto)'], ['turystyka', 'Biuro podróży / kantor'], ['inne', 'Inna działalność']];
-const SP_PARCELS = [['nie', 'Nie – nie obsługuje paczek'], ['inpost', 'Tak – punkt InPost'], ['dpd', 'Tak – DPD Pickup'], ['orlen', 'Tak – Orlen Paczka'], ['dhl', 'Tak – DHL POP'], ['inne', 'Tak – inny przewoźnik']];
+const SP_PARCELS = [['inpost', 'InPost'], ['dpd', 'DPD Pickup'], ['orlen', 'Orlen Paczka'], ['dhl', 'DHL POP'], ['gls', 'GLS'], ['ups', 'UPS Access Point'], ['poczta', 'Poczta Polska'], ['inne', 'Inny przewoźnik']];
+const spParcelsOf = l => Array.isArray(l.spParcelsList) ? l.spParcelsList : (l.spParcels ? [l.spParcels === 'nie' ? 'none' : l.spParcels] : []);
+function toggleSpParcel(id, key, on) {
+  const l = D().leads[id]; if (!l) return;
+  let list = spParcelsOf(l).filter(k => k !== key);
+  if (on) { if (key === 'none') list = ['none']; else { list = list.filter(k => k !== 'none'); list.push(key); } }
+  patch('leads', id, { spParcelsList: list, updatedTs: new Date().toISOString() });
+}
 function shipPointCard(l) {
   const f = (k, n, ph = '', type = 'text', extra = '') => `<label class="field ${extra}"><span>${n}</span><input type="${type}" data-lead-field="${k}" id="sp-${k}" value="${esc(l[k] || '')}" placeholder="${esc(ph)}" ${type === 'number' ? 'min="0"' : ''}></label>`;
   const sel = (k, n, opts, extra = '') => `<label class="field ${extra}"><span>${n}</span><select data-lead-field="${k}" id="sp-${k}">${opt('', '— wybierz —', l[k] || '')}${opts.map(([v, t]) => opt(v, t, l[k] || '')).join('')}</select></label>`;
   return `<div class="card"><div class="cardhead"><h2>Działalność partnera</h2><p>Ship Point jako dodatek do istniejącego lokalu</p></div>
     <div class="formgrid">
-      ${sel('spBizType', 'Co obecnie prowadzi', SP_BIZ, 'span2')}
+      ${sel('spBizType', 'Co obecnie prowadzi', SP_BIZ, l.spBizType === 'inne' ? '' : 'span2')}
+      ${l.spBizType === 'inne' ? f('spBizOther', 'Jaka to działalność?', 'np. salon fryzjerski, sklep zoologiczny', 'text') : ''}
       ${f('spBizName', 'Nazwa lokalu / szyld', 'np. Biuro Nieruchomości Dom', 'text')}
       ${f('spBizDesc', 'Czym się zajmuje (krótko)', 'np. sprzedaż i wynajem mieszkań, 2 agentów', 'text', 'full')}
       ${addressFields(l, 'le', true)}
@@ -743,7 +751,11 @@ function shipPointCard(l) {
       ${f('spSince', 'Działa od (rok)', 'np. 2018', 'number')}
       ${f('spTraffic', 'Klientów dziennie (ok.)', 'np. 40', 'number')}
       ${f('spStaff', 'Osób w lokalu', 'np. 2', 'number')}
-      ${sel('spParcels', 'Czy obsługuje już paczki?', SP_PARCELS, 'span2')}
+      <div class="field full"><span>Czy obsługuje już paczki? <span class="muted">(można zaznaczyć kilka)</span></span>
+        <div class="row" style="gap:6px 14px">${[['none', 'Nie obsługuje paczek'], ...SP_PARCELS].map(([k, n]) => `<label class="chk small"><input type="checkbox" data-sp-parcel="${k}" ${spParcelsOf(l).includes(k) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></div>
+      ${spParcelsOf(l).includes('inne') ? f('spParcelsOther', 'Inny przewoźnik – jaki?', 'np. Paczkomat Allegro One Box', 'text', 'full') : ''}
+      ${sel('spSendsNow', 'Czy wysyła obecnie paczki?', [['tak', 'Tak – wysyła'], ['nie', 'Nie wysyła']])}
+      ${l.spSendsNow === 'tak' ? f('spParcelsMonth', 'Ile paczek miesięcznie (ok.)', 'np. 150', 'number') : ''}
       <label class="field full"><span>Uwagi o lokalu</span><textarea data-lead-field="spNotes" id="sp-spNotes" rows="2" placeholder="witryna, parking, miejsce na regał z paczkami, kto będzie obsługiwał…">${esc(l.spNotes || '')}</textarea></label>
     </div></div>`;
 }

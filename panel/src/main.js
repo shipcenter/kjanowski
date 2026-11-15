@@ -168,6 +168,7 @@ document.addEventListener('change', e => {
   if (el.dataset.rev) { onRevInput(el, true); return; }
   if (el.dataset.geo) { const pf = el.dataset.geo; if (pf === 'le') saveLeadEdit(); debounce('geo-' + pf, () => autoGeo(pf), 250); return; }
   if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
+  if (el.dataset.spParcel) { toggleSpParcel(S.route.id, el.dataset.spParcel, el.checked); return; }
   if (el.dataset.photoUp) { uploadPhotos(el.dataset.photoUp, el.files); el.value = ''; return; }
   if (el.dataset.flex) { toggleFlex(S.route.id, el.dataset.flex, el.checked); return; }
   if (el.dataset.train) { const l = D().leads[el.dataset.train]; if (l) setTraining(l, el.value); return; }

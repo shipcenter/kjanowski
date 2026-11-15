@@ -477,6 +477,7 @@ const STATUSES = [
   { k: 'czeka', n: 'Czeka na decyzję', tone: '' },
   { k: 'umowione', n: 'Spotkanie umówione', tone: 'acc' },
   { k: 'wstrzymany', n: 'Wstrzymany', tone: 'outline' },
+  { k: 'czeka_umowa', n: 'Pozyskany – czeka na podpisanie umowy', tone: 'acc' },
   { k: 'utracony', n: 'Utracony', tone: 'bad' },
   { k: 'pozyskany', n: 'Pozyskany – umowa podpisana', tone: 'good' }
 ];
@@ -749,7 +750,7 @@ function stageDatesOf(l) {
     umowa: old.umowa || (l.status === 'pozyskany' ? (l.updatedTs || '').slice(0, 10) : '')
   };
 }
-const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : d.spotkanie ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
+const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : (d.spotkanie || l.status === 'czeka_umowa' || l.contractSentAt) ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
 const isOpen = l => !CLOSED.has(l.status);
 const isWon = l => l.status === 'pozyskany' || !!(l.stageDates || {}).umowa;
 const lastContact = l => {
@@ -771,7 +772,7 @@ function newLead(data = {}) {
   };
 }
 function histEntry(type, text, extra = {}) {
-  return { id: uid('h'), at: nowLocal(), type, text, by: extra.by || '', result: extra.result || '' };
+  return { id: uid('h'), at: nowLocal(), type, text, by: extra.by || '', result: extra.result || '', auto: true };
 }
 function setWon(lead) {
   const hist = (lead.history || []).slice();
@@ -902,6 +903,18 @@ function forecast(plan, leads, lpm = null) {
   for (let m = 0; m < 3; m++) for (let j = 0; j <= m; j++) fromNew[m] += c.leads * c.overall * wWin[m - j];
   return { pipeline: buckets, fromNew, total: buckets.map((x, i) => x + fromNew[i]), pipeByStage };
 }
+
+/* ---------- szkolenie wstępne (3 dni robocze w centrali) ---------- */
+function addWorkDays(iso, n) { let d = parseD(iso); if (!d) return ''; let k = 0; while (k < n) { d = addDays(d, 1); const wd = d.getDay(); if (wd !== 0 && wd !== 6) k++; } return isoDate(d); }
+function nextMonday() { const d = new Date(); const add = ((8 - d.getDay()) % 7) || 7; return isoDate(addDays(d, add)); }
+const trainingEnd = start => start ? addWorkDays(start, 2) : '';
+/* ---------- NIP ---------- */
+const nipDigits = v => String(v || '').replace(/\D/g, '');
+function nipValid(v) { const d = nipDigits(v); if (d.length !== 10) return false; const w = [6, 5, 7, 2, 3, 4, 5, 6, 7]; const s = w.reduce((a, x, i) => a + x * +d[i], 0) % 11; return s !== 10 && s === +d[9]; }
+const nipFmt = v => { const d = nipDigits(v); return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6, 8)}-${d.slice(8)}` : v; };
+
+/* w historii pokazujemy tylko wpisy napisane przez człowieka */
+const isManualEntry = h => h.manual || (!h.auto && h.type !== 'system' && String(h.text || '').trim() && !/^(Wysłano|Ponownie wysłano|SMS z podziękowaniem|Wykonano:|Rozmowa wg skryptu)/.test(h.text));
 
 /* ===== Powłoka aplikacji: routing, renderowanie, modale, wykresy ===== */
 
@@ -1232,6 +1245,8 @@ function viewDashboard() {
   if (noOwner.length) al.push(['warn', `${noOwner.length} aktywnych leadów nie ma opiekuna`, noOwner]);
   const noNext = open.filter(l => l.firstCallAt && !l.nextTaskDate);
   if (noNext.length) al.push(['warn', `${noNext.length} leadów po rozmowie nie ma zaplanowanego kolejnego kontaktu`, noNext]);
+  const noTraining = leads.filter(l => isWon(l) && !l.trainingStart);
+  if (noTraining.length) al.push(['warn', `${noTraining.length} podpisanych umów bez zaplanowanego szkolenia w centrali`, noTraining]);
   const presNoFollow = open.filter(l => l.presentationAt && daysBetween(parseD(l.presentationAt), new Date()) > 5 && (lastContact(l) || '').slice(0, 10) <= l.presentationAt);
   if (presNoFollow.length) al.push(['warn', `${presNoFollow.length} kandydatów dostało prezentację ponad 5 dni temu i nie było telefonu`, presNoFollow]);
   const meetSoon = open.filter(l => l.meetingAt && (l.meetingAt.slice(0, 10) === t || l.meetingAt.slice(0, 10) === tomorrow));
@@ -1409,6 +1424,7 @@ function leadFormFields(l, prefix = 'lf') {
   return `<div class="formgrid">
     <label class="field span2"><span>Imię i nazwisko *</span><input type="text" id="${prefix}-name" value="${esc(l.name)}" required></label>
     <label class="field"><span>Firma (opcjonalnie)</span><input type="text" id="${prefix}-company" value="${esc(l.company)}"></label>
+    <label class="field"><span>NIP</span><input type="text" id="${prefix}-nip" inputmode="numeric" value="${esc(l.nip ? nipFmt(l.nip) : '')}" placeholder="np. 634-286-76-10">${l.nip ? `<span class="hint ${nipValid(l.nip) ? '' : 'overdue'}">${nipValid(l.nip) ? 'NIP poprawny' : 'Błędny NIP – sprawdź cyfry'}</span>` : ''}</label>
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
     <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" value="${esc(l.city)}"></label>
@@ -1424,7 +1440,7 @@ function leadFormFields(l, prefix = 'lf') {
 }
 function readLeadForm(prefix = 'lf') {
   const v = id => ($('#' + prefix + '-' + id) || {}).value || '';
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
   const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
@@ -1468,7 +1484,7 @@ function viewLead(id) {
   const pos = ids.indexOf(id);
   const prevId = pos > 0 ? ids[pos - 1] : null, nextId = pos >= 0 && pos < ids.length - 1 ? ids[pos + 1] : null;
   const locs = Object.values(D().locations).filter(x => x.leadId === id);
-  const hist = (l.history || []).slice().sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const hist = (l.history || []).filter(isManualEntry).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
   const o = offer();
 
   const head = `<div class="row between" style="margin-bottom:10px"><a class="btn ghost sm" href="#leady">${ICONS.back}Lista leadów</a>
@@ -1487,6 +1503,7 @@ function viewLead(id) {
   const contact = `<div class="card"><div class="cardhead"><h2>Dane kandydata</h2><p>Zmiany zapisują się po opuszczeniu pola</p></div>
     <div id="lead-edit" data-lead="${l.id}">${leadFormFields(l, 'le')}</div>
     <div class="row" style="margin-top:10px">${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj telefon</button>` : ''}${l.email ? `<span class="pill outline mono">${esc(l.email)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.email)}">${ICONS.copy}Kopiuj e-mail</button>` : ''}</div>
+    ${companyBox(l)}
     <div class="sep"></div>
     <label class="field"><span>Notatki</span><textarea id="ld-notes" data-lead-field="notes" rows="5" placeholder="Motywacja, sytuacja finansowa, lokal, obawy, ustalenia…">${esc(l.notes)}</textarea></label></div>`;
 
@@ -1503,18 +1520,20 @@ function viewLead(id) {
         ${modelOf(l) === 'franczyza' ? `<button class="btn sm" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_kalkulator">${ICONS.email}${l.calcSentAt ? 'Wyślij ponownie kalkulator' : 'Mail z kalkulatorem'}</button>` : ''}
         ${l.presentationAt ? `<button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij datę prezentacji</button>` : `<details><summary class="small muted" style="cursor:pointer">Zaznacz bez maila</summary><div class="stack" style="gap:6px;margin-top:6px"><button class="btn sm ghost" data-act="pres-sent" data-id="${l.id}">Prezentacja wysłana dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label></div></details>`}
       </div>
-      <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
+      ${isWon(l) ? trainingStep(l) : `      <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
         <input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg" placeholder="Co zrobić, np. telefon po prezentacji" aria-label="Kolejny kontakt – co zrobić">
         <div class="row" style="flex-wrap:nowrap"><input type="date" id="ld-taskdate" data-lead-field="nextTaskDate" value="${esc(l.nextTaskDate)}" aria-label="Data kolejnego kontaktu"><input type="time" id="ld-tasktime" data-lead-field="nextTaskTime" value="${esc(l.nextTaskTime || '')}" aria-label="Godzina" style="max-width:110px"></div>
         <div class="row">${[1, 3, 7].map(d => `<button class="btn sm" data-act="task-shift" data-id="${l.id}" data-d="${d}">+${d} ${d === 1 ? 'dzień' : 'dni'}</button>`).join('')}</div>
         ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${nextCls === 'late' ? 'Zaległe od ' + fdate(l.nextTaskDate) : nextCls === 'due' ? 'Na dziś – przypomnienie w menu „Kontakty”' : 'Przypomnienie: ' + fdate(l.nextTaskDate)}</span>` : '<span class="tiny muted">Brak terminu – lead nie pojawi się w przypomnieniach.</span>'}
       </div>
+`}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
     <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
+  const contract = contractCard(l);
   const meeting = `<div class="card"><div class="cardhead"><h2>Spotkanie</h2>${l.meetingAt ? `<p class="${dueCls(l.meetingAt)}">${fdt(l.meetingAt)}</p>` : ''}</div>
     <div class="formgrid"><label class="field"><span>Termin</span><input type="datetime-local" id="ld-meet" data-lead-field="meetingAt" value="${esc(l.meetingAt)}"></label>
     <label class="field"><span>Forma</span><select id="ld-meettype" data-lead-field="meetingType">${opt('', '—', l.meetingType)}${opt('online', 'Online (wideo)', l.meetingType)}${opt('telefon', 'Telefon', l.meetingType)}${opt('centrala', 'Centrala – Katowice', l.meetingType)}${opt('lokal', 'W planowanym lokalu', l.meetingType)}${opt('punkt', 'W działającym punkcie', l.meetingType)}</select></label>
@@ -1530,7 +1549,7 @@ function viewLead(id) {
     <div class="row" style="margin-top:10px"><button class="btn sm primary" data-act="handoff" data-id="${l.id}">Przekaż leada</button><button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="wew_przekazanie">Generuj notatkę przekazania</button></div>
     ${handoffs.length ? `<div class="sep"></div><div class="timeline">${handoffs.map(h => `<div class="tl-item"><span class="tl-ic">${ICONS.arrow}</span><div><div class="meta"><span>${fdate(h.date)}</span><span>${esc(h.fromName || '—')} → <b>${esc(h.toName || '—')}</b></span></div>${h.note ? `<div class="body small">${esc(h.note)}</div>` : ''}</div></div>`).join('')}</div>` : ''}</div>`;
 
-  const historyCard = `<div class="card"><div class="cardhead"><h2>Historia kontaktów</h2><p>${hist.filter(h => h.type !== 'system').length} kontaktów</p></div>
+  const historyCard = `<div class="card"><div class="cardhead"><h2>Historia kontaktów</h2><p>${hist.length} wpisów</p></div>
     <div class="formgrid">
       <label class="field"><span>Rodzaj</span><select id="h-type">${CONTACT_TYPES.filter(c => c.k !== 'system').map(c => opt(c.k, c.n, 'tel')).join('')}</select></label>
       <label class="field"><span>Kiedy</span><input type="datetime-local" id="h-at" value="${nowLocal()}"></label>
@@ -1555,7 +1574,7 @@ function viewLead(id) {
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="loc-new" data-lead="${l.id}">${ICONS.pin}Nowa analiza dla leada</button></div></div>`;
 
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}Usuń leada</button></div>`;
-  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
+  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {
@@ -1608,6 +1627,72 @@ function saveLeadEdit() {
   patch('leads', id, p);
 }
 
+/* dane firmy z Białej listy VAT (Ministerstwo Finansów) */
+function companyBox(l) {
+  const d = nipDigits(l.nip);
+  const ok = nipValid(d);
+  const url = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
+  const c = l.companyData;
+  return `<div class="sep"></div><div class="row between"><h3>Dane firmy z rejestru</h3>${c ? `<span class="tiny muted">pobrano ${fdate(c.at)}</span>` : ''}</div>
+    ${c ? `<dl class="kv" style="margin-top:8px"><dt>Nazwa</dt><dd>${esc(c.name || '—')}</dd><dt>Adres</dt><dd>${esc(c.address || '—')}</dd><dt>NIP</dt><dd>${esc(nipFmt(c.nip || d))}</dd><dt>REGON</dt><dd>${esc(c.regon || '—')}</dd>${c.krs ? `<dt>KRS</dt><dd>${esc(c.krs)}</dd>` : ''}<dt>Status VAT</dt><dd>${c.statusVat ? `<span class="pill ${c.statusVat === 'Czynny' ? 'good' : 'warn'}">${esc(c.statusVat)}</span>` : '—'}</dd>${c.registrationLegalDate ? `<dt>Rejestracja</dt><dd>${esc(c.registrationLegalDate)}</dd>` : ''}</dl>` : ''}
+    ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP powyżej, aby pobrać nazwę, adres, REGON i status VAT firmy.</p>'
+      : !ok ? '<p class="note overdue" style="margin-top:6px">NIP ma błędną sumę kontrolną – popraw cyfry.</p>'
+      : `<div class="stack" style="gap:8px;margin-top:8px"><div class="row"><a class="btn sm" href="${url}" target="_blank" rel="noopener">${ICONS.file}1. Otwórz dane z Białej listy VAT</a><span class="note">Otworzy się oficjalna strona Ministerstwa Finansów z danymi tej firmy. Zaznacz wszystko (Ctrl+A), skopiuj (Ctrl+C)…</span></div>
+        <label class="field"><span>2. …i wklej tutaj (Ctrl+V) – panel sam uzupełni dane</span><textarea id="nip-paste" data-nip-paste="${l.id}" rows="2" placeholder="Wklej wynik z Białej listy VAT"></textarea></label></div>`}`;
+}
+function parseWhiteList(text) {
+  let j;
+  try { j = JSON.parse(text); } catch (e) { const m = String(text).match(/\{[\s\S]*\}/); if (!m) return null; try { j = JSON.parse(m[0]); } catch (e2) { return null; } }
+  const sub = j && j.result && (j.result.subject || (j.result.subjects || [])[0]);
+  if (!sub) return null;
+  return { name: sub.name || '', address: sub.workingAddress || sub.residenceAddress || '', nip: sub.nip || '', regon: sub.regon || '', krs: sub.krs || '', statusVat: sub.statusVat || '', registrationLegalDate: sub.registrationLegalDate || '', at: todayISO(), source: 'Biała lista VAT (MF)' };
+}
+function onNipPaste(el, text) {
+  const id = el.dataset.nipPaste; const l = D().leads[id]; if (!l) return;
+  const c = parseWhiteList(text);
+  if (!c) { toast('Nie rozpoznano danych. Skopiuj całą zawartość strony z Białej listy VAT i wklej ponownie.', 'bad'); return; }
+  if (c.nip && nipDigits(c.nip) !== nipDigits(l.nip)) toast('Uwaga: wklejone dane dotyczą innego NIP-u (' + c.nip + ').', 'bad');
+  const p = { companyData: c, updatedTs: new Date().toISOString() };
+  if (!l.company && c.name) p.company = c.name;
+  const hist = (l.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy z Białej listy VAT: ' + c.name)); p.history = hist;
+  patch('leads', id, p);
+  toast('Uzupełniono dane firmy: ' + c.name);
+}
+
+function trainingStep(l) {
+  const start = l.trainingStart || '';
+  const end = start ? (l.trainingEnd || trainingEnd(start)) : '';
+  const cls = !start ? 'due' : start < todayISO() && end < todayISO() ? 'done' : '';
+  return `<div class="pstep ${cls}"><span class="lbl">3 · Szkolenie w centrali</span>
+    ${start ? `<span class="val">${fdate(start)} – ${fdate(end)}</span><span class="small ink2">3 dni robocze · ${esc(l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice')}</span>` : '<span class="small ink2">Umowa podpisana. Zaplanuj 3-dniowe szkolenie wstępne w centrali (w ciągu 30 dni od podpisania umowy).</span>'}
+    <label class="field"><span>${start ? 'Zmień datę rozpoczęcia' : 'Data rozpoczęcia szkolenia'}</span><input type="date" id="ld-train" data-train="${l.id}" value="${esc(start)}"></label>
+    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
+  </div>`;
+}
+function setTraining(l, start) {
+  const end = start ? trainingEnd(start) : '';
+  const hist = (l.history || []).slice();
+  hist.push(histEntry('system', start ? `Zaplanowano szkolenie w centrali: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia'));
+  patch('leads', l.id, { trainingStart: start, trainingEnd: end, trainingPlace: l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice', nextTask: start ? 'Szkolenie wstępne w centrali (3 dni)' : '', nextTaskDate: start || '', nextTaskTime: '', history: hist, updatedTs: new Date().toISOString() });
+  toast(start ? `Szkolenie: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia');
+}
+
+/* umowa: do wglądu → Autenti → podpisana */
+function contractCard(l) {
+  const kind = modelOf(l) === 'shippoint' ? 'Umowa o współpracy Ship Center Point' : 'Umowa franczyzowa + OWU';
+  const won = isWon(l);
+  const step = (lbl, date, body, cls = '') => `<div class="pstep ${date ? 'done' : cls}"><span class="lbl">${lbl}</span>${date ? `<span class="val">${fdate(date)}</span>` : ''}${body}</div>`;
+  return `<div class="card"><div class="cardhead"><h2>Umowa</h2><p>${esc(kind)}</p></div>
+    <div class="stack" style="gap:10px">
+      ${step('1 · Do wglądu', l.contractPreviewAt, `<span class="small ink2">${l.contractPreviewAt ? 'Kandydat dostał wzór umowy do zapoznania się.' : 'Dla kandydata, który chce przeczytać umowę przed decyzją.'}</span><button class="btn sm ${l.contractPreviewAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_umowa_wglad">${ICONS.email}${l.contractPreviewAt ? 'Wyślij ponownie do wglądu' : 'Wyślij umowę do wglądu'}</button>`)}
+      ${step('2 · Do podpisu w Autenti', l.contractSentAt, `${l.contractSentAt ? '<span class="small ink2">Status: czeka na podpisanie umowy.</span>' : '<span class="small ink2">Po wysłaniu dokumentu w Autenti zaznacz to tutaj.</span>'}
+        <label class="field"><span>Link do dokumentu w Autenti (opcjonalnie)</span><input type="url" id="ld-autenti" data-lead-field="autentiLink" value="${esc(l.autentiLink || '')}" placeholder="https://…autenti…"></label>
+        ${l.autentiLink ? `<a class="btn sm" href="${esc(l.autentiLink)}" target="_blank" rel="noopener">Otwórz w Autenti</a>` : ''}
+        ${l.contractSentAt ? '' : `<button class="btn sm primary" data-act="contract-sent" data-id="${l.id}">Wysłano do podpisu (dziś)</button>`}`, l.contractPreviewAt ? 'due' : '')}
+      ${step('3 · Podpisana', won ? ((l.stageDates || {}).umowa || l.contractSignedAt) : '', won ? '<span class="small ink2">Status: Pozyskany – umowa podpisana.</span>' : `<span class="small ink2">Gdy wszystkie strony podpiszą umowę w Autenti.</span><button class="btn sm ${l.contractSentAt ? 'primary' : ''}" data-act="contract-signed" data-id="${l.id}">Umowa podpisana</button>`, l.contractSentAt ? 'due' : '')}
+    </div></div>`;
+}
+
 /* ===== Kontakty: przypomnienia o kolejnych kontaktach, rozmowy, SMS po rozmowie ===== */
 
 const PL_MAP = { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z', Ą: 'A', Ć: 'C', Ę: 'E', Ł: 'L', Ń: 'N', Ó: 'O', Ś: 'S', Ź: 'Z', Ż: 'Z' };
@@ -1651,12 +1736,19 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
       <label class="field full"><span>Notatka z rozmowy</span><textarea id="cl-text" rows="3" placeholder="Co ustaliliście, czego oczekuje, obawy, kapitał, lokal…">${esc(text)}</textarea></label>
       <label class="chk full"><input type="checkbox" id="cl-pres" ${l.presentationAt ? 'disabled' : ''}> ${l.presentationAt ? 'Prezentacja wysłana ' + fdate(l.presentationAt) : 'Wysłałem prezentację (zapisz datę dzisiejszą)'}</label>
     </div>
+    <div class="smsbox" id="cl-trainbox" ${l.status === 'pozyskany' ? '' : 'hidden'}>
+      <b>Umowa podpisana – zaplanuj szkolenie wstępne (3 dni w centrali)</b>
+      <div class="formgrid"><label class="field"><span>Data rozpoczęcia</span><input type="date" id="cl-train" value="${esc(l.trainingStart || nextMonday())}"></label><div class="field"><span>Koniec (3 dni robocze)</span><b id="cl-trainend" style="padding-top:8px">${fdate(trainingEnd(l.trainingStart || nextMonday()))}</b></div></div>
+      <span class="note">Kolejnego kontaktu nie trzeba planować – przypomnienie pojawi się w dniu szkolenia.</span>
+    </div>
+    <div id="cl-nextwrap" ${l.status === 'pozyskany' ? 'hidden' : ''}>
     <div class="formgrid">
       <label class="field span2"><span>Kolejny kontakt – co zrobić</span><input type="text" id="cl-next" list="task-sugg3" value="${esc(l.presentationAt ? 'Telefon po prezentacji' : 'Telefon – kolejny krok')}"></label>
       <label class="field"><span>Data</span><input type="date" id="cl-nextdate" value="${nextDefault}"></label>
       <label class="field"><span>Godzina (opcjonalnie)</span><input type="time" id="cl-nexttime" value=""></label>
     </div>
     <div class="row">${[1, 2, 3, 7, 14].map(d => `<button type="button" class="btn sm" data-days="${d}">za ${d} ${d === 1 ? 'dzień' : 'dni'}</button>`).join('')}<button type="button" class="btn sm ghost" data-days="none">bez kolejnego kontaktu</button></div>
+    </div>
     <datalist id="task-sugg3">${['Telefon po prezentacji', 'Ponowna próba kontaktu', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
     ${first ? `<div class="smsbox" id="sms-box">
       <label class="chk"><input type="checkbox" id="cl-sms" ${l.phone ? 'checked' : 'disabled'}> <b>Wyślij SMS z podziękowaniem za rozmowę</b>${l.phone ? ` na numer ${esc(l.phone)}` : ' – brak numeru telefonu'}</label>
@@ -1669,6 +1761,9 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
   const upd = () => { const t = $('#cl-smstext'); if (t) { const i = smsInfo(t.value); $('#cl-smsinfo').textContent = `${i.len} znaków · ${i.parts} SMS${i.gsm ? '' : ' (polskie znaki – krótsze SMS-y)'}`; } };
   upd();
   if ($('#cl-smstext')) { $('#cl-smstext').oninput = upd; $('#cl-smspl').onclick = () => { $('#cl-smstext').value = stripPL($('#cl-smstext').value); upd(); }; }
+  const syncWon = () => { const won = $('#cl-status').value === 'pozyskany'; $('#cl-trainbox').hidden = !won; $('#cl-nextwrap').hidden = won; const sb = $('#sms-box'); if (sb && won) sb.hidden = true; };
+  $('#cl-status').onchange = syncWon;
+  $('#cl-train').onchange = () => { $('#cl-trainend').textContent = fdate(trainingEnd($('#cl-train').value)); };
   $('#cl-result').onchange = () => { const box = $('#sms-box'); if (box) box.hidden = $('#cl-result').value === 'Nie odebrał'; if ($('#cl-result').value === 'Nie odebrał') { $('#cl-status').value = 'proba'; $('#cl-next').value = 'Ponowna próba kontaktu'; $('#cl-nextdate').value = isoDate(addDays(new Date(), 1)); } };
   $$('#modal [data-days]').forEach(b => b.onclick = () => { if (b.dataset.days === 'none') { $('#cl-next').value = ''; $('#cl-nextdate').value = ''; } else $('#cl-nextdate').value = isoDate(addDays(new Date(), +b.dataset.days)); });
   $('#cl-pres').onchange = () => { if ($('#cl-pres').checked && !/prezentac/i.test($('#cl-next').value)) $('#cl-next').value = 'Telefon po prezentacji'; };
@@ -1677,16 +1772,23 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
     const t = $('#cl-type').value, res = $('#cl-result').value;
     const hist = (cur.history || []).slice();
     const by = myMemberId() || cur.ownerId || '';
-    hist.push({ id: uid('h'), at: nowLocal(), type: t, text: $('#cl-text').value.trim(), result: res, by });
-    const nextTxt = $('#cl-next').value.trim();
+    const noteTxt = $('#cl-text').value.trim();
+    hist.push({ id: uid('h'), at: nowLocal(), type: t, text: noteTxt, result: res, by, manual: !!noteTxt, auto: !noteTxt });
+    const won = $('#cl-status').value === 'pozyskany';
+    const nextTxt = won ? '' : $('#cl-next').value.trim();
     const p = { history: hist, status: $('#cl-status').value, nextTask: nextTxt, nextTaskDate: nextTxt ? $('#cl-nextdate').value : '', nextTaskTime: nextTxt ? $('#cl-nexttime').value : '', updatedTs: new Date().toISOString() };
+    if (won) {
+      const ts = $('#cl-train').value;
+      p.stageDates = { ...(cur.stageDates || {}), umowa: (cur.stageDates || {}).umowa || todayISO() };
+      if (ts) { p.trainingStart = ts; p.trainingEnd = trainingEnd(ts); p.trainingPlace = cur.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice'; p.nextTask = 'Szkolenie wstępne w centrali (3 dni)'; p.nextTaskDate = ts; hist.push(histEntry('system', `Umowa podpisana. Szkolenie w centrali: ${fdate(ts)} – ${fdate(p.trainingEnd)}`, { by })); }
+    }
     const reached = res !== 'Nie odebrał';
     if (t === 'tel' && reached && !cur.firstCallAt) p.firstCallAt = todayISO();
     if ($('#cl-pres').checked && !cur.presentationAt) { p.presentationAt = todayISO(); hist.push(histEntry('email', 'Wysłano prezentację', { by, result: 'Wysłano materiały' })); }
     if ((t === 'spotkanie' || stageTo === 'spotkanie') && reached && !(cur.stageDates || {}).spotkanie) p.stageDates = { ...(cur.stageDates || {}), spotkanie: todayISO() };
     if (t === 'spotkanie') { p.meetingAt = ''; if (p.status === 'umowione') p.status = 'w_kontakcie'; }
     patch('leads', l.id, p);
-    const smsOn = $('#cl-sms') && $('#cl-sms').checked && reached && cur.phone;
+    const smsOn = !won && $('#cl-sms') && $('#cl-sms').checked && reached && cur.phone;
     if (smsOn) {
       const text = $('#cl-smstext').value.trim();
       queueSms(cur, text);
@@ -1748,11 +1850,16 @@ function viewContacts() {
   const newCard = `<div class="card"><div class="cardhead"><h2>Do pierwszego kontaktu</h2><p>${newOnes.length} nowych</p></div>
     ${newOnes.length ? newOnes.map(l => `<div class="contact-row"><span class="when ${l.createdTs && Date.now() - new Date(l.createdTs) > 864e5 ? 'overdue' : 'today'}">${fdateShort(l.createdAt)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">${esc([l.phone, l.email, l.city, SOURCE_MAP[l.source]?.n].filter(Boolean).join(' · '))}</div></div>
       <div class="ctl">${l.phone ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Telefon</button>` : ''}<button class="btn sm primary" data-act="call-log" data-id="${l.id}">Pierwsza rozmowa</button></div></div>`).join('') : '<p class="muted small">Wszyscy nowi kandydaci mają już za sobą pierwszą rozmowę.</p>'}</div>`;
+  const trainings = leadsArr().filter(byOwner).filter(l => l.trainingStart && (l.trainingEnd || l.trainingStart) >= t).sort((a2, b2) => a2.trainingStart.localeCompare(b2.trainingStart));
+  const wonNoTraining = leadsArr().filter(byOwner).filter(l => isWon(l) && !l.trainingStart);
+  const trainCard = (trainings.length || wonNoTraining.length) ? `<div class="card"><div class="cardhead"><h2>Szkolenia w centrali</h2><p>${trainings.length}</p></div>
+    ${wonNoTraining.map(l => `<div class="contact-row"><span class="when overdue">brak</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a><div class="tiny muted">Umowa podpisana – zaplanuj 3-dniowe szkolenie</div></div><div class="ctl"><button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Od poniedziałku</button></div></div>`).join('')}
+    ${trainings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.trainingStart)}">${fdateShort(l.trainingStart)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">${fdate(l.trainingStart)} – ${fdate(l.trainingEnd || trainingEnd(l.trainingStart))} · centrala</div></div><div></div></div>`).join('')}</div>` : '';
   const meetCard = `<div class="card"><div class="cardhead"><h2>Spotkania – 7 dni</h2><p>${meetings.length}</p></div>${meetings.length ? meetings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.meetingAt)}">${fdateShort(l.meetingAt)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a><div class="tiny muted">${fdt(l.meetingAt)} · ${esc(l.meetingType || '')} ${esc(l.meetingPlace || '')}</div></div><div></div></div>`).join('') : '<p class="muted small">Brak zaplanowanych spotkań.</p>'}</div>`;
   const noNextCard = noNext.length ? `<div class="card"><div class="cardhead"><h2>Bez zaplanowanego kontaktu</h2><p>${noNext.length}</p></div><p class="note" style="margin-bottom:6px">Aktywni kandydaci po pierwszej rozmowie, którym nikt nie ustawił kolejnego kontaktu.</p>${noNext.slice(0, 15).map(l => `<div class="contact-row"><span class="when muted">—</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">ostatni kontakt ${fdateShort(lastContact(l) || l.createdAt)}</div></div><div class="ctl"><button class="btn sm" data-act="snooze" data-id="${l.id}" data-d="1">Na jutro</button></div></div>`).join('')}</div>` : '';
   const smsCard = pendingSms.length ? `<div class="card"><div class="cardhead"><h2>SMS w kolejce</h2><p>${pendingSms.length}</p></div>${smsGatewayOn() ? '' : '<p class="note" style="margin-bottom:6px">Bramka SMS nie jest podłączona. Skopiuj treść i wyślij ręcznie albo poczekaj na podłączenie.</p>'}${pendingSms.map(x => `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><a href="#lead-${x.leadId}"><b>${esc(x.leadName)}</b></a> <span class="mono small">${esc(x.phone)}</span><div class="tiny muted">${esc(x.text)}</div></div><div class="ctl"><button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}Treść</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj">${ICONS.x}</button></div></div>`).join('')}</div>` : '';
   const empty = !groups.some(g => g[2].length) ? `<div class="card"><div class="empty"><h3>Brak zaplanowanych kontaktów na najbliższy tydzień</h3><p>Kolejny kontakt ustawisz przy zapisie rozmowy albo w karcie leada.</p></div></div>` : '';
-  return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
+  return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${trainCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
 }
 
 /* mail z prezentacją / kalkulatorem: gotowa wiadomość + zapis wysłania */
@@ -1760,11 +1867,11 @@ function openMailModal(l, tplKey) {
   const t = TEMPLATES[tplKey]; if (!t) return;
   const out = t.f(msgContext(l, l.form));
   const isPres = tplKey === 'email_prezentacja';
-  const again = isPres ? !!l.presentationAt : !!l.calcSentAt;
+  const again = tplKey === 'email_umowa_wglad' ? !!l.contractPreviewAt : isPres ? !!l.presentationAt : !!l.calcSentAt;
   const mailto = () => `mailto:${encodeURIComponent(l.email || '')}?subject=${encodeURIComponent($('#ml-subj').value)}&body=${encodeURIComponent($('#ml-body').value)}`;
   openModal(`<div class="mh"><h2>${esc(again ? 'Wyślij ponownie: ' + t.n.toLowerCase() : t.n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <div class="mb">
-      ${again ? `<p class="callout">${isPres ? 'Prezentacja' : 'Kalkulator'} był już wysłany ${fdate(isPres ? l.presentationAt : l.calcSentAt)}.</p>` : ''}
+      ${again ? `<p class="callout">${tplKey === 'email_umowa_wglad' ? 'Umowa do wglądu była już wysłana ' + fdate(l.contractPreviewAt) : (isPres ? 'Prezentacja była już wysłana ' + fdate(l.presentationAt) : 'Kalkulator był już wysłany ' + fdate(l.calcSentAt))}.</p>` : ''}
       <div class="formgrid">
         <label class="field span2"><span>Do</span><input type="email" id="ml-to" value="${esc(l.email || '')}" placeholder="brak adresu e-mail w karcie leada"></label>
         <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="ml-copy-to">${ICONS.copy}Kopiuj adres</button></div>
@@ -1772,7 +1879,7 @@ function openMailModal(l, tplKey) {
         <label class="field full"><span>Treść</span><textarea id="ml-body" rows="14">${esc(out.body)}</textarea></label>
       </div>
       <div class="row"><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
-      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz prezentację, jeśli nie ma linku, i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
+      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF)' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
     </div>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
   const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
@@ -1789,9 +1896,10 @@ function openMailModal(l, tplKey) {
     const p = { history: hist, updatedTs: new Date().toISOString() };
     const to = $('#ml-to').value.trim();
     if (to && to !== cur.email) p.email = to;
-    if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
+    if (tplKey === 'email_umowa_wglad') { p.contractPreviewAt = todayISO(); if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Telefon – pytania do umowy'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); } }
+    else if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
     else { if (!cur.calcSentAt) p.calcSentAt = todayISO(); p.calcLastAt = todayISO(); }
-    if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
+    if (tplKey !== 'email_umowa_wglad' && (!cur.nextTaskDate || cur.nextTaskDate <= todayISO())) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
     if (cur.status === 'do_kontaktu') p.status = 'w_kontakcie';
     patch('leads', l.id, p);
     closeModal();
@@ -2052,6 +2160,41 @@ Plan na najbliższe tygodnie:
 5. Pierwsze działania sprzedażowe: oferty do lokalnych firm przez platformę i ogłoszenia lokalne.
 
 ${c.g('Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:', 'Pytania kieruj śmiało do mnie:')} ${c.opiekunTel}, ${c.opiekunEmail}.${podpis(c)}` }) },
+
+  email_umowa_wglad: { grp: 'Domknięcie', n: 'Umowa do wglądu', kind: 'E-mail', f: c => {
+    const sp = c.model === 'shippoint' || MODEL_ALIAS[c.model] === 'shippoint';
+    return {
+      subject: sp ? 'Umowa Ship Center Point – wzór do wglądu' : 'Umowa franczyzowa ShipCenter – wzór do wglądu',
+      body: `${powitanie(c)}
+
+zgodnie z rozmową przesyłam w załączniku wzór ${sp ? 'umowy o współpracy Ship Center Point' : 'umowy franczyzowej ShipCenter wraz z Ogólnymi Warunkami Umów (OWU)'} do spokojnego zapoznania się.
+
+Najważniejsze zapisy w skrócie:
+${sp ? `• opłata wstępna ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
+• umowa na czas nieokreślony z 1-miesięcznym okresem wypowiedzenia,
+• dostęp do przewoźników i platformy ${c.o.www}, naklejka i materiały w cenie.` : `• pakiet startowy SMART: ${fmtZl(c.o.licencja)} jednorazowo,
+• opłata miesięczna 0 zł w miesiącu z ponad ${c.o.progRabatu} paczkami, w pozostałych ${fmtZl(c.o.oplataMies)},
+• umowa na czas nieokreślony z 2-miesięcznym okresem wypowiedzenia,
+• ochrona terytorialna ${c.o.ochrona} km, szkolenie ${c.o.szkolenie}.`}
+
+Umowę podpisujemy elektronicznie w Autenti – bez wizyty i drukowania. Gdy ${c.g('będzie Pan gotowy', 'będzie Pani gotowa', 'będą Państwo gotowi', 'będziesz gotowy/a')}, wyślę dokument do podpisu.
+
+Chętnie odpowiem na pytania do zapisów – ${c.g('proszę dać znać', 'proszę dać znać', 'proszę dać znać', 'daj znać')}, kiedy porozmawiamy.${podpis(c)}` };
+  } },
+
+  email_szkolenie: { grp: 'Domknięcie', n: 'Termin szkolenia w centrali', kind: 'E-mail', f: c => ({
+    subject: 'Szkolenie wstępne ShipCenter – termin i informacje',
+    body: `${powitanie(c)}
+
+potwierdzam termin szkolenia wstępnego w centrali ShipCenter:
+
+Termin: ${c.l.trainingStart ? fdate(c.l.trainingStart) + ' – ' + fdate(c.l.trainingEnd || trainingEnd(c.l.trainingStart)) : PH('termin szkolenia')} (3 dni)
+Miejsce: ${c.l.trainingPlace || 'centrala ShipCenter, ' + c.o.adres}
+Godziny: ${PH('np. 9:00–16:00')}
+
+Podczas szkolenia omówimy obsługę platformy ${c.o.www}, nadawanie przesyłek krajowych, zagranicznych i paletowych, wydania paczek, sprzedaż usług dodatkowych (pieczątki, poligrafia, pakowanie) oraz pozyskiwanie klientów biznesowych.
+
+Proszę zabrać ze sobą: ${PH('dokumenty / laptop / dane firmy')}.${podpis(c)}` }) },
 
   email_webinar: { grp: 'Marketing', n: 'Zaproszenie na webinar', kind: 'E-mail', f: c => ({
     subject: 'Webinar: jak otworzyć punkt nadawczy ShipCenter',
@@ -3326,6 +3469,9 @@ function handleAction(act, el, e) {
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
     case 'pres-sent': if (L) markPresentation(L); return;
     case 'mail-tpl': if (L) openMailModal(L, el.dataset.tpl); return;
+    case 'train-plan': if (L) setTraining(L, nextMonday()); return;
+    case 'contract-sent': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Umowa wysłana do podpisu w Autenti', { by: myMemberId() || L.ownerId || '' })); patch('leads', id, { contractSentAt: todayISO(), status: 'czeka_umowa', history: hist, nextTask: 'Sprawdzić podpis umowy w Autenti', nextTaskDate: isoDate(addDays(new Date(), 2)), updatedTs: new Date().toISOString() }); toast('Status: czeka na podpisanie umowy'); } return;
+    case 'contract-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Umowa podpisana (Autenti)', { by: myMemberId() || L.ownerId || '' })); patch('leads', id, { contractSignedAt: todayISO(), status: 'pozyskany', stageDates: { ...(L.stageDates || {}), umowa: (L.stageDates || {}).umowa || todayISO() }, history: hist, nextTask: '', nextTaskDate: '', updatedTs: new Date().toISOString() }); toast('Umowa podpisana – zaplanuj szkolenie w centrali'); } return;
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
@@ -3347,7 +3493,8 @@ function handleAction(act, el, e) {
     case 'hist-add': {
       if (!L) return;
       const text = $('#h-text').value.trim();
-      const entry = { id: uid('h'), at: $('#h-at').value || nowLocal(), type: $('#h-type').value, text, result: $('#h-result').value, by: $('#h-by').value };
+      if (!text) { toast('Wpisz opis kontaktu.', 'bad'); $('#h-text').focus(); return; }
+      const entry = { id: uid('h'), at: $('#h-at').value || nowLocal(), type: $('#h-type').value, text, result: $('#h-result').value, by: $('#h-by').value, manual: true };
       const hist = (L.history || []).slice(); hist.push(entry);
       const p = { history: hist, updatedTs: new Date().toISOString() };
       if (L.status === 'do_kontaktu' && entry.result !== 'Nie odebrał') p.status = 'w_kontakcie';
@@ -3421,6 +3568,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
+  if (el.dataset.train) { const l = D().leads[el.dataset.train]; if (l) setTraining(l, el.value); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }
   if (el.closest && el.closest('#lead-edit')) { saveLeadEdit(); return; }
   if (el.dataset.msg) {
@@ -3446,6 +3594,10 @@ function keepImpDefaults() {
   IMP.dups = ($('#imp-dups') || {}).value || IMP.dups;
 }
 
+document.addEventListener('paste', e => {
+  const el = e.target;
+  if (el && el.dataset && el.dataset.nipPaste) { const text = (e.clipboardData || window.clipboardData).getData('text'); e.preventDefault(); onNipPaste(el, text); }
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
 function afterRender() { }

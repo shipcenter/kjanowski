@@ -89,6 +89,7 @@ function leadFormFields(l, prefix = 'lf') {
   return `<div class="formgrid">
     <label class="field span2"><span>Imię i nazwisko *</span><input type="text" id="${prefix}-name" value="${esc(l.name)}" required></label>
     <label class="field"><span>Firma (opcjonalnie)</span><input type="text" id="${prefix}-company" value="${esc(l.company)}"></label>
+    <label class="field"><span>NIP</span><input type="text" id="${prefix}-nip" inputmode="numeric" value="${esc(l.nip ? nipFmt(l.nip) : '')}" placeholder="np. 634-286-76-10">${l.nip ? `<span class="hint ${nipValid(l.nip) ? '' : 'overdue'}">${nipValid(l.nip) ? 'NIP poprawny' : 'Błędny NIP – sprawdź cyfry'}</span>` : ''}</label>
     <label class="field"><span>Telefon</span><input type="tel" id="${prefix}-phone" value="${esc(l.phone)}"></label>
     <label class="field"><span>E-mail</span><input type="email" id="${prefix}-email" value="${esc(l.email)}"></label>
     <label class="field"><span>Miasto planowanego punktu</span><input type="text" id="${prefix}-city" value="${esc(l.city)}"></label>
@@ -104,7 +105,7 @@ function leadFormFields(l, prefix = 'lf') {
 }
 function readLeadForm(prefix = 'lf') {
   const v = id => ($('#' + prefix + '-' + id) || {}).value || '';
-  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
+  return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
   const l = newLead({ ownerId: S.f.owner && S.f.owner !== '_none' ? S.f.owner : (myMemberId() || ''), source: S.f.source || 'google', region: S.f.region || '', model: S.f.model || 'franczyza' });
@@ -148,7 +149,7 @@ function viewLead(id) {
   const pos = ids.indexOf(id);
   const prevId = pos > 0 ? ids[pos - 1] : null, nextId = pos >= 0 && pos < ids.length - 1 ? ids[pos + 1] : null;
   const locs = Object.values(D().locations).filter(x => x.leadId === id);
-  const hist = (l.history || []).slice().sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const hist = (l.history || []).filter(isManualEntry).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
   const o = offer();
 
   const head = `<div class="row between" style="margin-bottom:10px"><a class="btn ghost sm" href="#leady">${ICONS.back}Lista leadów</a>
@@ -167,6 +168,7 @@ function viewLead(id) {
   const contact = `<div class="card"><div class="cardhead"><h2>Dane kandydata</h2><p>Zmiany zapisują się po opuszczeniu pola</p></div>
     <div id="lead-edit" data-lead="${l.id}">${leadFormFields(l, 'le')}</div>
     <div class="row" style="margin-top:10px">${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj telefon</button>` : ''}${l.email ? `<span class="pill outline mono">${esc(l.email)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.email)}">${ICONS.copy}Kopiuj e-mail</button>` : ''}</div>
+    ${companyBox(l)}
     <div class="sep"></div>
     <label class="field"><span>Notatki</span><textarea id="ld-notes" data-lead-field="notes" rows="5" placeholder="Motywacja, sytuacja finansowa, lokal, obawy, ustalenia…">${esc(l.notes)}</textarea></label></div>`;
 
@@ -183,18 +185,20 @@ function viewLead(id) {
         ${modelOf(l) === 'franczyza' ? `<button class="btn sm" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_kalkulator">${ICONS.email}${l.calcSentAt ? 'Wyślij ponownie kalkulator' : 'Mail z kalkulatorem'}</button>` : ''}
         ${l.presentationAt ? `<button class="btn sm ghost" data-act="pres-clear" data-id="${l.id}">Cofnij datę prezentacji</button>` : `<details><summary class="small muted" style="cursor:pointer">Zaznacz bez maila</summary><div class="stack" style="gap:6px;margin-top:6px"><button class="btn sm ghost" data-act="pres-sent" data-id="${l.id}">Prezentacja wysłana dziś</button><label class="field"><span>…albo innego dnia</span><input type="date" id="ld-pres" data-lead-field="presentationAt" value=""></label></div></details>`}
       </div>
-      <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
+      ${isWon(l) ? trainingStep(l) : `      <div class="pstep ${nextCls}"><span class="lbl">3 · Kolejny kontakt</span>
         <input type="text" id="ld-task" data-lead-field="nextTask" value="${esc(l.nextTask)}" list="task-sugg" placeholder="Co zrobić, np. telefon po prezentacji" aria-label="Kolejny kontakt – co zrobić">
         <div class="row" style="flex-wrap:nowrap"><input type="date" id="ld-taskdate" data-lead-field="nextTaskDate" value="${esc(l.nextTaskDate)}" aria-label="Data kolejnego kontaktu"><input type="time" id="ld-tasktime" data-lead-field="nextTaskTime" value="${esc(l.nextTaskTime || '')}" aria-label="Godzina" style="max-width:110px"></div>
         <div class="row">${[1, 3, 7].map(d => `<button class="btn sm" data-act="task-shift" data-id="${l.id}" data-d="${d}">+${d} ${d === 1 ? 'dzień' : 'dni'}</button>`).join('')}</div>
         ${l.nextTaskDate ? `<span class="tiny ${dueCls(l.nextTaskDate)}">${nextCls === 'late' ? 'Zaległe od ' + fdate(l.nextTaskDate) : nextCls === 'due' ? 'Na dziś – przypomnienie w menu „Kontakty”' : 'Przypomnienie: ' + fdate(l.nextTaskDate)}</span>` : '<span class="tiny muted">Brak terminu – lead nie pojawi się w przypomnieniach.</span>'}
       </div>
+`}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
     <div class="row" style="margin-top:12px"><button class="btn primary" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button>${l.phone ? `<span class="pill outline mono">${esc(l.phone)}</span><button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Kopiuj</button>` : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
+  const contract = contractCard(l);
   const meeting = `<div class="card"><div class="cardhead"><h2>Spotkanie</h2>${l.meetingAt ? `<p class="${dueCls(l.meetingAt)}">${fdt(l.meetingAt)}</p>` : ''}</div>
     <div class="formgrid"><label class="field"><span>Termin</span><input type="datetime-local" id="ld-meet" data-lead-field="meetingAt" value="${esc(l.meetingAt)}"></label>
     <label class="field"><span>Forma</span><select id="ld-meettype" data-lead-field="meetingType">${opt('', '—', l.meetingType)}${opt('online', 'Online (wideo)', l.meetingType)}${opt('telefon', 'Telefon', l.meetingType)}${opt('centrala', 'Centrala – Katowice', l.meetingType)}${opt('lokal', 'W planowanym lokalu', l.meetingType)}${opt('punkt', 'W działającym punkcie', l.meetingType)}</select></label>
@@ -210,7 +214,7 @@ function viewLead(id) {
     <div class="row" style="margin-top:10px"><button class="btn sm primary" data-act="handoff" data-id="${l.id}">Przekaż leada</button><button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="wew_przekazanie">Generuj notatkę przekazania</button></div>
     ${handoffs.length ? `<div class="sep"></div><div class="timeline">${handoffs.map(h => `<div class="tl-item"><span class="tl-ic">${ICONS.arrow}</span><div><div class="meta"><span>${fdate(h.date)}</span><span>${esc(h.fromName || '—')} → <b>${esc(h.toName || '—')}</b></span></div>${h.note ? `<div class="body small">${esc(h.note)}</div>` : ''}</div></div>`).join('')}</div>` : ''}</div>`;
 
-  const historyCard = `<div class="card"><div class="cardhead"><h2>Historia kontaktów</h2><p>${hist.filter(h => h.type !== 'system').length} kontaktów</p></div>
+  const historyCard = `<div class="card"><div class="cardhead"><h2>Historia kontaktów</h2><p>${hist.length} wpisów</p></div>
     <div class="formgrid">
       <label class="field"><span>Rodzaj</span><select id="h-type">${CONTACT_TYPES.filter(c => c.k !== 'system').map(c => opt(c.k, c.n, 'tel')).join('')}</select></label>
       <label class="field"><span>Kiedy</span><input type="datetime-local" id="h-at" value="${nowLocal()}"></label>
@@ -235,7 +239,7 @@ function viewLead(id) {
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="loc-new" data-lead="${l.id}">${ICONS.pin}Nowa analiza dla leada</button></div></div>`;
 
   const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}Usuń leada</button></div>`;
-  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
+  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {
@@ -286,4 +290,70 @@ function saveLeadEdit() {
     p.history = hist;
   }
   patch('leads', id, p);
+}
+
+/* dane firmy z Białej listy VAT (Ministerstwo Finansów) */
+function companyBox(l) {
+  const d = nipDigits(l.nip);
+  const ok = nipValid(d);
+  const url = ok ? `https://wl-api.mf.gov.pl/api/search/nip/${d}?date=${todayISO()}` : '';
+  const c = l.companyData;
+  return `<div class="sep"></div><div class="row between"><h3>Dane firmy z rejestru</h3>${c ? `<span class="tiny muted">pobrano ${fdate(c.at)}</span>` : ''}</div>
+    ${c ? `<dl class="kv" style="margin-top:8px"><dt>Nazwa</dt><dd>${esc(c.name || '—')}</dd><dt>Adres</dt><dd>${esc(c.address || '—')}</dd><dt>NIP</dt><dd>${esc(nipFmt(c.nip || d))}</dd><dt>REGON</dt><dd>${esc(c.regon || '—')}</dd>${c.krs ? `<dt>KRS</dt><dd>${esc(c.krs)}</dd>` : ''}<dt>Status VAT</dt><dd>${c.statusVat ? `<span class="pill ${c.statusVat === 'Czynny' ? 'good' : 'warn'}">${esc(c.statusVat)}</span>` : '—'}</dd>${c.registrationLegalDate ? `<dt>Rejestracja</dt><dd>${esc(c.registrationLegalDate)}</dd>` : ''}</dl>` : ''}
+    ${!d ? '<p class="note" style="margin-top:6px">Wpisz NIP powyżej, aby pobrać nazwę, adres, REGON i status VAT firmy.</p>'
+      : !ok ? '<p class="note overdue" style="margin-top:6px">NIP ma błędną sumę kontrolną – popraw cyfry.</p>'
+      : `<div class="stack" style="gap:8px;margin-top:8px"><div class="row"><a class="btn sm" href="${url}" target="_blank" rel="noopener">${ICONS.file}1. Otwórz dane z Białej listy VAT</a><span class="note">Otworzy się oficjalna strona Ministerstwa Finansów z danymi tej firmy. Zaznacz wszystko (Ctrl+A), skopiuj (Ctrl+C)…</span></div>
+        <label class="field"><span>2. …i wklej tutaj (Ctrl+V) – panel sam uzupełni dane</span><textarea id="nip-paste" data-nip-paste="${l.id}" rows="2" placeholder="Wklej wynik z Białej listy VAT"></textarea></label></div>`}`;
+}
+function parseWhiteList(text) {
+  let j;
+  try { j = JSON.parse(text); } catch (e) { const m = String(text).match(/\{[\s\S]*\}/); if (!m) return null; try { j = JSON.parse(m[0]); } catch (e2) { return null; } }
+  const sub = j && j.result && (j.result.subject || (j.result.subjects || [])[0]);
+  if (!sub) return null;
+  return { name: sub.name || '', address: sub.workingAddress || sub.residenceAddress || '', nip: sub.nip || '', regon: sub.regon || '', krs: sub.krs || '', statusVat: sub.statusVat || '', registrationLegalDate: sub.registrationLegalDate || '', at: todayISO(), source: 'Biała lista VAT (MF)' };
+}
+function onNipPaste(el, text) {
+  const id = el.dataset.nipPaste; const l = D().leads[id]; if (!l) return;
+  const c = parseWhiteList(text);
+  if (!c) { toast('Nie rozpoznano danych. Skopiuj całą zawartość strony z Białej listy VAT i wklej ponownie.', 'bad'); return; }
+  if (c.nip && nipDigits(c.nip) !== nipDigits(l.nip)) toast('Uwaga: wklejone dane dotyczą innego NIP-u (' + c.nip + ').', 'bad');
+  const p = { companyData: c, updatedTs: new Date().toISOString() };
+  if (!l.company && c.name) p.company = c.name;
+  const hist = (l.history || []).slice(); hist.push(histEntry('system', 'Pobrano dane firmy z Białej listy VAT: ' + c.name)); p.history = hist;
+  patch('leads', id, p);
+  toast('Uzupełniono dane firmy: ' + c.name);
+}
+
+function trainingStep(l) {
+  const start = l.trainingStart || '';
+  const end = start ? (l.trainingEnd || trainingEnd(start)) : '';
+  const cls = !start ? 'due' : start < todayISO() && end < todayISO() ? 'done' : '';
+  return `<div class="pstep ${cls}"><span class="lbl">3 · Szkolenie w centrali</span>
+    ${start ? `<span class="val">${fdate(start)} – ${fdate(end)}</span><span class="small ink2">3 dni robocze · ${esc(l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice')}</span>` : '<span class="small ink2">Umowa podpisana. Zaplanuj 3-dniowe szkolenie wstępne w centrali (w ciągu 30 dni od podpisania umowy).</span>'}
+    <label class="field"><span>${start ? 'Zmień datę rozpoczęcia' : 'Data rozpoczęcia szkolenia'}</span><input type="date" id="ld-train" data-train="${l.id}" value="${esc(start)}"></label>
+    ${start ? `<button class="btn sm ghost" data-act="msg-for" data-id="${l.id}" data-tpl="email_szkolenie">${ICONS.email}Mail z terminem szkolenia</button>` : `<button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Zaplanuj od najbliższego poniedziałku</button>`}
+  </div>`;
+}
+function setTraining(l, start) {
+  const end = start ? trainingEnd(start) : '';
+  const hist = (l.history || []).slice();
+  hist.push(histEntry('system', start ? `Zaplanowano szkolenie w centrali: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia'));
+  patch('leads', l.id, { trainingStart: start, trainingEnd: end, trainingPlace: l.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice', nextTask: start ? 'Szkolenie wstępne w centrali (3 dni)' : '', nextTaskDate: start || '', nextTaskTime: '', history: hist, updatedTs: new Date().toISOString() });
+  toast(start ? `Szkolenie: ${fdate(start)} – ${fdate(end)}` : 'Usunięto termin szkolenia');
+}
+
+/* umowa: do wglądu → Autenti → podpisana */
+function contractCard(l) {
+  const kind = modelOf(l) === 'shippoint' ? 'Umowa o współpracy Ship Center Point' : 'Umowa franczyzowa + OWU';
+  const won = isWon(l);
+  const step = (lbl, date, body, cls = '') => `<div class="pstep ${date ? 'done' : cls}"><span class="lbl">${lbl}</span>${date ? `<span class="val">${fdate(date)}</span>` : ''}${body}</div>`;
+  return `<div class="card"><div class="cardhead"><h2>Umowa</h2><p>${esc(kind)}</p></div>
+    <div class="stack" style="gap:10px">
+      ${step('1 · Do wglądu', l.contractPreviewAt, `<span class="small ink2">${l.contractPreviewAt ? 'Kandydat dostał wzór umowy do zapoznania się.' : 'Dla kandydata, który chce przeczytać umowę przed decyzją.'}</span><button class="btn sm ${l.contractPreviewAt ? '' : 'primary'}" data-act="mail-tpl" data-id="${l.id}" data-tpl="email_umowa_wglad">${ICONS.email}${l.contractPreviewAt ? 'Wyślij ponownie do wglądu' : 'Wyślij umowę do wglądu'}</button>`)}
+      ${step('2 · Do podpisu w Autenti', l.contractSentAt, `${l.contractSentAt ? '<span class="small ink2">Status: czeka na podpisanie umowy.</span>' : '<span class="small ink2">Po wysłaniu dokumentu w Autenti zaznacz to tutaj.</span>'}
+        <label class="field"><span>Link do dokumentu w Autenti (opcjonalnie)</span><input type="url" id="ld-autenti" data-lead-field="autentiLink" value="${esc(l.autentiLink || '')}" placeholder="https://…autenti…"></label>
+        ${l.autentiLink ? `<a class="btn sm" href="${esc(l.autentiLink)}" target="_blank" rel="noopener">Otwórz w Autenti</a>` : ''}
+        ${l.contractSentAt ? '' : `<button class="btn sm primary" data-act="contract-sent" data-id="${l.id}">Wysłano do podpisu (dziś)</button>`}`, l.contractPreviewAt ? 'due' : '')}
+      ${step('3 · Podpisana', won ? ((l.stageDates || {}).umowa || l.contractSignedAt) : '', won ? '<span class="small ink2">Status: Pozyskany – umowa podpisana.</span>' : `<span class="small ink2">Gdy wszystkie strony podpiszą umowę w Autenti.</span><button class="btn sm ${l.contractSentAt ? 'primary' : ''}" data-act="contract-signed" data-id="${l.id}">Umowa podpisana</button>`, l.contractSentAt ? 'due' : '')}
+    </div></div>`;
 }

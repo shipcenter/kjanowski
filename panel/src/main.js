@@ -40,6 +40,9 @@ function handleAction(act, el, e) {
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
     case 'pres-sent': if (L) markPresentation(L); return;
     case 'mail-tpl': if (L) openMailModal(L, el.dataset.tpl); return;
+    case 'train-plan': if (L) setTraining(L, nextMonday()); return;
+    case 'contract-sent': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Umowa wysłana do podpisu w Autenti', { by: myMemberId() || L.ownerId || '' })); patch('leads', id, { contractSentAt: todayISO(), status: 'czeka_umowa', history: hist, nextTask: 'Sprawdzić podpis umowy w Autenti', nextTaskDate: isoDate(addDays(new Date(), 2)), updatedTs: new Date().toISOString() }); toast('Status: czeka na podpisanie umowy'); } return;
+    case 'contract-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Umowa podpisana (Autenti)', { by: myMemberId() || L.ownerId || '' })); patch('leads', id, { contractSignedAt: todayISO(), status: 'pozyskany', stageDates: { ...(L.stageDates || {}), umowa: (L.stageDates || {}).umowa || todayISO() }, history: hist, nextTask: '', nextTaskDate: '', updatedTs: new Date().toISOString() }); toast('Umowa podpisana – zaplanuj szkolenie w centrali'); } return;
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'sms-done': { const x = D().sms[id]; if (x) patch('sms', id, { status: 'wyslany', sentTs: new Date().toISOString(), manual: true }); return; }
@@ -61,7 +64,8 @@ function handleAction(act, el, e) {
     case 'hist-add': {
       if (!L) return;
       const text = $('#h-text').value.trim();
-      const entry = { id: uid('h'), at: $('#h-at').value || nowLocal(), type: $('#h-type').value, text, result: $('#h-result').value, by: $('#h-by').value };
+      if (!text) { toast('Wpisz opis kontaktu.', 'bad'); $('#h-text').focus(); return; }
+      const entry = { id: uid('h'), at: $('#h-at').value || nowLocal(), type: $('#h-type').value, text, result: $('#h-result').value, by: $('#h-by').value, manual: true };
       const hist = (L.history || []).slice(); hist.push(entry);
       const p = { history: hist, updatedTs: new Date().toISOString() };
       if (L.status === 'do_kontaktu' && entry.result !== 'Nie odebrał') p.status = 'w_kontakcie';
@@ -135,6 +139,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.f && el.dataset.f !== 'q') { S.f[el.dataset.f] = el.value; S.selected.clear(); scheduleRender(); return; }
   if (el.dataset.rev) { onRevInput(el, true); return; }
+  if (el.dataset.train) { const l = D().leads[el.dataset.train]; if (l) setTraining(l, el.value); return; }
   if (el.dataset.leadField) { saveLeadField(el); return; }
   if (el.closest && el.closest('#lead-edit')) { saveLeadEdit(); return; }
   if (el.dataset.msg) {
@@ -160,6 +165,10 @@ function keepImpDefaults() {
   IMP.dups = ($('#imp-dups') || {}).value || IMP.dups;
 }
 
+document.addEventListener('paste', e => {
+  const el = e.target;
+  if (el && el.dataset && el.dataset.nipPaste) { const text = (e.clipboardData || window.clipboardData).getData('text'); e.preventDefault(); onNipPaste(el, text); }
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
 function afterRender() { }

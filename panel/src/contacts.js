@@ -41,12 +41,19 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
       <label class="field full"><span>Notatka z rozmowy</span><textarea id="cl-text" rows="3" placeholder="Co ustaliliście, czego oczekuje, obawy, kapitał, lokal…">${esc(text)}</textarea></label>
       <label class="chk full"><input type="checkbox" id="cl-pres" ${l.presentationAt ? 'disabled' : ''}> ${l.presentationAt ? 'Prezentacja wysłana ' + fdate(l.presentationAt) : 'Wysłałem prezentację (zapisz datę dzisiejszą)'}</label>
     </div>
+    <div class="smsbox" id="cl-trainbox" ${l.status === 'pozyskany' ? '' : 'hidden'}>
+      <b>Umowa podpisana – zaplanuj szkolenie wstępne (3 dni w centrali)</b>
+      <div class="formgrid"><label class="field"><span>Data rozpoczęcia</span><input type="date" id="cl-train" value="${esc(l.trainingStart || nextMonday())}"></label><div class="field"><span>Koniec (3 dni robocze)</span><b id="cl-trainend" style="padding-top:8px">${fdate(trainingEnd(l.trainingStart || nextMonday()))}</b></div></div>
+      <span class="note">Kolejnego kontaktu nie trzeba planować – przypomnienie pojawi się w dniu szkolenia.</span>
+    </div>
+    <div id="cl-nextwrap" ${l.status === 'pozyskany' ? 'hidden' : ''}>
     <div class="formgrid">
       <label class="field span2"><span>Kolejny kontakt – co zrobić</span><input type="text" id="cl-next" list="task-sugg3" value="${esc(l.presentationAt ? 'Telefon po prezentacji' : 'Telefon – kolejny krok')}"></label>
       <label class="field"><span>Data</span><input type="date" id="cl-nextdate" value="${nextDefault}"></label>
       <label class="field"><span>Godzina (opcjonalnie)</span><input type="time" id="cl-nexttime" value=""></label>
     </div>
     <div class="row">${[1, 2, 3, 7, 14].map(d => `<button type="button" class="btn sm" data-days="${d}">za ${d} ${d === 1 ? 'dzień' : 'dni'}</button>`).join('')}<button type="button" class="btn sm ghost" data-days="none">bez kolejnego kontaktu</button></div>
+    </div>
     <datalist id="task-sugg3">${['Telefon po prezentacji', 'Ponowna próba kontaktu', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
     ${first ? `<div class="smsbox" id="sms-box">
       <label class="chk"><input type="checkbox" id="cl-sms" ${l.phone ? 'checked' : 'disabled'}> <b>Wyślij SMS z podziękowaniem za rozmowę</b>${l.phone ? ` na numer ${esc(l.phone)}` : ' – brak numeru telefonu'}</label>
@@ -59,6 +66,9 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
   const upd = () => { const t = $('#cl-smstext'); if (t) { const i = smsInfo(t.value); $('#cl-smsinfo').textContent = `${i.len} znaków · ${i.parts} SMS${i.gsm ? '' : ' (polskie znaki – krótsze SMS-y)'}`; } };
   upd();
   if ($('#cl-smstext')) { $('#cl-smstext').oninput = upd; $('#cl-smspl').onclick = () => { $('#cl-smstext').value = stripPL($('#cl-smstext').value); upd(); }; }
+  const syncWon = () => { const won = $('#cl-status').value === 'pozyskany'; $('#cl-trainbox').hidden = !won; $('#cl-nextwrap').hidden = won; const sb = $('#sms-box'); if (sb && won) sb.hidden = true; };
+  $('#cl-status').onchange = syncWon;
+  $('#cl-train').onchange = () => { $('#cl-trainend').textContent = fdate(trainingEnd($('#cl-train').value)); };
   $('#cl-result').onchange = () => { const box = $('#sms-box'); if (box) box.hidden = $('#cl-result').value === 'Nie odebrał'; if ($('#cl-result').value === 'Nie odebrał') { $('#cl-status').value = 'proba'; $('#cl-next').value = 'Ponowna próba kontaktu'; $('#cl-nextdate').value = isoDate(addDays(new Date(), 1)); } };
   $$('#modal [data-days]').forEach(b => b.onclick = () => { if (b.dataset.days === 'none') { $('#cl-next').value = ''; $('#cl-nextdate').value = ''; } else $('#cl-nextdate').value = isoDate(addDays(new Date(), +b.dataset.days)); });
   $('#cl-pres').onchange = () => { if ($('#cl-pres').checked && !/prezentac/i.test($('#cl-next').value)) $('#cl-next').value = 'Telefon po prezentacji'; };
@@ -67,16 +77,23 @@ function openCallModal(l, { type = 'tel', title = null, result = 'Rozmowa przepr
     const t = $('#cl-type').value, res = $('#cl-result').value;
     const hist = (cur.history || []).slice();
     const by = myMemberId() || cur.ownerId || '';
-    hist.push({ id: uid('h'), at: nowLocal(), type: t, text: $('#cl-text').value.trim(), result: res, by });
-    const nextTxt = $('#cl-next').value.trim();
+    const noteTxt = $('#cl-text').value.trim();
+    hist.push({ id: uid('h'), at: nowLocal(), type: t, text: noteTxt, result: res, by, manual: !!noteTxt, auto: !noteTxt });
+    const won = $('#cl-status').value === 'pozyskany';
+    const nextTxt = won ? '' : $('#cl-next').value.trim();
     const p = { history: hist, status: $('#cl-status').value, nextTask: nextTxt, nextTaskDate: nextTxt ? $('#cl-nextdate').value : '', nextTaskTime: nextTxt ? $('#cl-nexttime').value : '', updatedTs: new Date().toISOString() };
+    if (won) {
+      const ts = $('#cl-train').value;
+      p.stageDates = { ...(cur.stageDates || {}), umowa: (cur.stageDates || {}).umowa || todayISO() };
+      if (ts) { p.trainingStart = ts; p.trainingEnd = trainingEnd(ts); p.trainingPlace = cur.trainingPlace || 'centrala ShipCenter, ul. Gliwicka 51, Katowice'; p.nextTask = 'Szkolenie wstępne w centrali (3 dni)'; p.nextTaskDate = ts; hist.push(histEntry('system', `Umowa podpisana. Szkolenie w centrali: ${fdate(ts)} – ${fdate(p.trainingEnd)}`, { by })); }
+    }
     const reached = res !== 'Nie odebrał';
     if (t === 'tel' && reached && !cur.firstCallAt) p.firstCallAt = todayISO();
     if ($('#cl-pres').checked && !cur.presentationAt) { p.presentationAt = todayISO(); hist.push(histEntry('email', 'Wysłano prezentację', { by, result: 'Wysłano materiały' })); }
     if ((t === 'spotkanie' || stageTo === 'spotkanie') && reached && !(cur.stageDates || {}).spotkanie) p.stageDates = { ...(cur.stageDates || {}), spotkanie: todayISO() };
     if (t === 'spotkanie') { p.meetingAt = ''; if (p.status === 'umowione') p.status = 'w_kontakcie'; }
     patch('leads', l.id, p);
-    const smsOn = $('#cl-sms') && $('#cl-sms').checked && reached && cur.phone;
+    const smsOn = !won && $('#cl-sms') && $('#cl-sms').checked && reached && cur.phone;
     if (smsOn) {
       const text = $('#cl-smstext').value.trim();
       queueSms(cur, text);
@@ -138,11 +155,16 @@ function viewContacts() {
   const newCard = `<div class="card"><div class="cardhead"><h2>Do pierwszego kontaktu</h2><p>${newOnes.length} nowych</p></div>
     ${newOnes.length ? newOnes.map(l => `<div class="contact-row"><span class="when ${l.createdTs && Date.now() - new Date(l.createdTs) > 864e5 ? 'overdue' : 'today'}">${fdateShort(l.createdAt)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">${esc([l.phone, l.email, l.city, SOURCE_MAP[l.source]?.n].filter(Boolean).join(' · '))}</div></div>
       <div class="ctl">${l.phone ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(l.phone)}">${ICONS.copy}Telefon</button>` : ''}<button class="btn sm primary" data-act="call-log" data-id="${l.id}">Pierwsza rozmowa</button></div></div>`).join('') : '<p class="muted small">Wszyscy nowi kandydaci mają już za sobą pierwszą rozmowę.</p>'}</div>`;
+  const trainings = leadsArr().filter(byOwner).filter(l => l.trainingStart && (l.trainingEnd || l.trainingStart) >= t).sort((a2, b2) => a2.trainingStart.localeCompare(b2.trainingStart));
+  const wonNoTraining = leadsArr().filter(byOwner).filter(l => isWon(l) && !l.trainingStart);
+  const trainCard = (trainings.length || wonNoTraining.length) ? `<div class="card"><div class="cardhead"><h2>Szkolenia w centrali</h2><p>${trainings.length}</p></div>
+    ${wonNoTraining.map(l => `<div class="contact-row"><span class="when overdue">brak</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a><div class="tiny muted">Umowa podpisana – zaplanuj 3-dniowe szkolenie</div></div><div class="ctl"><button class="btn sm primary" data-act="train-plan" data-id="${l.id}">Od poniedziałku</button></div></div>`).join('')}
+    ${trainings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.trainingStart)}">${fdateShort(l.trainingStart)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">${fdate(l.trainingStart)} – ${fdate(l.trainingEnd || trainingEnd(l.trainingStart))} · centrala</div></div><div></div></div>`).join('')}</div>` : '';
   const meetCard = `<div class="card"><div class="cardhead"><h2>Spotkania – 7 dni</h2><p>${meetings.length}</p></div>${meetings.length ? meetings.map(l => `<div class="contact-row"><span class="when ${dueCls(l.meetingAt)}">${fdateShort(l.meetingAt)}</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a><div class="tiny muted">${fdt(l.meetingAt)} · ${esc(l.meetingType || '')} ${esc(l.meetingPlace || '')}</div></div><div></div></div>`).join('') : '<p class="muted small">Brak zaplanowanych spotkań.</p>'}</div>`;
   const noNextCard = noNext.length ? `<div class="card"><div class="cardhead"><h2>Bez zaplanowanego kontaktu</h2><p>${noNext.length}</p></div><p class="note" style="margin-bottom:6px">Aktywni kandydaci po pierwszej rozmowie, którym nikt nie ustawił kolejnego kontaktu.</p>${noNext.slice(0, 15).map(l => `<div class="contact-row"><span class="when muted">—</span><div style="min-width:0"><a href="#lead-${l.id}"><b>${esc(l.name)}</b></a> ${modelPill(l)}<div class="tiny muted">ostatni kontakt ${fdateShort(lastContact(l) || l.createdAt)}</div></div><div class="ctl"><button class="btn sm" data-act="snooze" data-id="${l.id}" data-d="1">Na jutro</button></div></div>`).join('')}</div>` : '';
   const smsCard = pendingSms.length ? `<div class="card"><div class="cardhead"><h2>SMS w kolejce</h2><p>${pendingSms.length}</p></div>${smsGatewayOn() ? '' : '<p class="note" style="margin-bottom:6px">Bramka SMS nie jest podłączona. Skopiuj treść i wyślij ręcznie albo poczekaj na podłączenie.</p>'}${pendingSms.map(x => `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><a href="#lead-${x.leadId}"><b>${esc(x.leadName)}</b></a> <span class="mono small">${esc(x.phone)}</span><div class="tiny muted">${esc(x.text)}</div></div><div class="ctl"><button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}Treść</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button><button class="iconbtn" data-act="sms-cancel" data-id="${x.id}" aria-label="Anuluj">${ICONS.x}</button></div></div>`).join('')}</div>` : '';
   const empty = !groups.some(g => g[2].length) ? `<div class="card"><div class="empty"><h3>Brak zaplanowanych kontaktów na najbliższy tydzień</h3><p>Kolejny kontakt ustawisz przy zapisie rozmowy albo w karcie leada.</p></div></div>` : '';
-  return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
+  return head + `<div class="split"><div class="stack">${groupsHtml}${empty}</div><div class="stack">${newCard}${trainCard}${smsCard}${meetCard}${noNextCard}</div></div>`;
 }
 
 /* mail z prezentacją / kalkulatorem: gotowa wiadomość + zapis wysłania */
@@ -150,11 +172,11 @@ function openMailModal(l, tplKey) {
   const t = TEMPLATES[tplKey]; if (!t) return;
   const out = t.f(msgContext(l, l.form));
   const isPres = tplKey === 'email_prezentacja';
-  const again = isPres ? !!l.presentationAt : !!l.calcSentAt;
+  const again = tplKey === 'email_umowa_wglad' ? !!l.contractPreviewAt : isPres ? !!l.presentationAt : !!l.calcSentAt;
   const mailto = () => `mailto:${encodeURIComponent(l.email || '')}?subject=${encodeURIComponent($('#ml-subj').value)}&body=${encodeURIComponent($('#ml-body').value)}`;
   openModal(`<div class="mh"><h2>${esc(again ? 'Wyślij ponownie: ' + t.n.toLowerCase() : t.n)} – ${esc(l.name)}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <div class="mb">
-      ${again ? `<p class="callout">${isPres ? 'Prezentacja' : 'Kalkulator'} był już wysłany ${fdate(isPres ? l.presentationAt : l.calcSentAt)}.</p>` : ''}
+      ${again ? `<p class="callout">${tplKey === 'email_umowa_wglad' ? 'Umowa do wglądu była już wysłana ' + fdate(l.contractPreviewAt) : (isPres ? 'Prezentacja była już wysłana ' + fdate(l.presentationAt) : 'Kalkulator był już wysłany ' + fdate(l.calcSentAt))}.</p>` : ''}
       <div class="formgrid">
         <label class="field span2"><span>Do</span><input type="email" id="ml-to" value="${esc(l.email || '')}" placeholder="brak adresu e-mail w karcie leada"></label>
         <div class="field" style="justify-content:flex-end"><button type="button" class="btn sm" id="ml-copy-to">${ICONS.copy}Kopiuj adres</button></div>
@@ -162,7 +184,7 @@ function openMailModal(l, tplKey) {
         <label class="field full"><span>Treść</span><textarea id="ml-body" rows="14">${esc(out.body)}</textarea></label>
       </div>
       <div class="row"><button type="button" class="btn sm" id="ml-copy-subj">${ICONS.copy}Kopiuj temat</button><button type="button" class="btn sm" id="ml-copy-body">${ICONS.copy}Kopiuj treść</button><a class="btn sm" id="ml-open" href="#" target="_blank" rel="noopener">${ICONS.email}Otwórz w programie pocztowym</a></div>
-      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz prezentację, jeśli nie ma linku, i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
+      <p class="note">Panel nie wysyła maili sam – wyślij wiadomość ze skrzynki ${esc(offer().email)} (np. Thunderbird), dołącz ${tplKey === 'email_umowa_wglad' ? 'wzór umowy (PDF)' : 'prezentację, jeśli nie ma linku,'} i kliknij „Zapisz jako wysłany”.${(isPres && !offer().linkPrezentacja) ? ' Link do prezentacji możesz ustawić w „Zespół i ustawienia”.' : ''}</p>
     </div>
     <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ml-save">Zapisz jako wysłany</button></div>`, { wide: true });
   const refreshLink = () => { const a = $('#ml-open'); if (a) a.href = mailto().replace(encodeURIComponent(l.email || ''), encodeURIComponent($('#ml-to').value)); };
@@ -179,9 +201,10 @@ function openMailModal(l, tplKey) {
     const p = { history: hist, updatedTs: new Date().toISOString() };
     const to = $('#ml-to').value.trim();
     if (to && to !== cur.email) p.email = to;
-    if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
+    if (tplKey === 'email_umowa_wglad') { p.contractPreviewAt = todayISO(); if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = 'Telefon – pytania do umowy'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); } }
+    else if (isPres) { if (!cur.presentationAt) p.presentationAt = todayISO(); p.presentationSends = (cur.presentationSends || (cur.presentationAt ? 1 : 0)) + 1; p.presentationLastAt = todayISO(); }
     else { if (!cur.calcSentAt) p.calcSentAt = todayISO(); p.calcLastAt = todayISO(); }
-    if (!cur.nextTaskDate || cur.nextTaskDate <= todayISO()) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
+    if (tplKey !== 'email_umowa_wglad' && (!cur.nextTaskDate || cur.nextTaskDate <= todayISO())) { p.nextTask = isPres ? 'Telefon po prezentacji' : 'Telefon – omówić konfigurację z kalkulatora'; p.nextTaskDate = isoDate(addDays(new Date(), 3)); }
     if (cur.status === 'do_kontaktu') p.status = 'w_kontakcie';
     patch('leads', l.id, p);
     closeModal();

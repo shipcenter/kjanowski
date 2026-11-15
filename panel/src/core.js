@@ -20,6 +20,7 @@ const STATUSES = [
   { k: 'czeka', n: 'Czeka na decyzję', tone: '' },
   { k: 'umowione', n: 'Spotkanie umówione', tone: 'acc' },
   { k: 'wstrzymany', n: 'Wstrzymany', tone: 'outline' },
+  { k: 'czeka_umowa', n: 'Pozyskany – czeka na podpisanie umowy', tone: 'acc' },
   { k: 'utracony', n: 'Utracony', tone: 'bad' },
   { k: 'pozyskany', n: 'Pozyskany – umowa podpisana', tone: 'good' }
 ];
@@ -292,7 +293,7 @@ function stageDatesOf(l) {
     umowa: old.umowa || (l.status === 'pozyskany' ? (l.updatedTs || '').slice(0, 10) : '')
   };
 }
-const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : d.spotkanie ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
+const stageIdx = l => { const d = stageDatesOf(l); return (d.umowa || l.status === 'pozyskany') ? 4 : (d.spotkanie || l.status === 'czeka_umowa' || l.contractSentAt) ? 3 : d.prezentacja ? 2 : d.kontakt ? 1 : 0; };
 const isOpen = l => !CLOSED.has(l.status);
 const isWon = l => l.status === 'pozyskany' || !!(l.stageDates || {}).umowa;
 const lastContact = l => {
@@ -314,7 +315,7 @@ function newLead(data = {}) {
   };
 }
 function histEntry(type, text, extra = {}) {
-  return { id: uid('h'), at: nowLocal(), type, text, by: extra.by || '', result: extra.result || '' };
+  return { id: uid('h'), at: nowLocal(), type, text, by: extra.by || '', result: extra.result || '', auto: true };
 }
 function setWon(lead) {
   const hist = (lead.history || []).slice();
@@ -445,3 +446,15 @@ function forecast(plan, leads, lpm = null) {
   for (let m = 0; m < 3; m++) for (let j = 0; j <= m; j++) fromNew[m] += c.leads * c.overall * wWin[m - j];
   return { pipeline: buckets, fromNew, total: buckets.map((x, i) => x + fromNew[i]), pipeByStage };
 }
+
+/* ---------- szkolenie wstępne (3 dni robocze w centrali) ---------- */
+function addWorkDays(iso, n) { let d = parseD(iso); if (!d) return ''; let k = 0; while (k < n) { d = addDays(d, 1); const wd = d.getDay(); if (wd !== 0 && wd !== 6) k++; } return isoDate(d); }
+function nextMonday() { const d = new Date(); const add = ((8 - d.getDay()) % 7) || 7; return isoDate(addDays(d, add)); }
+const trainingEnd = start => start ? addWorkDays(start, 2) : '';
+/* ---------- NIP ---------- */
+const nipDigits = v => String(v || '').replace(/\D/g, '');
+function nipValid(v) { const d = nipDigits(v); if (d.length !== 10) return false; const w = [6, 5, 7, 2, 3, 4, 5, 6, 7]; const s = w.reduce((a, x, i) => a + x * +d[i], 0) % 11; return s !== 10 && s === +d[9]; }
+const nipFmt = v => { const d = nipDigits(v); return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6, 8)}-${d.slice(8)}` : v; };
+
+/* w historii pokazujemy tylko wpisy napisane przez człowieka */
+const isManualEntry = h => h.manual || (!h.auto && h.type !== 'system' && String(h.text || '').trim() && !/^(Wysłano|Ponownie wysłano|SMS z podziękowaniem|Wykonano:|Rozmowa wg skryptu)/.test(h.text));

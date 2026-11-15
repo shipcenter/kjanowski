@@ -252,6 +252,41 @@ Plan na najbliższe tygodnie:
 
 ${c.g('Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:', 'Pytania proszę kierować do mnie:', 'Pytania kieruj śmiało do mnie:')} ${c.opiekunTel}, ${c.opiekunEmail}.${podpis(c)}` }) },
 
+  email_umowa_wglad: { grp: 'Domknięcie', n: 'Umowa do wglądu', kind: 'E-mail', f: c => {
+    const sp = c.model === 'shippoint' || MODEL_ALIAS[c.model] === 'shippoint';
+    return {
+      subject: sp ? 'Umowa Ship Center Point – wzór do wglądu' : 'Umowa franczyzowa ShipCenter – wzór do wglądu',
+      body: `${powitanie(c)}
+
+zgodnie z rozmową przesyłam w załączniku wzór ${sp ? 'umowy o współpracy Ship Center Point' : 'umowy franczyzowej ShipCenter wraz z Ogólnymi Warunkami Umów (OWU)'} do spokojnego zapoznania się.
+
+Najważniejsze zapisy w skrócie:
+${sp ? `• opłata wstępna ${fmtZl(c.o.partnerWstepna)}, abonament ${fmtZl(c.o.partnerMies)} miesięcznie,
+• umowa na czas nieokreślony z 1-miesięcznym okresem wypowiedzenia,
+• dostęp do przewoźników i platformy ${c.o.www}, naklejka i materiały w cenie.` : `• pakiet startowy SMART: ${fmtZl(c.o.licencja)} jednorazowo,
+• opłata miesięczna 0 zł w miesiącu z ponad ${c.o.progRabatu} paczkami, w pozostałych ${fmtZl(c.o.oplataMies)},
+• umowa na czas nieokreślony z 2-miesięcznym okresem wypowiedzenia,
+• ochrona terytorialna ${c.o.ochrona} km, szkolenie ${c.o.szkolenie}.`}
+
+Umowę podpisujemy elektronicznie w Autenti – bez wizyty i drukowania. Gdy ${c.g('będzie Pan gotowy', 'będzie Pani gotowa', 'będą Państwo gotowi', 'będziesz gotowy/a')}, wyślę dokument do podpisu.
+
+Chętnie odpowiem na pytania do zapisów – ${c.g('proszę dać znać', 'proszę dać znać', 'proszę dać znać', 'daj znać')}, kiedy porozmawiamy.${podpis(c)}` };
+  } },
+
+  email_szkolenie: { grp: 'Domknięcie', n: 'Termin szkolenia w centrali', kind: 'E-mail', f: c => ({
+    subject: 'Szkolenie wstępne ShipCenter – termin i informacje',
+    body: `${powitanie(c)}
+
+potwierdzam termin szkolenia wstępnego w centrali ShipCenter:
+
+Termin: ${c.l.trainingStart ? fdate(c.l.trainingStart) + ' – ' + fdate(c.l.trainingEnd || trainingEnd(c.l.trainingStart)) : PH('termin szkolenia')} (3 dni)
+Miejsce: ${c.l.trainingPlace || 'centrala ShipCenter, ' + c.o.adres}
+Godziny: ${PH('np. 9:00–16:00')}
+
+Podczas szkolenia omówimy obsługę platformy ${c.o.www}, nadawanie przesyłek krajowych, zagranicznych i paletowych, wydania paczek, sprzedaż usług dodatkowych (pieczątki, poligrafia, pakowanie) oraz pozyskiwanie klientów biznesowych.
+
+Proszę zabrać ze sobą: ${PH('dokumenty / laptop / dane firmy')}.${podpis(c)}` }) },
+
   email_webinar: { grp: 'Marketing', n: 'Zaproszenie na webinar', kind: 'E-mail', f: c => ({
     subject: 'Webinar: jak otworzyć punkt nadawczy ShipCenter',
     body: `${powitanie(c)}

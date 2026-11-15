@@ -72,6 +72,8 @@ function viewDashboard() {
   if (noOwner.length) al.push(['warn', `${noOwner.length} aktywnych leadów nie ma opiekuna`, noOwner]);
   const noNext = open.filter(l => l.firstCallAt && !l.nextTaskDate);
   if (noNext.length) al.push(['warn', `${noNext.length} leadów po rozmowie nie ma zaplanowanego kolejnego kontaktu`, noNext]);
+  const noTraining = leads.filter(l => isWon(l) && !l.trainingStart);
+  if (noTraining.length) al.push(['warn', `${noTraining.length} podpisanych umów bez zaplanowanego szkolenia w centrali`, noTraining]);
   const presNoFollow = open.filter(l => l.presentationAt && daysBetween(parseD(l.presentationAt), new Date()) > 5 && (lastContact(l) || '').slice(0, 10) <= l.presentationAt);
   if (presNoFollow.length) al.push(['warn', `${presNoFollow.length} kandydatów dostało prezentację ponad 5 dni temu i nie było telefonu`, presNoFollow]);
   const meetSoon = open.filter(l => l.meetingAt && (l.meetingAt.slice(0, 10) === t || l.meetingAt.slice(0, 10) === tomorrow));

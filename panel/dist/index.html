@@ -1682,7 +1682,7 @@ function viewLead(id) {
 `}
     </div>
     <datalist id="task-sugg">${['Pierwsza rozmowa telefoniczna', 'Ponowna próba kontaktu', 'Telefon po prezentacji', 'Umówić spotkanie', 'Zebrać dane do analizy lokalizacji', 'Wysłać ofertę i projekt umowy', 'Telefon decyzyjny', 'Zaplanować szkolenie'].map(x => `<option value="${x}">`).join('')}</datalist>
-    <div class="row" style="margin-top:12px"><button class="btn primary cta" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button><button class="btn" data-act="meet-quick" data-id="${l.id}">${ICONS.calendar}Umów spotkanie</button>${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary cta" data-act="call-log" data-id="${l.id}">${ICONS.tel}Zapisz rozmowę / kontakt</button><button class="btn" data-act="meet-quick" data-id="${l.id}">${ICONS.calendar}Umów spotkanie</button>${l.phone ? phoneChip(l) : '<span class="note">Brak telefonu – uzupełnij w danych kandydata.</span>'}</div>
     ${smsList.length ? `<div class="sep"></div><h3 style="margin-bottom:6px">SMS</h3>${smsList.map(x => { const st = SMS_STATUS[x.status] || SMS_STATUS.oczekuje; return `<div class="contact-row"><span class="when">${fdateShort(x.createdTs)}</span><div style="min-width:0"><span class="pill ${st[1]}">${st[0]}</span> <span class="tiny muted">${esc(x.phone)}</span><div class="small ink2">${esc(x.text)}</div>${x.error ? `<div class="tiny overdue">${esc(x.error)}</div>` : ''}</div><div class="ctl">${x.status === 'oczekuje' ? `<button class="btn sm ghost" data-act="copy" data-text="${esc(x.text)}">${ICONS.copy}</button><button class="btn sm" data-act="sms-done" data-id="${x.id}">Wysłany ręcznie</button>` : ''}</div></div>`; }).join('')}` : ''}
   </div>`;
 
@@ -3711,11 +3711,12 @@ function viewMail(leadId) {
 
 /* karta „Korespondencja e-mail” w widoku leada */
 function leadMailCard(l) {
-  const btns = `<button class="btn sm" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail</button><a class="btn sm" href="#poczta-${l.id}">${ICONS.inbox}Koresponduj z klientem</a>`;
-  if (!mailOn()) return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2><p>${l.email ? esc(l.email) : 'brak e-maila'}</p></div><div class="row">${btns}</div><p class="tiny muted" style="margin-top:8px">Po podłączeniu poczty zobaczysz tu maile od kandydata i odpowiesz prosto z panelu.</p></div>`;
-  if (!l.email) return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2></div><p class="note">Uzupełnij adres e-mail kandydata, żeby zobaczyć korespondencję.</p></div>`;
+  const btns = `<button class="btn sm" data-act="mail-compose" data-id="${l.id}">${ICONS.email}Napisz e-mail</button><a class="btn sm" href="#poczta-${l.id}">${ICONS.inbox}Koresponduj z klientem</a><button class="btn sm" data-act="sms-compose" data-id="${l.id}" ${l.phone ? '' : 'disabled title="Brak numeru telefonu"'}>${ICONS.sms}Wyślij SMS do klienta</button>`;
+  const sub = [l.email, l.phone ? fmtPhone(l.phone) : ''].filter(Boolean).map(esc).join(' · ') || 'brak e-maila i telefonu';
+  if (!mailOn()) return `<div class="card"><div class="cardhead"><h2>Kontakt z klientem</h2><p>${sub}</p></div><div class="row">${btns}</div><p class="tiny muted" style="margin-top:8px">Po podłączeniu poczty zobaczysz tu maile od kandydata i odpowiesz prosto z panelu.</p></div>`;
+  if (!l.email) return `<div class="card"><div class="cardhead"><h2>Kontakt z klientem</h2><p>${sub}</p></div><div class="row">${btns}</div><p class="note" style="margin-top:8px">Uzupełnij adres e-mail kandydata, żeby zobaczyć korespondencję.</p></div>`;
   const c = mailListFor('addr:' + l.email.toLowerCase().trim());
-  return `<div class="card"><div class="cardhead"><h2>Korespondencja e-mail</h2><p>${c && !c.err ? c.items.length + ' wiadomości' : ''}</p></div>
+  return `<div class="card"><div class="cardhead"><h2>Kontakt z klientem</h2><p>${sub}${c && !c.err ? ' · ' + c.items.length + ' wiadomości' : ''}</p></div>
     ${!c ? '<p class="muted small">Wczytuję…</p>' : c.err ? `<p class="note overdue">${esc(c.err)}</p>` : mailRows(c.items.slice(0, 5), { showLead: false })}
     <div class="row" style="margin-top:10px">${btns}</div></div>`;
 }

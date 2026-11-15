@@ -261,7 +261,7 @@ async function syncInquiries(manual) {
         continue;
       }
       const day = (it.date || now).slice(0, 10);
-      const lead = newLead({ name: it.name || it.email || 'Zgłoszenie z formularza', phone: fmtPhone(it.phone || ''), email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
+      const lead = newLead({ ownerId: team().length === 1 ? team()[0].id : '', name: it.name || it.email || 'Zgłoszenie z formularza', phone: fmtPhone(it.phone || ''), email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
       Object.assign(lead, { id, createdAt: day, createdTs: it.date || now, sourceMsgId: it.messageId || '', inquiryIds: [id], autoPresentationAt: it.autoPresentation ? day : '' });
       lead.history = [histEntry('system', `Zgłoszenie z formularza shipcenter.pl (${modelName(it.kind)}) – pobrane automatycznie z poczty${it.autoPresentation ? '; formularz wysłał kandydatowi prezentację' : ''}`)];
       put('leads', id, lead);

@@ -1714,7 +1714,7 @@ function viewLead(id) {
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="loc-new" data-lead="${l.id}">${ICONS.pin}Nowa analiza dla leada</button></div></div>`;
 
   const dr = l.deleteRequest;
-  const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}${isAdmin() ? 'Usuń leada' : 'Poproś o usunięcie'}</button>`}</div>`;
+  const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}" title="Wymaga hasła administratora">${ICONS.trash}Usuń leada</button>`}</div>`;
   const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
   return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${photosCard(l)}${locCard}${flex}</div></div>` + danger;
@@ -1975,44 +1975,61 @@ function pkgSwitch(l) {
     ${l.pkg ? `<span class="small"><b>${zlFmt(total)}</b> <span class="muted">netto${l.pkg === 'flex' ? ' ze sprzętem' : ''}${+l.smartPrice > 0 && +l.smartPrice !== +offer().licencja ? ' · cena indywidualna' : ''}</span></span>` : '<span class="tiny muted">jeszcze nie wybrano</span>'}</div>`;
 }
 
-/* usuwanie przez pracownika: prośba do administratora albo hasło administratora */
-function openDeleteGate(ids) {
+/* usuwanie leadów: zawsze hasło administratora (także dla właściciela panelu);
+   pracownik bez hasła może tylko wysłać prośbę o usunięcie */
+function openDeleteGate(ids, { approve = false } = {}) {
   const leads = ids.map(id => D().leads[id]).filter(Boolean); if (!leads.length) return;
   const hasPass = !!settings().adminPassHash;
-  openModal(`<div class="mh"><h2>Usuwanie wymaga zgody administratora</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
-    <div class="mb"><p class="small">${leads.length === 1 ? `Lead <b>${esc(leads[0].name)}</b>` : `Leady (${leads.length})`} może usunąć tylko administrator panelu. Wyślij prośbę – administrator zobaczy ją w karcie leada i w „Kontaktach”${hasPass ? ' – albo wpisz hasło administratora' : ''}.</p>
-      <label class="field"><span>Powód (dla administratora)</span><textarea id="dg-reason" rows="2" placeholder="np. duplikat, testowy wpis, kandydat prosi o usunięcie danych"></textarea></label>
-      ${hasPass ? `<div class="sep"></div><label class="field"><span>Hasło administratora</span><input type="password" id="dg-pass" autocomplete="off"></label>` : ''}</div>
-    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button>${hasPass ? '<button class="btn danger" id="dg-del">Usuń z hasłem</button>' : ''}<button class="btn primary" id="dg-req">Wyślij prośbę o usunięcie</button></div>`);
-  $('#dg-req').onclick = () => {
-    const reason = $('#dg-reason').value.trim(); const at = new Date().toISOString();
+  if (!hasPass && isAdmin()) {
+    confirmBox('Najpierw ustaw hasło administratora', 'Usuwanie leadów jest chronione hasłem. Ustaw hasło administratora (tylko Ty je znasz) – potem usuniesz leada po jego wpisaniu.', 'Ustaw hasło', () => setTimeout(openAdminPassModal, 150), false);
+    return;
+  }
+  const who = leads.length === 1 ? `<b>${esc(leads[0].name)}</b>` : `<b>${leads.length}</b> leadów`;
+  const canRequest = !approve && !leads.every(l => l.deleteRequest);
+  openModal(`<div class="mh"><h2>Usuwanie leada – wymagane hasło</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb">
+      ${hasPass ? `<p class="small">Usuniesz ${who} razem z historią kontaktów. Tej operacji nie można cofnąć.</p>
+        <label class="field"><span>Hasło administratora</span><input type="password" id="dg-pass" autocomplete="off"></label>` : `<p class="small">Usuwać leady może tylko administrator panelu (hasło nie jest jeszcze ustawione).</p>`}
+      ${canRequest ? `<div class="sep"></div><p class="small muted">Nie znasz hasła? Wyślij prośbę – administrator zobaczy ją w karcie leada i w „Kontaktach”.</p>
+        <label class="field"><span>Powód (dla administratora)</span><textarea id="dg-reason" rows="2" placeholder="np. duplikat, testowy wpis, kandydat prosi o usunięcie danych"></textarea></label>` : ''}
+    </div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button>${canRequest ? '<button class="btn" id="dg-req">Wyślij prośbę o usunięcie</button>' : ''}${hasPass ? `<button class="btn danger" id="dg-del">${ICONS.trash}Usuń</button>` : ''}</div>`);
+  const req = $('#dg-req');
+  if (req) req.onclick = () => {
+    const reason = ($('#dg-reason') || {}).value ? $('#dg-reason').value.trim() : ''; const at = new Date().toISOString();
     leads.forEach(l => { const cur = D().leads[l.id]; if (!cur) return; const hist = (cur.history || []).slice(); hist.push(histEntry('system', 'Prośba o usunięcie leada' + (reason ? ': ' + reason : ''))); patch('leads', l.id, { deleteRequest: { by: myMemberId() || '', byUser: S.userId || '', at, reason }, history: hist, updatedTs: at }); });
     S.selected.clear(); closeModal(); toast('Wysłano prośbę o usunięcie do administratora');
   };
   const del = $('#dg-del');
-  if (del) del.onclick = async () => {
-    const p = $('#dg-pass').value;
-    if (!p) { toast('Wpisz hasło administratora.', 'bad'); return; }
-    if ((await passHash(p)) !== settings().adminPassHash) { toast('Nieprawidłowe hasło administratora.', 'bad'); $('#dg-pass').value = ''; return; }
-    leads.forEach(l => remove('leads', l.id));
-    S.selected.clear(); closeModal(); if (S.route.view === 'lead') go('leady'); toast(leads.length === 1 ? 'Lead usunięty' : 'Usunięto leady: ' + leads.length);
-  };
+  if (del) {
+    const run = async () => {
+      const p = $('#dg-pass').value;
+      if (!p) { toast('Wpisz hasło administratora.', 'bad'); return; }
+      if ((await passHash(p)) !== settings().adminPassHash) { toast('Nieprawidłowe hasło administratora.', 'bad'); $('#dg-pass').value = ''; $('#dg-pass').focus(); return; }
+      leads.forEach(l => remove('leads', l.id));
+      S.selected.clear(); closeModal(); if (S.route.view === 'lead') go('leady'); toast(leads.length === 1 ? 'Lead usunięty' : 'Usunięto leady: ' + leads.length);
+    };
+    del.onclick = run;
+    $('#dg-pass').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); run(); } };
+    setTimeout(() => $('#dg-pass') && $('#dg-pass').focus(), 50);
+  }
 }
 function openAdminPassModal() {
   if (!isAdmin()) { toast('Hasło może ustawić tylko administrator.', 'bad'); return; }
   const has = !!settings().adminPassHash;
   openModal(`<div class="mh"><h2>Hasło administratora do usuwania</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
-    <div class="mb"><p class="small">Pracownik może usunąć leada tylko po wpisaniu tego hasła albo po Twojej akceptacji prośby. Ty jako administrator usuwasz bez hasła.</p>
+    <div class="mb"><p class="small">Każde usunięcie leada wymaga tego hasła – także z Twojego konta. Pracownik bez hasła może tylko wysłać prośbę o usunięcie.</p>
+      ${has ? `<label class="field"><span>Obecne hasło</span><input type="password" id="ap-0" autocomplete="current-password"></label>` : ''}
       <label class="field"><span>${has ? 'Nowe hasło' : 'Hasło'}</span><input type="password" id="ap-1" autocomplete="new-password"></label>
       <label class="field"><span>Powtórz hasło</span><input type="password" id="ap-2" autocomplete="new-password"></label></div>
-    <div class="mf">${has ? '<button class="btn" id="ap-clear">Wyłącz hasło</button>' : ''}<button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ap-save">Zapisz hasło</button></div>`);
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ap-save">Zapisz hasło</button></div>`);
   $('#ap-save').onclick = async () => {
+    if (has && (await passHash($('#ap-0').value)) !== settings().adminPassHash) { toast('Obecne hasło jest nieprawidłowe.', 'bad'); return; }
     const a = $('#ap-1').value, b = $('#ap-2').value;
     if (a.length < 6) { toast('Hasło musi mieć co najmniej 6 znaków.', 'bad'); return; }
     if (a !== b) { toast('Hasła się różnią.', 'bad'); return; }
     await saveSettings({ adminPassHash: await passHash(a) }); closeModal(); toast('Zapisano hasło administratora');
   };
-  const cl = $('#ap-clear'); if (cl) cl.onclick = () => { saveSettings({ adminPassHash: '' }); closeModal(); toast('Wyłączono hasło – pracownicy mogą tylko wysyłać prośby'); };
 }
 
 /* województwo i kod pocztowy – uzupełniane same po wpisaniu miejscowości / adresu / kodu */
@@ -3687,7 +3704,7 @@ async function syncInquiries(manual) {
         continue;
       }
       const day = (it.date || now).slice(0, 10);
-      const lead = newLead({ name: it.name || it.email || 'Zgłoszenie z formularza', phone: fmtPhone(it.phone || ''), email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
+      const lead = newLead({ ownerId: team().length === 1 ? team()[0].id : '', name: it.name || it.email || 'Zgłoszenie z formularza', phone: fmtPhone(it.phone || ''), email: it.email || '', city: it.city || '', model: it.kind, source: 'www', notes: it.note || '', nextTask: 'Pierwsza rozmowa telefoniczna', nextTaskDate: todayISO() });
       Object.assign(lead, { id, createdAt: day, createdTs: it.date || now, sourceMsgId: it.messageId || '', inquiryIds: [id], autoPresentationAt: it.autoPresentation ? day : '' });
       lead.history = [histEntry('system', `Zgłoszenie z formularza shipcenter.pl (${modelName(it.kind)}) – pobrane automatycznie z poczty${it.autoPresentation ? '; formularz wysłał kandydatowi prezentację' : ''}`)];
       put('leads', id, lead);
@@ -4574,9 +4591,9 @@ function viewSettings() {
     <div class="integr"><span class="ic">${ICONS.sms}</span><div><b>Bramka SMS</b><p class="small ink2">SMS z podziękowaniem po pierwszej rozmowie wychodzi automatycznie. Do czasu podłączenia SMS-y czekają w kolejce (widok „Kontakty”).</p></div>${st(integ.sms)}</div>
     <div class="integr"><span class="ic">${ICONS.spotkanie}</span><div><b>Przypomnienia dla opiekunów</b><p class="small ink2">Codziennie rano e-mail z listą kontaktów na dziś i zaległych. Już teraz: licznik w menu „Kontakty” po wskazaniu „To ja”.</p></div>${st(integ.reminders)}</div>
     <div class="integr"><span class="ic">${ICONS.webinar}</span><div><b>Google Ads – kampania franczyza</b><p class="small ink2">Dzienne wydatki, kliknięcia i konwersje kampanii na dashboardzie, z kosztem leada i kosztem pozyskania punktu.</p></div>${st(integ.ads)}</div></div>`;
-  const adminCard = isAdmin() ? `<div class="card"><div class="cardhead"><h2>Usuwanie leadów</h2><p>tylko administrator</p></div>
-    <p class="small">Leady usuwasz tylko Ty (właściciel panelu). Pracownik może wysłać prośbę o usunięcie${settings().adminPassHash ? ' albo usunąć po wpisaniu hasła administratora' : ''}.</p>
-    <div class="row" style="margin-top:8px"><button class="btn sm" data-act="admin-pass">${settings().adminPassHash ? 'Zmień / wyłącz hasło administratora' : 'Ustaw hasło administratora'}</button><span class="small muted">${settings().adminPassHash ? 'Hasło jest ustawione.' : 'Bez hasła – tylko prośby do Ciebie.'}</span></div></div>` : '';
+  const adminCard = isAdmin() ? `<div class="card"><div class="cardhead"><h2>Usuwanie leadów</h2><p>chronione hasłem</p></div>
+    <p class="small">Każde usunięcie leada wymaga hasła administratora – także z Twojego konta. Pracownik bez hasła może tylko wysłać prośbę o usunięcie, którą zatwierdzasz hasłem.</p>
+    <div class="row" style="margin-top:8px"><button class="btn sm ${settings().adminPassHash ? '' : 'primary'}" data-act="admin-pass">${settings().adminPassHash ? 'Zmień hasło administratora' : 'Ustaw hasło administratora'}</button><span class="small ${settings().adminPassHash ? 'muted' : 'overdue'}">${settings().adminPassHash ? 'Hasło jest ustawione.' : 'Hasło nie jest ustawione – nikt nie może usuwać leadów.'}</span></div></div>` : '';
   const goalCard = `<div class="card"><div class="cardhead"><h2>Cel</h2></div><div class="formgrid"><label class="field"><span>Nowe punkty miesięcznie</span><input type="number" id="set-goal" data-setting="goal" min="0" step="0.5" value="${esc(goal())}"></label></div></div>`;
   const f = (k, label, type = 'text', hint = '') => `<label class="field"><span>${label}</span><input type="${type}" id="of-${k}" data-offer="${k}" value="${esc(o[k])}" ${type === 'number' ? 'step="any" min="0"' : ''}>${hint ? `<span class="hint">${hint}</span>` : ''}</label>`;
   const offerCard = `<div class="card"><div class="cardhead"><h2>Parametry oferty</h2><p>Oferta franczyzowa 2026 (pakiet SMART / FLEX) i warunki z umowy</p></div>
@@ -4724,7 +4741,7 @@ function handleAction(act, el, e) {
       });
       toast(`Zmieniono ${S.selected.size} leadów`); S.selected.clear(); return;
     }
-    case 'bulk-delete': { if (!isAdmin()) { openDeleteGate([...S.selected]); return; } const n = S.selected.size; confirmBox('Usunąć leady?', `Usuniesz <b>${n}</b> leadów razem z historią kontaktów. Tej operacji nie można cofnąć.`, `Usuń ${n}`, () => { [...S.selected].forEach(lid => remove('leads', lid)); S.selected.clear(); toast('Usunięto'); }); return; }
+    case 'bulk-delete': { openDeleteGate([...S.selected]); return; const n = S.selected.size; confirmBox('Usunąć leady?', `Usuniesz <b>${n}</b> leadów razem z historią kontaktów. Tej operacji nie można cofnąć.`, `Usuń ${n}`, () => { [...S.selected].forEach(lid => remove('leads', lid)); S.selected.clear(); toast('Usunięto'); }); return; }
     case 'open-lead': if (e.target.closest('[data-stop]')) return; go('lead-' + id); return;
     case 'task-done': case 'call-log': if (L) openCallModal(L, {}); return;
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
@@ -4750,7 +4767,7 @@ function handleAction(act, el, e) {
     case 'smart-reset': if (L) { patch('leads', L.id, { smartPrice: '', updatedTs: new Date().toISOString() }); } return;
     case 'smart-mail': if (L) openCompose({ leadId: L.id, subject: 'Pakiet SMART – podsumowanie oferty ShipCenter', body: smartEmailBody(L) }); return;
     case 'set-pkg': if (L) { const v = L.pkg === el.dataset.pkg ? '' : el.dataset.pkg; const hist = (L.history || []).slice(); hist.push(histEntry('system', `Pakiet: ${PACKAGES[L.pkg] || '—'} → ${PACKAGES[v] || '—'}`)); patch('leads', L.id, { pkg: v, history: hist, updatedTs: new Date().toISOString() }); } return;
-    case 'del-approve': if (L) confirmBox('Usunąć leada?', `Zatwierdzasz prośbę o usunięcie <b>${esc(L.name)}</b>. Tej operacji nie można cofnąć.`, 'Usuń leada', () => { remove('leads', id); if (S.route.view === 'lead') go('leady'); toast('Lead usunięty'); }); return;
+    case 'del-approve': if (L) openDeleteGate([L.id], { approve: true }); return;
     case 'del-reject': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Administrator odrzucił prośbę o usunięcie leada')); patch('leads', id, { deleteRequest: null, history: hist, updatedTs: new Date().toISOString() }); toast('Odrzucono prośbę o usunięcie'); } return;
     case 'admin-pass': openAdminPassModal(); return;
     case 'flex-clear': if (L) patch('leads', L.id, { flexItems: [], updatedTs: new Date().toISOString() }); return;
@@ -4788,7 +4805,7 @@ function handleAction(act, el, e) {
       patch('leads', id, p); toast('Dodano wpis'); return;
     }
     case 'hist-del': if (L) patch('leads', id, { history: (L.history || []).filter(h => h.id !== el.dataset.h) }); return;
-    case 'lead-del': if (L && !isAdmin()) { openDeleteGate([L.id]); return; } if (L) confirmBox('Usunąć leada?', `Usuniesz <b>${esc(L.name)}</b> razem z historią kontaktów. Tej operacji nie można cofnąć.`, 'Usuń leada', () => { remove('leads', id); go('leady'); toast('Lead usunięty'); }); return;
+    case 'lead-del': if (L) { openDeleteGate([L.id]); return; } if (L) confirmBox('Usunąć leada?', `Usuniesz <b>${esc(L.name)}</b> razem z historią kontaktów. Tej operacji nie można cofnąć.`, 'Usuń leada', () => { remove('leads', id); go('leady'); toast('Lead usunięty'); }); return;
     case 'copy': copyText(el.dataset.text); return;
     case 'loc-new': newLocation(el.dataset.lead || ''); return;
     // wiadomości

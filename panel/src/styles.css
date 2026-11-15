@@ -452,3 +452,5 @@ details.adv[open] summary { margin-bottom: 10px; }
 
 .flexkv dd { white-space: nowrap; text-align: right; }
 .flexkv { grid-template-columns: 1fr auto; }
+
+.pkgswitch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card, #fff); width: fit-content; max-width: 100%; }

@@ -34,7 +34,7 @@ function handleAction(act, el, e) {
       });
       toast(`Zmieniono ${S.selected.size} leadów`); S.selected.clear(); return;
     }
-    case 'bulk-delete': { const n = S.selected.size; confirmBox('Usunąć leady?', `Usuniesz <b>${n}</b> leadów razem z historią kontaktów. Tej operacji nie można cofnąć.`, `Usuń ${n}`, () => { [...S.selected].forEach(lid => remove('leads', lid)); S.selected.clear(); toast('Usunięto'); }); return; }
+    case 'bulk-delete': { if (!isAdmin()) { openDeleteGate([...S.selected]); return; } const n = S.selected.size; confirmBox('Usunąć leady?', `Usuniesz <b>${n}</b> leadów razem z historią kontaktów. Tej operacji nie można cofnąć.`, `Usuń ${n}`, () => { [...S.selected].forEach(lid => remove('leads', lid)); S.selected.clear(); toast('Usunięto'); }); return; }
     case 'open-lead': if (e.target.closest('[data-stop]')) return; go('lead-' + id); return;
     case 'task-done': case 'call-log': if (L) openCallModal(L, {}); return;
     case 'snooze': if (L) { patch('leads', id, { nextTaskDate: isoDate(addDays(new Date(), +el.dataset.d)), nextTask: L.nextTask || 'Kontakt' }); toast('Przesunięto na ' + fdate(isoDate(addDays(new Date(), +el.dataset.d)))); } return;
@@ -55,6 +55,10 @@ function handleAction(act, el, e) {
     case 'flex-mail': if (L) openCompose({ leadId: L.id, subject: 'Konfiguracja pakietu FLEX – ShipCenter', body: flexEmailBody(L) }); return;
     case 'smart-reset': if (L) { patch('leads', L.id, { smartPrice: '', updatedTs: new Date().toISOString() }); } return;
     case 'smart-mail': if (L) openCompose({ leadId: L.id, subject: 'Pakiet SMART – podsumowanie oferty ShipCenter', body: smartEmailBody(L) }); return;
+    case 'set-pkg': if (L) { const v = L.pkg === el.dataset.pkg ? '' : el.dataset.pkg; const hist = (L.history || []).slice(); hist.push(histEntry('system', `Pakiet: ${PACKAGES[L.pkg] || '—'} → ${PACKAGES[v] || '—'}`)); patch('leads', L.id, { pkg: v, history: hist, updatedTs: new Date().toISOString() }); } return;
+    case 'del-approve': if (L) confirmBox('Usunąć leada?', `Zatwierdzasz prośbę o usunięcie <b>${esc(L.name)}</b>. Tej operacji nie można cofnąć.`, 'Usuń leada', () => { remove('leads', id); if (S.route.view === 'lead') go('leady'); toast('Lead usunięty'); }); return;
+    case 'del-reject': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Administrator odrzucił prośbę o usunięcie leada')); patch('leads', id, { deleteRequest: null, history: hist, updatedTs: new Date().toISOString() }); toast('Odrzucono prośbę o usunięcie'); } return;
+    case 'admin-pass': openAdminPassModal(); return;
     case 'flex-clear': if (L) patch('leads', L.id, { flexItems: [], updatedTs: new Date().toISOString() }); return;
     case 'contract-pdf': downloadContract(el.dataset.file); return;
     case 'meet-use': if (L) { const link = meetLinkFor(L); if (link) { patch('leads', id, { meetingPlace: link, updatedTs: new Date().toISOString() }); setTimeout(() => syncReminders(id, 'spotkanie'), 300); } } return;
@@ -90,7 +94,7 @@ function handleAction(act, el, e) {
       patch('leads', id, p); toast('Dodano wpis'); return;
     }
     case 'hist-del': if (L) patch('leads', id, { history: (L.history || []).filter(h => h.id !== el.dataset.h) }); return;
-    case 'lead-del': if (L) confirmBox('Usunąć leada?', `Usuniesz <b>${esc(L.name)}</b> razem z historią kontaktów. Tej operacji nie można cofnąć.`, 'Usuń leada', () => { remove('leads', id); go('leady'); toast('Lead usunięty'); }); return;
+    case 'lead-del': if (L && !isAdmin()) { openDeleteGate([L.id]); return; } if (L) confirmBox('Usunąć leada?', `Usuniesz <b>${esc(L.name)}</b> razem z historią kontaktów. Tej operacji nie można cofnąć.`, 'Usuń leada', () => { remove('leads', id); go('leady'); toast('Lead usunięty'); }); return;
     case 'copy': copyText(el.dataset.text); return;
     case 'loc-new': newLocation(el.dataset.lead || ''); return;
     // wiadomości

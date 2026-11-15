@@ -97,7 +97,7 @@ function leadFormFields(l, prefix = 'lf') {
     <label class="field"><span>Źródło</span><select id="${prefix}-source">${sourceOpts(l.source)}</select></label>
     <label class="field"><span>Opiekun</span><select id="${prefix}-owner">${ownerOpts(l.ownerId)}</select></label>
     <label class="field"><span>Model współpracy (rodzaj zapytania)</span><select id="${prefix}-model">${MODELS.map(m => opt(m.k, m.n, modelOf(l))).join('')}</select></label>
-    <label class="field"><span>Pakiet (franczyza)</span><select id="${prefix}-pkg">${opt('', 'jeszcze nie wiadomo', l.pkg)}${Object.entries(PACKAGES).map(([k, n]) => opt(k, n, l.pkg)).join('')}</select></label>
+    ${prefix === 'le' ? '' : `<label class="field"><span>Pakiet (franczyza)</span><select id="${prefix}-pkg">${opt('', 'jeszcze nie wiadomo', l.pkg)}${Object.entries(PACKAGES).map(([k, n]) => opt(k, n, l.pkg)).join('')}</select></label>`}
     <label class="field"><span>Kapitał deklarowany (zł)</span><input type="number" id="${prefix}-capital" min="0" step="1000" value="${esc(l.capital)}"></label>
     <label class="field"><span>Lokal</span><select id="${prefix}-premises">${opt('', 'nie wiadomo', l.hasPremises)}${opt('ma', 'ma lokal', l.hasPremises)}${opt('szuka', 'szuka lokalu', l.hasPremises)}${opt('nie', 'nie ma i nie szuka', l.hasPremises)}</select></label>
     <label class="field"><span>Forma zwrotu w wiadomościach</span><select id="${prefix}-form">${opt('panstwo', 'Państwo (neutralnie)', l.form)}${opt('pan', 'Pan', l.form)}${opt('pani', 'Pani', l.form)}${opt('ty', 'Ty (bezpośrednio)', l.form)}</select></label>
@@ -105,6 +105,11 @@ function leadFormFields(l, prefix = 'lf') {
 }
 function readLeadForm(prefix = 'lf') {
   const v = id => ($('#' + prefix + '-' + id) || {}).value || '';
+  const out = readLeadFormAll(prefix, v);
+  Object.keys(out).forEach(k => { const id = { ownerId: 'owner', hasPremises: 'premises' }[k] || k; if (!$('#' + prefix + '-' + id)) delete out[k]; });
+  return out;
+}
+function readLeadFormAll(prefix, v) {
   return { name: v('name').trim(), company: v('company').trim(), phone: v('phone').trim(), email: v('email').trim(), city: v('city').trim(), pointAddress: v('pointAddress').trim(), region: v('region'), source: v('source'), ownerId: v('owner'), model: v('model'), pkg: v('pkg'), nip: nipDigits(v('nip')), capital: v('capital'), hasPremises: v('premises'), form: v('form') };
 }
 function openLeadModal() {
@@ -161,7 +166,7 @@ function viewLead(id) {
     <div class="leadhead"><div class="who"><span class="code">${leadCode(l.id)} · dodano ${fdate(l.createdAt)} · ${esc(SOURCE_MAP[l.source]?.n || '')}</span>
       <h1>${esc(l.name || '(bez nazwy)')}</h1>
       <p class="ink2">${esc([l.company, l.city, l.region].filter(Boolean).join(' · ') || 'Uzupełnij miasto i województwo')}</p>
-      <div class="row" style="margin-top:6px">${modelPill(l)}<span class="pill ${isWon(l) ? 'good' : ''}" title="Etap ustawia się sam na podstawie rozmów, prezentacji i spotkań">Etap: ${esc(STAGES[i].n)}</span>${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div></div>
+      <div class="row" style="margin-top:6px">${modelPill(l)}<span class="pill ${isWon(l) ? 'good' : ''}" title="Etap ustawia się sam na podstawie rozmów, prezentacji i spotkań">Etap: ${esc(STAGES[i].n)}</span>${statusPill(l.status)}${lc ? `<span class="pill">ostatni kontakt ${fdateShort(lc)}</span>` : `<span class="pill warn">brak kontaktu</span>`}</div>${pkgSwitch(l)}</div>
       <div class="stack" style="gap:8px;min-width:240px">
         <label class="field"><span>Opiekun</span><select id="ld-owner" data-lead-field="ownerId">${ownerOpts(l.ownerId)}</select></label>
         <label class="field"><span>Status kontaktu</span><select id="ld-status" data-lead-field="status">${statusOpts(l.status)}</select></label>
@@ -244,9 +249,11 @@ function viewLead(id) {
     ${locs.length ? locs.map(x => { const r = analyzeLocation(x); return `<a class="loccard" href="#lok-${x.id}" style="text-decoration:none;color:inherit;margin-bottom:8px"><span class="scorebadge grade-${r.grade}" style="width:58px;height:58px;border-width:4px"><b style="font-size:1.2rem">${r.score}</b></span><span><b>${esc(x.address || x.city || 'Lokalizacja')}</b><br><span class="small muted">${esc(r.gradeText)} · ${fmt(r.demand.base)} paczek/mies.</span></span></a>`; }).join('') : '<p class="muted small">Brak analizy dla tego kandydata.</p>'}
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="loc-new" data-lead="${l.id}">${ICONS.pin}Nowa analiza dla leada</button></div></div>`;
 
-  const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}Usuń leada</button></div>`;
+  const dr = l.deleteRequest;
+  const danger = `<div class="row" style="justify-content:flex-end;margin-top:16px">${dr && !isAdmin() ? `<span class="small muted">Prośba o usunięcie wysłana ${fdate(String(dr.at).slice(0, 10))} – czeka na administratora.</span>` : `<button class="btn danger sm" data-act="lead-del" data-id="${l.id}">${ICONS.trash}${isAdmin() ? 'Usuń leada' : 'Poproś o usunięcie'}</button>`}</div>`;
+  const delBanner = dr && isAdmin() ? `<div class="callout" style="margin-bottom:14px;border-color:var(--bad,#b91c1c)"><div class="row between"><span><b>Prośba o usunięcie leada</b> od ${esc(memberName(dr.by) || 'pracownika')} · ${fdate(String(dr.at).slice(0, 10))}${dr.reason ? ' – „' + esc(dr.reason) + '”' : ''}</span><span class="row"><button class="btn sm danger" data-act="del-approve" data-id="${l.id}">${ICONS.trash}Usuń leada</button><button class="btn sm" data-act="del-reject" data-id="${l.id}">Odrzuć</button></span></div></div>` : '';
   const flex = modelOf(l) !== 'franczyza' ? '' : l.pkg === 'flex' ? flexCard(l) : l.pkg === 'smart' ? smartCard(l) : '';
-  return head + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
+  return head + delBanner + `<div class="split"><div class="stack">${next}${historyCard}${contact}${flex}</div><div class="stack">${leadMailCard(l)}${contract}${meeting}${msgs}${handoff}${locCard}</div></div>` + danger;
 }
 
 function suggestedTemplate(l) {
@@ -493,4 +500,53 @@ Warunek: sprzęt (komputer, drukarka laserowa i termiczna, skaner) musi spełnia
 
 Pozdrawiam
 `;
+}
+
+/* wybór pakietu w nagłówku leada – widoczny od razu po wejściu */
+function pkgSwitch(l) {
+  if (modelOf(l) !== 'franczyza') return '';
+  const total = l.pkg === 'flex' ? flexCalc(l.flexItems || [], l.smartPrice).net : l.pkg === 'smart' ? smartPriceOf(l) : 0;
+  return `<div class="pkgswitch" role="group" aria-label="Pakiet"><span class="small muted">Pakiet:</span>
+    ${Object.entries(PACKAGES).map(([k, n]) => `<button class="btn sm ${l.pkg === k ? 'primary' : ''}" data-act="set-pkg" data-id="${l.id}" data-pkg="${k}" aria-pressed="${l.pkg === k}">${esc(n)}</button>`).join('')}
+    ${l.pkg ? `<span class="small"><b>${zlFmt(total)}</b> <span class="muted">netto${l.pkg === 'flex' ? ' ze sprzętem' : ''}${+l.smartPrice > 0 && +l.smartPrice !== +offer().licencja ? ' · cena indywidualna' : ''}</span></span>` : '<span class="tiny muted">jeszcze nie wybrano</span>'}</div>`;
+}
+
+/* usuwanie przez pracownika: prośba do administratora albo hasło administratora */
+function openDeleteGate(ids) {
+  const leads = ids.map(id => D().leads[id]).filter(Boolean); if (!leads.length) return;
+  const hasPass = !!settings().adminPassHash;
+  openModal(`<div class="mh"><h2>Usuwanie wymaga zgody administratora</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><p class="small">${leads.length === 1 ? `Lead <b>${esc(leads[0].name)}</b>` : `Leady (${leads.length})`} może usunąć tylko administrator panelu. Wyślij prośbę – administrator zobaczy ją w karcie leada i w „Kontaktach”${hasPass ? ' – albo wpisz hasło administratora' : ''}.</p>
+      <label class="field"><span>Powód (dla administratora)</span><textarea id="dg-reason" rows="2" placeholder="np. duplikat, testowy wpis, kandydat prosi o usunięcie danych"></textarea></label>
+      ${hasPass ? `<div class="sep"></div><label class="field"><span>Hasło administratora</span><input type="password" id="dg-pass" autocomplete="off"></label>` : ''}</div>
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button>${hasPass ? '<button class="btn danger" id="dg-del">Usuń z hasłem</button>' : ''}<button class="btn primary" id="dg-req">Wyślij prośbę o usunięcie</button></div>`);
+  $('#dg-req').onclick = () => {
+    const reason = $('#dg-reason').value.trim(); const at = new Date().toISOString();
+    leads.forEach(l => { const cur = D().leads[l.id]; if (!cur) return; const hist = (cur.history || []).slice(); hist.push(histEntry('system', 'Prośba o usunięcie leada' + (reason ? ': ' + reason : ''))); patch('leads', l.id, { deleteRequest: { by: myMemberId() || '', byUser: S.userId || '', at, reason }, history: hist, updatedTs: at }); });
+    S.selected.clear(); closeModal(); toast('Wysłano prośbę o usunięcie do administratora');
+  };
+  const del = $('#dg-del');
+  if (del) del.onclick = async () => {
+    const p = $('#dg-pass').value;
+    if (!p) { toast('Wpisz hasło administratora.', 'bad'); return; }
+    if ((await passHash(p)) !== settings().adminPassHash) { toast('Nieprawidłowe hasło administratora.', 'bad'); $('#dg-pass').value = ''; return; }
+    leads.forEach(l => remove('leads', l.id));
+    S.selected.clear(); closeModal(); if (S.route.view === 'lead') go('leady'); toast(leads.length === 1 ? 'Lead usunięty' : 'Usunięto leady: ' + leads.length);
+  };
+}
+function openAdminPassModal() {
+  if (!isAdmin()) { toast('Hasło może ustawić tylko administrator.', 'bad'); return; }
+  const has = !!settings().adminPassHash;
+  openModal(`<div class="mh"><h2>Hasło administratora do usuwania</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
+    <div class="mb"><p class="small">Pracownik może usunąć leada tylko po wpisaniu tego hasła albo po Twojej akceptacji prośby. Ty jako administrator usuwasz bez hasła.</p>
+      <label class="field"><span>${has ? 'Nowe hasło' : 'Hasło'}</span><input type="password" id="ap-1" autocomplete="new-password"></label>
+      <label class="field"><span>Powtórz hasło</span><input type="password" id="ap-2" autocomplete="new-password"></label></div>
+    <div class="mf">${has ? '<button class="btn" id="ap-clear">Wyłącz hasło</button>' : ''}<button class="btn" data-act="modal-close">Anuluj</button><button class="btn primary" id="ap-save">Zapisz hasło</button></div>`);
+  $('#ap-save').onclick = async () => {
+    const a = $('#ap-1').value, b = $('#ap-2').value;
+    if (a.length < 6) { toast('Hasło musi mieć co najmniej 6 znaków.', 'bad'); return; }
+    if (a !== b) { toast('Hasła się różnią.', 'bad'); return; }
+    await saveSettings({ adminPassHash: await passHash(a) }); closeModal(); toast('Zapisano hasło administratora');
+  };
+  const cl = $('#ap-clear'); if (cl) cl.onclick = () => { saveSettings({ adminPassHash: '' }); closeModal(); toast('Wyłączono hasło – pracownicy mogą tylko wysyłać prośby'); };
 }

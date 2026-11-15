@@ -278,7 +278,7 @@ function initCapabilities() {
   c.use('downloads').then(x => { S.downloads = x; scheduleRender(); }).catch(() => { });
   c.use('sample').then(x => { S.sample = x; scheduleRender(); }).catch(() => { });
   c.use('mcp').then(x => { S.mcp = x; scheduleRender(); if (x) setTimeout(mailInit, 600); }).catch(() => { });
-  c.use('user').then(async u => { S.user = u; if (u) { try { S.userId = await u.id(); } catch (e) { } scheduleRender(); } }).catch(() => { });
+  c.use('user').then(async u => { S.user = u; if (u) { try { S.userId = await u.id(); } catch (e) { } try { S.isOwner = !!(await u.isOwner()); } catch (e) { S.isOwner = false; } scheduleRender(); } }).catch(() => { });
 }
 const isLoading = () => S.mode === 'loading' || (S.mode === 'live' && !S.demo && S.confirmed.size < 3 && !S.slow);
 
@@ -518,4 +518,11 @@ function flexCalc(ids, smartOverride) {
   const next = FLEX_TIERS.find(t => t.min > n && t.pct > tier.pct);
   const net = smart + gross - disc;
   return { items, n, pct: tier.pct, gross, disc, after: gross - disc, smart, net, brutto: Math.round(net * 123) / 100, next: next ? { need: next.min - n, pct: next.pct } : null };
+}
+
+/* usuwanie leadów: tylko administrator (właściciel panelu) albo po haśle administratora */
+const isAdmin = () => S.demo || S.mode === 'local' || S.isOwner === true;
+async function passHash(p) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('shipcenter-panel:' + p));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }

@@ -282,6 +282,9 @@ function viewSettings() {
     <div class="integr"><span class="ic">${ICONS.sms}</span><div><b>Bramka SMS</b><p class="small ink2">SMS z podziękowaniem po pierwszej rozmowie wychodzi automatycznie. Do czasu podłączenia SMS-y czekają w kolejce (widok „Kontakty”).</p></div>${st(integ.sms)}</div>
     <div class="integr"><span class="ic">${ICONS.spotkanie}</span><div><b>Przypomnienia dla opiekunów</b><p class="small ink2">Codziennie rano e-mail z listą kontaktów na dziś i zaległych. Już teraz: licznik w menu „Kontakty” po wskazaniu „To ja”.</p></div>${st(integ.reminders)}</div>
     <div class="integr"><span class="ic">${ICONS.webinar}</span><div><b>Google Ads – kampania franczyza</b><p class="small ink2">Dzienne wydatki, kliknięcia i konwersje kampanii na dashboardzie, z kosztem leada i kosztem pozyskania punktu.</p></div>${st(integ.ads)}</div></div>`;
+  const adminCard = isAdmin() ? `<div class="card"><div class="cardhead"><h2>Usuwanie leadów</h2><p>tylko administrator</p></div>
+    <p class="small">Leady usuwasz tylko Ty (właściciel panelu). Pracownik może wysłać prośbę o usunięcie${settings().adminPassHash ? ' albo usunąć po wpisaniu hasła administratora' : ''}.</p>
+    <div class="row" style="margin-top:8px"><button class="btn sm" data-act="admin-pass">${settings().adminPassHash ? 'Zmień / wyłącz hasło administratora' : 'Ustaw hasło administratora'}</button><span class="small muted">${settings().adminPassHash ? 'Hasło jest ustawione.' : 'Bez hasła – tylko prośby do Ciebie.'}</span></div></div>` : '';
   const goalCard = `<div class="card"><div class="cardhead"><h2>Cel</h2></div><div class="formgrid"><label class="field"><span>Nowe punkty miesięcznie</span><input type="number" id="set-goal" data-setting="goal" min="0" step="0.5" value="${esc(goal())}"></label></div></div>`;
   const f = (k, label, type = 'text', hint = '') => `<label class="field"><span>${label}</span><input type="${type}" id="of-${k}" data-offer="${k}" value="${esc(o[k])}" ${type === 'number' ? 'step="any" min="0"' : ''}>${hint ? `<span class="hint">${hint}</span>` : ''}</label>`;
   const offerCard = `<div class="card"><div class="cardhead"><h2>Parametry oferty</h2><p>Oferta franczyzowa 2026 (pakiet SMART / FLEX) i warunki z umowy</p></div>
@@ -304,7 +307,7 @@ function viewSettings() {
   const dataCard = `<div class="card"><div class="cardhead"><h2>Dane</h2></div>
     <div class="row"><button class="btn" data-act="export-xlsx">${ICONS.down}Eksport całego panelu (XLSX)</button><button class="btn" data-act="export-csv">${ICONS.down}Leady (CSV)</button><button class="btn" data-act="import-open">${ICONS.up}Import leadów</button>${!S.demo ? `<button class="btn ghost" data-act="demo-on">Podgląd na danych przykładowych</button>` : ''}</div>
     <p class="note" style="margin-top:8px">Dane panelu są wspólne dla wszystkich osób, którym udostępnisz stronę z prawem edycji (Contributor lub wyżej). Osoby z prawem podglądu widzą dane bez możliwości zmian. CSV używa średnika i kodowania UTF-8 – otwiera się poprawnie w polskim Excelu.</p></div>`;
-  return head + `<div class="stack">${teamCard}${integCard}${goalCard}${offerCard}${dataCard}</div>`;
+  return head + `<div class="stack">${teamCard}${adminCard}${integCard}${goalCard}${offerCard}${dataCard}</div>`;
 }
 function openMemberModal(m = null) {
   const isNew = !m;

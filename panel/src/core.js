@@ -143,8 +143,8 @@ const ICONS = {
 };
 
 /* ---------- stan ---------- */
-const COLS = ['leads', 'team', 'plans', 'tasks', 'spend', 'locations', 'sms', 'ads'];
-const emptyData = () => ({ leads: {}, team: {}, plans: {}, tasks: {}, spend: {}, locations: {}, sms: {}, ads: {}, settings: {} });
+const COLS = ['leads', 'team', 'plans', 'tasks', 'spend', 'locations', 'sms', 'ads', 'pricelist'];
+const emptyData = () => ({ leads: {}, team: {}, plans: {}, tasks: {}, spend: {}, locations: {}, sms: {}, ads: {}, pricelist: {}, settings: {} });
 const store = { live: emptyData(), demo: null };
 const S = {
   db: null, mode: 'loading', demo: false, readonly: false, slow: false,

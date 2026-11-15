@@ -46,6 +46,10 @@ function handleAction(act, el, e) {
     case 'c-expand': S.ui.cExpand = { ...(S.ui.cExpand || {}), [el.dataset.i]: true }; scheduleRender(); return;
     case 'pres-clear': if (L) patch('leads', id, { presentationAt: '', presentationLastAt: '', presentationSends: 0 }); return;
     case 'reg-lookup': if (L) { delete REG.cache[nipDigits(L.nip)]; autoNip('le', id, true); } return;
+    case 'pl-pdf': if (L) plDownload(L, el.dataset.lvl); return;
+    case 'pl-mail': if (L) plMail(L, el.dataset.lvl); return;
+    case 'nda-signed': if (L) { const hist = (L.history || []).slice(); hist.push(histEntry('system', 'Kandydat podpisał umowę o zachowaniu poufności (NDA)')); patch('leads', L.id, { ndaAt: todayISO(), history: hist, updatedTs: new Date().toISOString() }); toast('Zapisano: NDA podpisana'); } return;
+    case 'nda-clear': if (L) patch('leads', L.id, { ndaAt: '', updatedTs: new Date().toISOString() }); return;
     case 'krd-check': if (L) openKrd(L); return;
     case 'script-open': if (L) openScript(L); return;
     case 'meet-quick': if (L) openMeetQuick(L); return;
@@ -168,6 +172,9 @@ document.addEventListener('change', e => {
   if (el.dataset.rev) { onRevInput(el, true); return; }
   if (el.dataset.geo) { const pf = el.dataset.geo; if (pf === 'le') saveLeadEdit(); debounce('geo-' + pf, () => autoGeo(pf), 250); return; }
   if (el.id === 'lf-region' || el.id === 'le-region') { el.dataset.touched = '1'; el.dataset.auto = ''; if (el.id === 'le-region') { saveLeadEdit(); patch('leads', S.route.id, { regionManual: !!el.value }); } return; }
+  if (el.dataset.plImport) { const f = el.files && el.files[0]; if (f) plImport(el.dataset.plImport, f); el.value = ''; return; }
+  if (el.dataset.plPrev) { plTogglePreview(el.dataset.plPrev, el.checked); return; }
+  if (el.dataset.plCountry) { plToggleCountry(el.dataset.plCountry, el.checked); return; }
   if (el.dataset.spParcel) { toggleSpParcel(S.route.id, el.dataset.spParcel, el.checked); return; }
   if (el.dataset.photoUp) { uploadPhotos(el.dataset.photoUp, el.files); el.value = ''; return; }
   if (el.dataset.flex) { toggleFlex(S.route.id, el.dataset.flex, el.checked); return; }

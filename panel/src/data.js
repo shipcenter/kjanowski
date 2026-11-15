@@ -307,7 +307,7 @@ function viewSettings() {
   const dataCard = `<div class="card"><div class="cardhead"><h2>Dane</h2></div>
     <div class="row"><button class="btn" data-act="export-xlsx">${ICONS.down}Eksport całego panelu (XLSX)</button><button class="btn" data-act="export-csv">${ICONS.down}Leady (CSV)</button><button class="btn" data-act="import-open">${ICONS.up}Import leadów</button>${!S.demo ? `<button class="btn ghost" data-act="demo-on">Podgląd na danych przykładowych</button>` : ''}</div>
     <p class="note" style="margin-top:8px">Dane panelu są wspólne dla wszystkich osób, którym udostępnisz stronę z prawem edycji (Contributor lub wyżej). Osoby z prawem podglądu widzą dane bez możliwości zmian. CSV używa średnika i kodowania UTF-8 – otwiera się poprawnie w polskim Excelu.</p></div>`;
-  return head + `<div class="stack">${teamCard}${adminCard}${integCard}${goalCard}${offerCard}${dataCard}</div>`;
+  return head + `<div class="stack">${teamCard}${adminCard}${priceSettingsCard()}${integCard}${goalCard}${offerCard}${dataCard}</div>`;
 }
 function openMemberModal(m = null) {
   const isNew = !m;

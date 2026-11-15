@@ -163,7 +163,7 @@ function openCompose(o = {}) {
   const curLead = () => fixedLead || leadByEmail(($('#cm-to') || {}).value);
   const files = fixedLead ? contractFilesFor(fixedLead) : Object.values(CONTRACT_FILES).flat();
   const preset = new Set(o.files || []);
-  const uploads = [];
+  const uploads = (o.attachments || []).slice();
   const tpls = Object.entries(TEMPLATES).filter(([k, t]) => t.kind === 'E-mail');
   openModal(`<div class="mh"><h2>${o.replyTo ? 'Odpowiedź' : 'Nowa wiadomość'}${fixedLead ? ' – ' + esc(fixedLead.name) : ''}</h2><button class="iconbtn" data-act="modal-close" aria-label="Zamknij">${ICONS.x}</button></div>
     <div class="mb"><div class="formgrid">
@@ -175,10 +175,14 @@ function openCompose(o = {}) {
     <div class="row" style="margin-top:6px"><span class="small muted">Załączniki:</span>${files.map(f => `<label class="chk small"><input type="checkbox" data-cm-file="${f.id}" ${preset.has(f.id) ? 'checked' : ''}>${esc(f.n)}</label>`).join('')}
       <label class="btn sm ghost" style="cursor:pointer">+ plik z komputera<input type="file" id="cm-file" multiple hidden></label></div>
     <div class="row" id="cm-ups" style="margin-top:4px"></div>
+    ${!mailOn() && (o.attachments || []).length ? `<p class="small" style="margin-top:6px">Poczta niepodłączona – pobierz załącznik i dołącz go w Thunderbirdzie: ${(o.attachments || []).map((a, i) => `<button type="button" class="btn sm" data-cm-dl="${i}">${ICONS.file}${esc(a.filename)}</button>`).join(' ')}</p>` : ''}
     ${emailPreviewBlock('cm-prev')}
     ${mailOn() ? '' : '<p class="callout" style="margin-top:10px">Poczta nie jest jeszcze podłączona – skopiuj e-mail z formatowaniem i wyślij go z Thunderbirda (załączniki dołącz ręcznie).</p>'}
     <datalist id="cm-leads">${leadsArr().filter(x => x.email).map(x => `<option value="${esc(x.email)}">${esc(x.name)}</option>`).join('')}</datalist></div>
-    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn" id="cm-copy">${ICONS.copy}Kopiuj z formatowaniem</button><button class="btn primary" id="cm-send" ${mailOn() ? '' : 'disabled title="Poczta niepodłączona"'}>Wyślij</button></div>`, { wide: true });
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn" id="cm-copy">${ICONS.copy}Kopiuj z formatowaniem</button>${!mailOn() && o.onSent ? '<button class="btn" id="cm-manual">Wysłane ręcznie – zapisz</button>' : ''}<button class="btn primary" id="cm-send" ${mailOn() ? '' : 'disabled title="Poczta niepodłączona"'}>Wyślij</button></div>`, { wide: true });
+  $$('[data-cm-dl]').forEach(b => b.onclick = () => { const a = (o.attachments || [])[+b.dataset.cmDl]; if (a) offerDownload(a.filename, Uint8Array.from(atob(a.content_base64), ch => ch.charCodeAt(0))); });
+  const man = $('#cm-manual');
+  if (man) man.onclick = () => { const l = curLead(); if (l) logMailSent(l, $('#cm-subj').value, (o.attachments || []).map(a => a.filename)); o.onSent({ manual: true }); closeModal(); toast('Zapisano jako wysłane'); };
   const refresh = () => { const pv = $('#cm-prev'); if (pv) pv.innerHTML = emailHtml($('#cm-body').value, curLead(), true); };
   const applyTpl = () => {
     const k = $('#cm-tpl').value; const l = curLead(); if (!k) return;
@@ -191,6 +195,7 @@ function openCompose(o = {}) {
   if (o.tplKey && !o.body) applyTpl();
   $('#cm-body').oninput = refresh; $('#cm-to').oninput = refresh; refresh();
   const showUps = () => { $('#cm-ups').innerHTML = uploads.map((u, i) => `<span class="pill">📎 ${esc(u.filename)} <button class="iconbtn" data-cm-rm="${i}" aria-label="Usuń">${ICONS.x}</button></span>`).join(''); $$('#cm-ups [data-cm-rm]').forEach(b => b.onclick = () => { uploads.splice(+b.dataset.cmRm, 1); showUps(); }); };
+  showUps();
   $('#cm-file').onchange = e => {
     [...e.target.files].forEach(f => {
       const rd = new FileReader();

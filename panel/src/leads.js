@@ -7,7 +7,7 @@ const LEAD_COLS = [
   { k: 'model', n: 'Model', get: l => modelOf(l) },
   { k: 'stage', n: 'Etap', get: l => stageIdx(l) },
   { k: 'status', n: 'Status', get: l => l.status },
-  { k: 'mail', n: 'Korespondencja', nosort: true },
+  { k: 'mail', n: 'E-mail', nosort: true },
   { k: 'nextTaskDate', n: 'Następne zadanie', get: l => l.nextTaskDate || '9999' },
   { k: 'meetingAt', n: 'Spotkanie', get: l => l.meetingAt || '9999' },
   { k: 'last', n: 'Ostatni kontakt', get: l => lastContact(l) || '' },
@@ -61,7 +61,7 @@ function tableHTML(list) {
       <td>${modelPill(l)}</td>
       <td>${stageBar(l)}<div class="tiny muted">${esc(STAGES[stageIdx(l)].short)}</div></td>
       <td>${statusPill(l.status)}</td>
-      <td data-stop="1"><a class="btn sm ghost" href="#poczta-${l.id}" title="${esc(l.email || 'brak e-maila')}">${ICONS.email}Koresponduj</a></td>
+      <td data-stop="1"><button class="btn sm primary" style="white-space:nowrap" data-act="mail-compose" data-id="${l.id}" title="${esc(l.email ? 'Napisz do: ' + l.email : 'Brak adresu e-mail – wpiszesz go w oknie wiadomości')}">${ICONS.email}Wyślij e-mail</button></td>
       <td style="min-width:170px"><span class="small">${esc(l.nextTask || '—')}</span><div class="tiny ${dueCls(l.nextTaskDate)}">${l.nextTaskDate ? fdate(l.nextTaskDate) + (l.nextTaskTime ? ' ' + esc(l.nextTaskTime) : '') : ''}</div></td>
       <td class="small ${dueCls(l.meetingAt)}">${l.meetingAt ? fdt(l.meetingAt) : '—'}</td>
       <td class="small">${lc ? fdateShort(lc) : '<span class="muted">brak</span>'}</td>

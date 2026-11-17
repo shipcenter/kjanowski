@@ -40,6 +40,7 @@ function render() {
     keep = { id: ae.id, value: ae.value, ss: ae.selectionStart, se: ae.selectionEnd, type: ae.type };
   }
   renderChrome();
+  if (typeof tplSyncCustom === 'function') tplSyncCustom();
   const r = S.route;
   let html;
   try {

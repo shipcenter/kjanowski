@@ -506,14 +506,16 @@ function viewMessages() {
   const custom = S.ui.aiText;
   const head = `<div class="viewhead"><div class="grow"><span class="eyebrow">Komunikacja z kandydatami</span><h1>Wiadomości i skrypty</h1>
     <p>Gotowe e-maile, SMS-y i skrypty rozmów po polsku, wypełnione danymi leada i parametrami oferty ShipCenter. Pola <span class="pill warn">[uzupełnij]</span> wymagają ręcznej edycji.</p></div></div>`;
-  const left = `<div class="card" style="padding:8px"><div class="tplist">${groups.map(gname => `<div class="grp">${esc(gname)}</div>${Object.entries(TEMPLATES).filter(([k, x]) => x.grp === gname).map(([k, x]) => `<button class="${k === m.tpl ? 'on' : ''}" data-act="tpl" data-k="${k}"><span class="pill outline tiny">${esc(x.kind)}</span>${esc(x.n)}</button>`).join('')}`).join('')}</div></div>`;
+  const ovs = settings().tplOverrides || {};
+  const left = `<div class="card" style="padding:8px"><div style="padding:6px 6px 10px"><button class="btn sm" data-act="tpl-new" style="width:100%">${ICONS.plus}Nowy szablon</button></div><div class="tplist">${groups.map(gname => `<div class="grp">${esc(gname)}</div>${Object.entries(TEMPLATES).filter(([k, x]) => x.grp === gname).map(([k, x]) => `<button class="${k === m.tpl ? 'on' : ''}" data-act="tpl" data-k="${k}"><span class="pill outline tiny">${esc(x.kind)}</span>${esc(x.n)}${ovs[k] || x.custom ? ' <span class="pill warn tiny" title="zmieniony przez Was">' + (x.custom ? 'własny' : 'zmieniony') + '</span>' : ''}</button>`).join('')}`).join('')}</div></div>`;
   const controls = `<div class="formgrid">
       <label class="field span2"><span>Kandydat</span><select id="msg-lead" data-msg="leadId">${opt('', '— bez leada (szablon ogólny) —', m.leadId)}${leads.map(x => opt(x.id, `${x.name}${x.city ? ' – ' + x.city : ''} (${STAGES[stageIdx(x)].short})`, m.leadId)).join('')}</select></label>
       <label class="field"><span>Forma zwrotu</span><select id="msg-form" data-msg="form">${Object.entries(FORMS).map(([k, n]) => opt(k, n.replace('forma ', ''), m.form)).join('')}</select></label>
     </div>`;
   const ai = S.sample ? `<div class="sep"></div><div class="formgrid"><label class="field full"><span>Poproś Claude o wersję lub nową wiadomość</span><input type="text" id="ai-instr" placeholder="np. krótsza i cieplejsza wersja · dodaj wątek PaczkoPunktu InPost · odpowiedź na pytanie o zyski"></label></div>
     <div class="row" style="margin-top:8px"><button class="btn" data-act="ai-rewrite">${ICONS.spark}Dopracuj z Claude</button><span class="note">Claude dostaje szablon, dane leada i warunki oferty. Nie dopisze obietnic finansowych.</span></div>` : '';
-  const main = `<div class="card"><div class="cardhead"><h2>${esc(t.n)}</h2><span class="pill">${esc(t.kind)}</span></div>
+  if (S.ui.tplEdit) return head + `<div class="split-side">${left}<div class="stack">${tplEditorHtml(S.ui.tplEdit)}</div></div>`;
+  const main = `<div class="card"><div class="cardhead"><h2>${esc(t.n)}</h2><div class="row"><span class="pill">${esc(t.kind)}</span><button class="btn sm" data-act="tpl-edit" data-k="${m.tpl}">${ICONS.notatka || ICONS.file}Edytuj szablon</button></div></div>
     ${controls}
     <div class="sep"></div>
     ${out.subject ? `<div class="row between" style="margin-bottom:6px"><span class="small"><span class="muted">Temat:</span> <b>${esc(out.subject)}</b></span><button class="btn sm ghost" data-act="copy-subject">${ICONS.copy}Kopiuj temat</button></div>` : ''}

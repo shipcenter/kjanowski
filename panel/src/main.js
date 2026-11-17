@@ -113,7 +113,14 @@ function handleAction(act, el, e) {
     case 'copy': copyText(el.dataset.text); return;
     case 'loc-new': newLocation(el.dataset.lead || ''); return;
     // wiadomości
-    case 'tpl': S.msg.tpl = el.dataset.k; S.ui.aiText = ''; scheduleRender(); return;
+    case 'tpl': S.msg.tpl = el.dataset.k; S.ui.aiText = ''; S.ui.tplEdit = null; scheduleRender(); return;
+    case 'tpl-edit': S.ui.tplEdit = el.dataset.k; scheduleRender(); return;
+    case 'tpl-new': S.ui.tplEdit = '__new'; scheduleRender(); return;
+    case 'te-save': tplSave(el.dataset.k); return;
+    case 'te-cancel': S.ui.tplEdit = null; scheduleRender(); return;
+    case 'te-reset': confirmBox('Przywrócić wersję domyślną?', 'Twoje zmiany w tym szablonie zostaną usunięte.', 'Przywróć', () => tplReset(el.dataset.k), false); return;
+    case 'te-del': confirmBox('Usunąć szablon?', 'Własny szablon zniknie z listy.', 'Usuń', () => tplDelete(el.dataset.k)); return;
+    case 'te-var': tplInsertVar(el.dataset.k); return;
     case 'copy-subject': copyText((S.ui.msgOut || {}).subject || ''); return;
     case 'copy-msg': copyText((S.ui.msgOut || {}).body || ''); return;
     case 'copy-msg-html': { const b = (S.ui.msgOut || {}).body || ''; copyEmailHtml(emailHtml(b, S.msg.leadId ? D().leads[S.msg.leadId] : null, false), b); return; }

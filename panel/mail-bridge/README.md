@@ -124,6 +124,7 @@ Moduły: `a2enmod proxy proxy_http ssl`. Sprawdzenie z zewnątrz: `curl https://
 | `nda_status` | czy i kiedy kandydat zaakceptował NDA (IP, skrót treści) |
 | `sms_send` | SMS przez SMSAPI – od razu albo o podanej godzinie (`date`) |
 | `sms_cancel` | anulowanie zaplanowanego SMS-a |
+| `public_prices` | ceny dla klienta z publicznego cennika shipcenter.pl (do cennika poglądowego z zyskiem punktu) |
 
 Zabezpieczenia: tajny klucz w adresie (min. 32 znaki, porównanie w stałym czasie, zły klucz = 404), nasłuch tylko na `127.0.0.1`, limit `MAX_SEND_PER_HOUR`, walidacja adresów, max 10 MB załączników. Mostek wysyła wyłącznie z adresu z `MAIL_FROM`; SMS-y – limit `MAX_SMS_PER_HOUR`, walidacja numerów.
 

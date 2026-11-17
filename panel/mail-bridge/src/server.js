@@ -10,6 +10,7 @@ import { fetchInquiries, listMessages, getMessage, getAttachment, sendMail, stat
 import { smsSend, smsCancel, smsConfigured } from './sms.js';
 import { addressSuggest, addressDetails } from './places.js';
 import { ndaCreate, ndaStatus, ndaRoutes } from './nda.js';
+import { publicPrices } from './prices.js';
 
 const json = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 const fail = e => ({ isError: true, content: [{ type: 'text', text: String((e && e.message) || e) }] });
@@ -142,6 +143,13 @@ export function buildServer() {
     inputSchema: { id: z.string().min(1).max(64) },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }
   }, wrap(a => smsCancel(a)));
+
+  s.registerTool('public_prices', {
+    title: 'Publiczny cennik shipcenter.pl',
+    description: 'Ceny dla klienta (netto i brutto) z publicznego cennika shipcenter.pl – bez logowania. Panel porównuje je z cennikiem franczyzowym i liczy zysk punktu.',
+    inputSchema: { couriers: z.array(z.string().max(40)).max(30).optional().describe('np. ["inpost","dpd"]; puste = wszyscy przewoźnicy krajowi') },
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, wrap(a => publicPrices(a)));
 
   return s;
 }

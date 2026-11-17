@@ -34,7 +34,7 @@ test('mail_send przez MCP: HTML ze stopką, załącznik, nadawca franczyza@', as
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(url)));
   const tools = (await client.listTools()).tools.map(t => t.name).sort();
-  assert.deepEqual(tools, ['address_details', 'address_suggest', 'inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'nda_create', 'nda_status', 'sms_cancel', 'sms_send']);
+  assert.deepEqual(tools, ['address_details', 'address_suggest', 'inquiries_fetch', 'mail_attachment', 'mail_get', 'mail_list', 'mail_send', 'mail_status', 'nda_create', 'nda_status', 'public_prices', 'sms_cancel', 'sms_send']);
   const res = await client.callTool({ name: 'mail_send', arguments: { to: 'kandydat@example.com', subject: 'Test – prezentacja', html: '<p>Dzień dobry</p><table><tr><td>Stopka ShipCenter</td></tr></table>', text: 'Dzień dobry', attachments: [{ filename: 'Umowa.pdf', content_base64: Buffer.from('%PDF-1.4 test').toString('base64'), content_type: 'application/pdf' }] } });
   assert.ok(!res.isError, JSON.stringify(res.content));
   const out = JSON.parse(res.content[0].text);
@@ -123,4 +123,29 @@ test('NDA: link, kod SMS, akceptacja, status', async () => {
   const st = ndaStatus({ token: c.token }); assert.equal(st.status, 'podpisana'); assert.ok(st.signedAt); assert.equal(st.hash.length, 64);
   assert.equal((await fetch(`${base}/nda/nieistnieje`)).status, 404);
   await new Promise(r => setTimeout(r, 300)); http.close(); api.close();
+});
+
+test('public_prices: cennik shipcenter.pl z __NEXT_DATA__ (atrapa strony)', async () => {
+  const { createServer } = await import('node:http');
+  const nd = queries => `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries } } } })}</script></html>`;
+  const pages = {
+    '/cennik': nd([{ queryKey: ['price-list-couriers'], state: { data: { couriers: [{ uId: 'inpost' }, { uId: 'gls' }, { uId: 'stary', isOld: true }] } } }]),
+    '/cennik-inpost': nd([{ queryKey: ['price-list-data', 'cennik-inpost'], state: { data: { services: [{ name: 'Kurier Standard', list: {
+      1: { type: 'Koperta', items: [{ waga: 'do 2 kg', cena_netto: '21,00 PLN', cena_brutto: '25,83 PLN' }] },
+      2: { type: 'Paczka', items: [{ waga: 'do 1 kg', cena_netto: '21,00 PLN', cena_brutto: '25,83 PLN' }, { waga: '1,01 kg - 2 kg', cena_netto: '21,90 PLN', cena_brutto: '26,94 PLN' }] } } }] } } }]),
+    '/cennik-gls': nd([{ queryKey: ['price-list-data', 'cennik-gls'], state: { data: { additionalServices: [] } } }])
+  };
+  const srv = createServer((req, res) => { const b = pages[req.url]; res.writeHead(b ? 200 : 404, { 'Content-Type': 'text/html' }); res.end(b || 'nie ma'); });
+  srv.listen(0, '127.0.0.1'); await once(srv, 'listening');
+  const { cfg } = await import('../src/config.js');
+  cfg.shopUrl = `http://127.0.0.1:${srv.address().port}`;
+  const { publicPrices, parseWeight } = await import('../src/prices.js');
+  try {
+    assert.deepEqual(parseWeight('20,01 kg - 31,50 kg'), { from: 20.01, to: 31.5 });
+    const r = await publicPrices();
+    assert.equal(r.rows.length, 3);
+    assert.deepEqual(r.rows[0], { courier: 'inpost', s: 'Kurier Standard', t: 'Koperta/list', from: 0, to: 2, w: 'do 2 kg', netto: 21, brutto: 25.83 });
+    assert.equal(r.rows[2].from, 1.01);
+    assert.match(r.errors.join(' '), /gls/);
+  } finally { srv.close(); }
 });

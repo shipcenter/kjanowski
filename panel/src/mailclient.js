@@ -12,6 +12,7 @@ async function mailInit() {
     const r = await S.mcp.listTools(MAIL_SERVER);
     const sv = (r.servers || []).find(s => s.server === MAIL_SERVER);
     MAIL.avail = !!(sv && (sv.tools || []).length);
+    MAIL.tools = ((sv && sv.tools) || []).map(t => (t && t.name) || t);
   } catch (e) { MAIL.avail = false; MAIL.err = (e && e.code) || ''; }
   MAIL.checking = false; scheduleRender();
   if (MAIL.avail) {

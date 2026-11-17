@@ -29,6 +29,8 @@ export const cfg = {
   maxSendPerHour: int('MAX_SEND_PER_HOUR', 80),
   publicUrl: env('PUBLIC_URL', 'https://mcp.shipcenter.pl').replace(/\/+$/, ''),
   dataDir: env('DATA_DIR', './data'),
+  // publiczny cennik (ceny dla klienta bez logowania) – do porównania z cennikiem franczyzowym
+  shopUrl: env('SHOP_URL', 'https://shipcenter.pl').replace(/\/+$/, ''),
   places: {
     key: env('GOOGLE_MAPS_API_KEY'),
     url: env('GOOGLE_PLACES_URL', 'https://places.googleapis.com').replace(/\/+$/, '')

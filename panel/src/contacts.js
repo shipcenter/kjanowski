@@ -39,6 +39,20 @@ async function cancelSms(id) {
   patch('sms', id, { status: 'anulowany' });
 }
 
+/* SMS „wysłaliśmy maila” – krótko, bez polskich znaków (1 SMS) */
+function smsMailInfoText(l) {
+  const o = offer();
+  const m = l && l.ownerId ? D().team[l.ownerId] : null;
+  const who = m ? firstName(m.name) : 'ShipCenter';
+  const tel = (m && m.phone) || o.telefon;
+  return stripPL(`Dzień dobry, wysłaliśmy do Państwa wiadomość e-mail od ShipCenter. Proszę sprawdzić skrzynkę (także folder SPAM). W razie pytań: ${who}, tel. ${tel}`);
+}
+function queueMailInfoSms(l, text) {
+  if (!l || !l.phone || !text) return;
+  const id = uid('sms');
+  put('sms', id, { leadId: l.id, leadName: l.name || '', phone: fmtPhone(l.phone), text, ownerId: l.ownerId || '', status: 'oczekuje', kind: 'mail_info', createdTs: new Date().toISOString(), createdBy: myMemberId() || '' });
+  if (smsGatewayOn()) deliverSms(id);
+}
 /* przypomnienia SMS: o spotkaniu i o szkoleniu (można ustawić kilka) */
 const REMIND_TOPICS = {
   spotkanie: { n: 'spotkaniu', when: { dzien: 'dzień wcześniej o 18:00', rano: 'w dniu spotkania o 8:00', '2h': '2 godziny przed spotkaniem', wlasny: 'własny termin…' } },

@@ -176,14 +176,25 @@ function openCompose(o = {}) {
     <div class="row" style="margin-top:6px"><span class="small muted">Załączniki:</span>${files.map(f => `<label class="chk small"><input type="checkbox" data-cm-file="${f.id}" ${preset.has(f.id) ? 'checked' : ''}>${esc(f.n)}</label>`).join('')}
       <label class="btn sm ghost" style="cursor:pointer">+ plik z komputera<input type="file" id="cm-file" multiple hidden></label></div>
     <div class="row" id="cm-ups" style="margin-top:4px"></div>
+    ${fixedLead && fixedLead.phone ? `<div class="cmsms"><label class="chk small"><input type="checkbox" id="cm-sms"> ${ICONS.sms}<b>Wyślij też SMS</b>, że kandydat dostał od nas maila (${esc(fmtPhone(fixedLead.phone))})</label>
+      <div id="cm-smswrap" hidden><textarea id="cm-smstext" rows="2">${esc(smsMailInfoText(fixedLead))}</textarea><span class="hint" id="cm-smsinfo"></span></div></div>` : ''}
     ${!mailOn() && (o.attachments || []).length ? `<p class="small" style="margin-top:6px">Poczta niepodłączona – pobierz załącznik i dołącz go w Thunderbirdzie: ${(o.attachments || []).map((a, i) => `<button type="button" class="btn sm" data-cm-dl="${i}">${ICONS.file}${esc(a.filename)}</button>`).join(' ')}</p>` : ''}
     ${emailPreviewBlock('cm-prev')}
     ${mailOn() ? '' : '<p class="callout" style="margin-top:10px">Poczta nie jest jeszcze podłączona – skopiuj e-mail z formatowaniem i wyślij go z Thunderbirda (załączniki dołącz ręcznie).</p>'}
     <datalist id="cm-leads">${leadsArr().filter(x => x.email).map(x => `<option value="${esc(x.email)}">${esc(x.name)}</option>`).join('')}</datalist></div>
-    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn" id="cm-copy">${ICONS.copy}Kopiuj z formatowaniem</button>${!mailOn() && o.onSent ? '<button class="btn" id="cm-manual">Wysłane ręcznie – zapisz</button>' : ''}<button class="btn primary" id="cm-send" ${mailOn() ? '' : 'disabled title="Poczta niepodłączona"'}>Wyślij</button></div>`, { wide: true });
+    <div class="mf"><button class="btn" data-act="modal-close">Anuluj</button><button class="btn" id="cm-copy">${ICONS.copy}Kopiuj z formatowaniem</button>${!mailOn() && (o.onSent || fixedLead) ? '<button class="btn" id="cm-manual">Wysłane ręcznie – zapisz</button>' : ''}<button class="btn primary" id="cm-send" ${mailOn() ? '' : 'disabled title="Poczta niepodłączona"'}>Wyślij</button></div>`, { wide: true });
   $$('[data-cm-dl]').forEach(b => b.onclick = () => { const a = (o.attachments || [])[+b.dataset.cmDl]; if (a) offerDownload(a.filename, Uint8Array.from(atob(a.content_base64), ch => ch.charCodeAt(0))); });
+  const smsCb = $('#cm-sms');
+  const smsOn = () => !!(smsCb && smsCb.checked && $('#cm-smstext').value.trim());
+  if (smsCb) {
+    const upd = () => { $('#cm-smswrap').hidden = !smsCb.checked; const i = smsInfo($('#cm-smstext').value); $('#cm-smsinfo').textContent = `${i.len} znaków · ${i.parts} SMS · ${smsGatewayOn() ? 'wyjdzie przez SMSAPI razem z mailem' : 'trafi do kolejki SMS w „Kontaktach”'}`; };
+    try { smsCb.checked = localStorage.getItem('sc-cm-sms') === '1'; } catch (e) { }
+    smsCb.onchange = () => { try { localStorage.setItem('sc-cm-sms', smsCb.checked ? '1' : '0'); } catch (e) { } upd(); };
+    $('#cm-smstext').oninput = upd; upd();
+  }
+  const afterSms = () => { if (smsOn()) queueMailInfoSms(D().leads[fixedLead.id] || fixedLead, $('#cm-smstext').value.trim()); };
   const man = $('#cm-manual');
-  if (man) man.onclick = () => { const l = curLead(); if (l) logMailSent(l, $('#cm-subj').value, (o.attachments || []).map(a => a.filename)); o.onSent({ manual: true }); closeModal(); toast('Zapisano jako wysłane'); };
+  if (man) man.onclick = () => { const l = curLead(); if (l) logMailSent(l, $('#cm-subj').value, (o.attachments || []).map(a => a.filename)); if (o.onSent) o.onSent({ manual: true }); const sent = smsOn(); afterSms(); closeModal(); toast('Zapisano jako wysłane' + (sent ? ' · SMS ' + (smsGatewayOn() ? 'wysłany' : 'w kolejce') : '')); };
   const refresh = () => { const pv = $('#cm-prev'); if (pv) pv.innerHTML = emailHtml($('#cm-body').value, curLead(), true); };
   const applyTpl = () => {
     const k = $('#cm-tpl').value; const l = curLead(); if (!k) return;
@@ -224,9 +235,10 @@ function openCompose(o = {}) {
       if (r && r.rejected && r.rejected.length) throw { code: 'local', message: 'Serwer odrzucił adres: ' + r.rejected.join(', ') };
       if (l) logMailSent(l, subject, atts.map(a => a.filename));
       if (o.onSent) o.onSent(r);
+      const sentSms = smsOn(); afterSms();
       mailRefresh(l && l.email ? 'addr:' + l.email.toLowerCase().trim() : null); mailRefresh('all');
       closeModal();
-      toast('Wysłano e-mail do ' + to + (r && r.appended === false ? ' (uwaga: bez kopii w „Wysłanych”)' : ''));
+      toast('Wysłano e-mail do ' + to + (sentSms ? ' i SMS' : '') + (r && r.appended === false ? ' (uwaga: bez kopii w „Wysłanych”)' : ''));
     } catch (e) {
       toast(e && e.code === 'local' ? e.message : mailErr(e), 'bad');
       btn.disabled = false; btn.textContent = 'Wyślij';

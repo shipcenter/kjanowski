@@ -480,3 +480,7 @@ details.adv[open] summary { margin-bottom: 10px; }
 .sugitem { display: grid; gap: 1px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: .9rem; }
 .sugitem span { font-size: .75rem; color: var(--muted); }
 .sugitem:hover, .sugitem.on { background: color-mix(in srgb, var(--accent, #ea580c) 9%, transparent); }
+
+.cmsms { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line-2, #d1d5db); border-radius: 10px; display: grid; gap: 8px; }
+.cmsms .chk svg { width: 15px; height: 15px; color: var(--accent); vertical-align: -3px; }
+.cmsms textarea { width: 100%; }
